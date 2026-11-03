@@ -11927,13 +11927,16 @@ const COPIAR_ORDENS = [
    num cartão junta-o à sessão (ou tira-o), sem abrir a pré-visualização.
    Os escolhidos ficam com o visto e a borda dourada. Sem `onAlternar`,
    tudo funciona exatamente como antes (copiar ideia/exercício). */
-function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar, minutosDe, onMinutos, onEditar }) {
+function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar, minutosDe, onMinutos, onEditar, onLimparTodos }) {
   const multi = typeof onAlternar === 'function';
   const escolhidosSet = React.useMemo(() => new Set(selecionados || []), [selecionados]);
   // Posição de cada escolhido na sessão (1, 2, 3…), para o número no cartão.
   const ordemNaSessao = React.useMemo(() => new Map((selecionados || []).map((id, i) => [id, i + 1])), [selecionados]);
   // "Na sessão": mostra só os escolhidos, pela ordem da sessão.
   const [soNaSessao, setSoNaSessao] = useState(false);
+  const [confirmarLimpar, setConfirmarLimpar] = useState(false);
+  const limparTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(limparTimerRef.current), []);
   const isMobile = useIsMobile(700);
   const [busca, setBusca] = useState('');
   const [escolhido, setEscolhido] = useState(null);
@@ -12098,7 +12101,12 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: T.muted }}>
           {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
-          {multi && escolhidosSet.size > 0 && <span style={{ color: T.gold }}> · {itens.filter(x => escolhidosSet.has(x.id)).length} na sessão</span>}
+          {/* Sempre no lugar (escondido quando é 0) e com largura fixa:
+              escolher ou tirar não pode empurrar a caixa da procura. */}
+          {multi && (() => {
+            const n = itens.filter(x => escolhidosSet.has(x.id)).length;
+            return <span style={{ color: T.gold, display: 'inline-block', minWidth: '9.5ch', visibility: n ? 'visible' : 'hidden' }}> · <span style={{ ...mono }}>{n}</span> na sessão</span>;
+          })()}
         </div>
         <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
@@ -12135,6 +12143,24 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
             }}>Na sessão <span style={{ ...mono }}>{(selecionados || []).length}</span></button>
           )}
         </div>
+        {/* TIRAR TODOS de uma vez. Dois toques (o primeiro pede
+            confirmação), porque perde também os minutos de cada um. Fica
+            sempre no mesmo sítio e com a mesma largura (apagado sem
+            escolhidos), para nada à volta mexer. */}
+        {multi && onLimparTodos && (
+          <button type="button" disabled={!(selecionados || []).length}
+            onClick={() => {
+              if (!confirmarLimpar) { setConfirmarLimpar(true); clearTimeout(limparTimerRef.current); limparTimerRef.current = setTimeout(() => setConfirmarLimpar(false), 3000); return; }
+              clearTimeout(limparTimerRef.current); setConfirmarLimpar(false); onLimparTodos();
+            }}
+            title="Tirar todos os exercícios da sessão"
+            style={{
+              width: 128, padding: '5px 8px', borderRadius: 8, fontSize: 12, ...body, whiteSpace: 'nowrap',
+              border: `1px solid ${confirmarLimpar ? T.bad : T.line}`, background: confirmarLimpar ? `${T.bad}22` : 'transparent',
+              color: !(selecionados || []).length ? T.mutedDim : (confirmarLimpar ? T.bad : T.muted),
+              opacity: (selecionados || []).length ? 1 : 0.45, cursor: (selecionados || []).length ? 'pointer' : 'default',
+            }}>{confirmarLimpar ? 'Confirmar: tirar todos' : 'Tirar todos'}</button>
+        )}
         <div style={{ flex: 1 }} />
         {/* Sempre presente (mesmo sem resultados): a altura não muda. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -25453,6 +25479,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                   minutosDe={(x) => { const e = f.exerciseIds.find(z => z.exId === x.id); return e ? e.duration : ''; }}
                   onMinutos={(x, v) => setDuration(x.id, v)}
                   onEditar={setExercises ? (x) => setEditarEx(x) : undefined}
+                  onLimparTodos={() => setF(prev => ({ ...prev, exerciseIds: [] }))}
                 />
               </>
             )}
@@ -25542,7 +25569,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
           exercise={editarEx}
           allExercises={exercises}
           meta={exercisesMeta}
-          onClose={() => setEditarEx(null)}
+          onClose={() => { setEscolhaGravar(null); setEditarEx(null); }}
           onSave={(data) => {
             // Sem alterações: fecha, sem perguntar nada.
             const original = exercises.find(x => x.id === editarEx.id) || editarEx;
@@ -25553,8 +25580,22 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
           }}
         />
       )}
-      {escolhaGravar && (
-        <Modal title="Guardar as alterações" onClose={() => setEscolhaGravar(null)}>
+      {/* A PERGUNTA não é uma janela "Modal": essas entram no histórico do
+          browser, e fechar a terceira janela empilhada (sessão > exercício
+          > pergunta) fazia o histórico recuar e fechava também a sessão,
+          voltando ao Planeamento. Esta caixa fica por cima, sem mexer no
+          histórico: o X e "Voltar à edição" voltam ao editor do exercício. */}
+      {escolhaGravar && editarEx && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: '#000000aa', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div role="dialog" aria-modal="true" aria-label="Guardar as alterações" style={{
+          width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 20, boxSizing: 'border-box',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>Guardar as alterações</h3>
+            <button type="button" onClick={() => setEscolhaGravar(null)} aria-label="Voltar à edição" title="Voltar à edição" style={{
+              background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex', padding: 2,
+            }}><X size={18} /></button>
+          </div>
           <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, marginBottom: 6 }}>
             Alteraste <strong>{(editarEx && editarEx.name) || 'este exercício'}</strong>. Como queres guardar?
           </div>
@@ -25584,7 +25625,9 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Btn variant="ghost" onClick={() => setEscolhaGravar(null)}><ChevronLeft size={14} /> Voltar à edição</Btn>
           </div>
-        </Modal>
+        </div>
+        </div>,
+        document.body
       )}
     </Modal>
   );
