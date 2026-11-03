@@ -2668,7 +2668,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -3221,6 +3221,41 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setVideosOriginais(prev => prev.map(v => (v.id === id ? { ...v, titulo: novoNome.trim() } : v)));
     setEditandoNomeId(null);
   };
+
+  /* VÍDEOS ENVIADOS SEM REGISTO. Com a versão anterior, um vídeo que o
+     Supabase demorasse a disponibilizar ficava no Storage mas nunca
+     aparecia aqui. Procura-se na pasta da equipa os vídeos que não estão
+     na lista (só ficheiros de vídeo, dos últimos 30 dias) e oferece-se
+     recuperá-los. É o treinador que escolhe: nada se junta sozinho. */
+  const [semRegisto, setSemRegisto] = useState([]);
+  const procurouRef = useRef(false);
+  useEffect(() => {
+    if (!teamId || !recuperarOriginal || procurouRef.current) return undefined;
+    let cancelado = false;
+    const t = setTimeout(async () => {
+      procurouRef.current = true;
+      try {
+        const { data, error } = await supabase.storage.from('videos-originais').list(teamId, { limit: 1000, sortBy: { column: 'created_at', order: 'desc' } });
+        if (error || !data || cancelado) return;
+        const conhecidos = new Set((videosOriginais || []).map(v => v && v.storagePath).filter(Boolean));
+        const limite = Date.now() - 30 * 24 * 3600 * 1000;
+        const lista = data.filter(o => o && o.name && /\.(mp4|mov|m4v|mkv|avi|webm|mts|3gp)$/i.test(o.name)
+          && !conhecidos.has(`${teamId}/${o.name}`)
+          && (!o.created_at || new Date(o.created_at).getTime() > limite)
+          && Date.now() - new Date(o.created_at || 0).getTime() > 2 * 60 * 1000);
+        if (!cancelado) setSemRegisto(lista.map(o => ({
+          caminho: `${teamId}/${o.name}`,
+          // Nome do ficheiro sem o prefixo único que a app lhe junta.
+          titulo: o.name.replace(/^[^-]+-/, '').replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim() || o.name,
+          tamanho: o.metadata && o.metadata.size,
+          criado: o.created_at,
+        })));
+      } catch (e) { /* sem permissão para listar: não mostra nada */ }
+    }, 4000);
+    return () => { cancelado = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, recuperarOriginal, videosOriginais.length]);
+  const semRegistoVisiveis = semRegisto.filter(o => !(videosOriginais || []).some(v => v && v.storagePath === o.caminho));
 
   const apagarOriginal = (video) => {
     const executar = async () => {
@@ -4200,6 +4235,25 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
          só visíveis quando não há nenhum aberto (para não ocupar espaço por
          cima do leitor). Com um vídeo aberto, mostra-se só uma barra fina
          com "Voltar", sempre à vista sem ser preciso subir a página. */}
+      {!originalAtivo && semRegistoVisiveis.length > 0 && (
+        <div style={{ background: T.surface, border: `1px solid ${T.warn}`, borderRadius: 8, padding: '10px 12px', marginBottom: 12, ...body }}>
+          <div style={{ fontSize: 13, color: T.cream, marginBottom: 8 }}>
+            {semRegistoVisiveis.length === 1 ? 'Há 1 vídeo que foi enviado mas não aparece na lista.' : `Há ${semRegistoVisiveis.length} vídeos que foram enviados mas não aparecem na lista.`}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {semRegistoVisiveis.map(o => (
+              <div key={o.caminho} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ flex: 1, minWidth: 160, fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.titulo}</span>
+                <span style={{ fontSize: 11.5, color: T.mutedDim }}>
+                  {[o.tamanho ? `${(o.tamanho / 1e9).toFixed(2).replace('.', ',')} GB` : '', o.criado ? new Date(o.criado).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''].filter(Boolean).join(' · ')}
+                </span>
+                <Btn variant="solid" onClick={() => recuperarOriginal(o.caminho, o.titulo, o.tamanho)}><Upload size={13} /> Recuperar</Btn>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!originalAtivo ? (
         <>
         {/* DUAS LINHAS de vídeos carregados; o cartão "Carregar vídeo" é o

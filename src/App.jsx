@@ -3232,6 +3232,86 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // carregamento continua em segundo plano mesmo que o treinador vá ver
   // outra parte da app enquanto espera.
   const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, finalizando: false, erro: '' });
+  // O ficheiro já está pronto a servir no Storage? (um link assinado só se
+  // consegue criar para um objeto que já existe por inteiro)
+  const ficheiroOriginalDisponivel = useCallback(async (caminho) => {
+    try {
+      const { error } = await supabase.storage.from('videos-originais').createSignedUrl(caminho, 60);
+      return !error;
+    } catch (e) { return false; }
+  }, []);
+  /* PREPARAÇÃO (video-worker): pede ao serviço que reorganize o vídeo
+     para arrancar depressa. Fogo-e-esquece: não se espera pelo
+     processamento (pode demorar minutos), só pela resposta de "aceite".
+     Se o serviço não responder ou recusar, o vídeo passa logo a
+     disponível tal como veio, em vez de ficar preso em "A preparar…". */
+  const prepararOriginal = useCallback(async (novo) => {
+    const VIDEO_WORKER_URL = import.meta.env.VITE_VIDEO_WORKER_URL;
+    if (!VIDEO_WORKER_URL) {
+      setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id ? { ...v, pronto: true, aguardarStorage: false } : v)));
+      return;
+    }
+    const libertar = (motivo) => setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id && v.pronto === false
+      ? { ...v, pronto: true, aguardarStorage: false, erroPreparacao: motivo }
+      : v)));
+    const controlo = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const travao = controlo ? setTimeout(() => controlo.abort(), 30000) : null;
+    // O serviço só aceita quem tem sessão e é membro da equipa: vai o
+    // token da sessão do Supabase (não há chave nenhuma no browser).
+    let tokenWorker = '';
+    try { const { data: { session: s2 } } = await supabase.auth.getSession(); if (s2 && s2.access_token) tokenWorker = s2.access_token; } catch (e) { /* sem token */ }
+    fetch(`${VIDEO_WORKER_URL}/processar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenWorker}` },
+      body: JSON.stringify({ teamId, storagePath: novo.storagePath, id: novo.id }),
+      ...(controlo ? { signal: controlo.signal } : {}),
+    }).then((r) => {
+      if (!r.ok) libertar(`O serviço de preparação recusou o vídeo (${r.status}) — ficou disponível tal como foi carregado.`);
+    }).catch(() => {
+      libertar('O serviço de preparação não respondeu — o vídeo ficou disponível tal como foi carregado.');
+    }).finally(() => { if (travao) clearTimeout(travao); });
+  }, [teamId, setVideosOriginais]);
+  /* CONFIRMAR MAIS TARDE: um vídeo enviado que o Supabase ainda não
+     disponibilizou. Volta a confirmar de 15 em 15 segundos durante 30
+     minutos; quando aparecer, segue para a preparação normal. Se a
+     página for recarregada a meio, o efeito logo abaixo retoma. */
+  const aConfirmarRef = useRef(new Set());
+  const confirmarOriginalDepois = useCallback((novo) => {
+    if (!novo || aConfirmarRef.current.has(novo.id)) return;
+    aConfirmarRef.current.add(novo.id);
+    const inicio = new Date(novo.criadoEm || Date.now()).getTime();
+    const LIMITE_MS = 30 * 60 * 1000;
+    const tentar = async () => {
+      if (await ficheiroOriginalDisponivel(novo.storagePath)) {
+        aConfirmarRef.current.delete(novo.id);
+        setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id ? { ...v, aguardarStorage: false } : v)));
+        prepararOriginal(novo);
+        return;
+      }
+      if (Date.now() - inicio > LIMITE_MS) {
+        aConfirmarRef.current.delete(novo.id);
+        setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id
+          ? { ...v, aguardarStorage: false, pronto: true, erroPreparacao: 'O Supabase não chegou a disponibilizar este ficheiro. Apaga-o e volta a carregar o vídeo.' }
+          : v)));
+        return;
+      }
+      setTimeout(tentar, 15000);
+    };
+    setTimeout(tentar, 15000);
+  }, [ficheiroOriginalDisponivel, prepararOriginal, setVideosOriginais]);
+  useEffect(() => {
+    (videosOriginais || []).filter(v => v && v.aguardarStorage && v.storagePath).forEach(confirmarOriginalDepois);
+  }, [videosOriginais, confirmarOriginalDepois]);
+  /* RECUPERAR um vídeo que ficou no Storage sem registo (o caso antigo
+     acima). Cria o registo e segue para a preparação normal. */
+  const recuperarOriginal = useCallback((caminho, titulo, tamanho) => {
+    const novo = {
+      id: uid(), storagePath: caminho, titulo: titulo || 'Vídeo recuperado', tamanho: tamanho || null,
+      criadoEm: new Date().toISOString(), pronto: false,
+    };
+    setVideosOriginais(prev => [...(prev || []), novo]);
+    prepararOriginal(novo);
+  }, [setVideosOriginais, prepararOriginal]);
   const iniciarUploadVideo = useCallback(async (file, nomePersonalizado) => {
     setUploadVideoEstado({ ativo: true, progresso: 0, finalizando: false, erro: '' });
     // Pede ao telemóvel para não apagar o ecrã enquanto o vídeo envia — em
@@ -3299,12 +3379,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       setUploadVideoEstado(s => ({ ...s, finalizando: true }));
       let pronto = false;
       for (let tentativa = 0; tentativa < 15 && !pronto; tentativa++) {
-        const { error: erroSign } = await supabase.storage.from('videos-originais').createSignedUrl(caminho, 60);
-        if (!erroSign) { pronto = true; break; }
+        if (await ficheiroOriginalDisponivel(caminho)) { pronto = true; break; }
         await new Promise(r => setTimeout(r, 4000));
       }
-      if (!pronto) throw new Error('O vídeo foi enviado, mas o Supabase ainda não o disponibilizou. Espera um minuto e recarrega a página — costuma aparecer sozinho.');
 
+      /* ANTES: se o Supabase demorasse mais de 1 minuto a "arrumar" o
+         ficheiro (acontece com vídeos grandes), dava erro e o registo do
+         vídeo NUNCA era criado: o ficheiro ficava no Storage, enviado, mas
+         a app não sabia dele e ele não aparecia sozinho, ao contrário do
+         que a mensagem dizia. AGORA o registo é sempre criado; se ainda
+         não estiver disponível, fica "A preparar…" e a app continua a
+         confirmar em segundo plano (ver `confirmarOriginalDepois`). */
       const novo = {
         id: uid(), storagePath: caminho, titulo: (nomePersonalizado && nomePersonalizado.trim()) || file.name.replace(/\.[^.]+$/, ''),
         tamanho: file.size, criadoEm: new Date().toISOString(),
@@ -3313,43 +3398,18 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         // Realtime quando o worker atualizar este registo — não é preciso
         // ir consultar nada aqui.
         pronto: false,
+        ...(pronto ? {} : { aguardarStorage: true }),
       };
       const VIDEO_WORKER_URL = import.meta.env.VITE_VIDEO_WORKER_URL;
       /* REDE DE SEGURANÇA: sem worker configurado, ninguém viria marcar o
          vídeo como pronto e ele ficava "A preparar…" para sempre no
          Analisador. Nesse caso fica disponível logo, tal como veio. */
-      if (!VIDEO_WORKER_URL) novo.pronto = true;
+      if (!VIDEO_WORKER_URL && pronto) novo.pronto = true;
       setVideosOriginais(prev => [...(prev || []), novo]);
       setUploadVideoEstado({ ativo: false, progresso: 100, finalizando: false, erro: '' });
 
-      if (VIDEO_WORKER_URL) {
-        // Fogo-e-esquece: não se espera pelo processamento (pode demorar
-        // minutos) — só pela resposta de "aceite", que é imediata. Se o
-        // worker não responder ou recusar (em baixo, plano expirado no
-        // Railway, rede), o vídeo passa logo a disponível tal como veio,
-        // em vez de ficar preso em "A preparar…".
-        const libertar = (motivo) => setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id && v.pronto === false
-          ? { ...v, pronto: true, erroPreparacao: motivo }
-          : v)));
-        const controlo = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const travao = controlo ? setTimeout(() => controlo.abort(), 30000) : null;
-        // O serviço só aceita quem tem sessão e é membro da equipa: vai o
-        // token da sessão do Supabase (não há chave nenhuma no browser).
-        // Pede-se a sessão de novo: um upload longo pode ter passado a
-        // validade do token do início (o Supabase renova-o sozinho).
-        let tokenWorker = (session && session.access_token) || '';
-        try { const { data: { session: s2 } } = await supabase.auth.getSession(); if (s2 && s2.access_token) tokenWorker = s2.access_token; } catch (e) { /* fica o do início */ }
-        fetch(`${VIDEO_WORKER_URL}/processar`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenWorker}` },
-          body: JSON.stringify({ teamId, storagePath: caminho, id: novo.id }),
-          ...(controlo ? { signal: controlo.signal } : {}),
-        }).then((r) => {
-          if (!r.ok) libertar(`O serviço de preparação recusou o vídeo (${r.status}) — ficou disponível tal como foi carregado.`);
-        }).catch(() => {
-          libertar('O serviço de preparação não respondeu — o vídeo ficou disponível tal como foi carregado.');
-        }).finally(() => { if (travao) clearTimeout(travao); });
-      }
+      if (pronto) prepararOriginal(novo);
+      else confirmarOriginalDepois(novo);
     } catch (e) {
       /* 413 = o ficheiro passa o limite de tamanho do Supabase (o limite
          global do projeto em Storage > Settings, ou o do próprio bucket).
@@ -3364,7 +3424,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       document.removeEventListener('visibilitychange', reAdquirirWakeLock);
       wakeLock?.release().catch(() => {});
     }
-  }, [teamId, setVideosOriginais]);
+  }, [teamId, setVideosOriginais, ficheiroOriginalDisponivel, prepararOriginal, confirmarOriginalDepois]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
   const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId);
@@ -4407,7 +4467,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} />
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} clinico={clinico} />}
           <NecessidadesLigacao key={teamId || 'sem-equipa'} teamId={teamId} onApi={setNecApiRaiz} />
