@@ -11917,7 +11917,14 @@ const COPIAR_ORDENS = [
   { id: 'criado', label: 'Criação' },
 ];
 
-function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar }) {
+/* MODO ESCOLHA MÚLTIPLA (`onAlternar`): usado na edição da sessão de
+   treino. Os mesmos cartões, a mesma procura, ordem e barra; mas tocar
+   num cartão junta-o à sessão (ou tira-o), sem abrir a pré-visualização.
+   Os escolhidos ficam com o visto e a borda dourada. Sem `onAlternar`,
+   tudo funciona exatamente como antes (copiar ideia/exercício). */
+function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar }) {
+  const multi = typeof onAlternar === 'function';
+  const escolhidosSet = React.useMemo(() => new Set(selecionados || []), [selecionados]);
   const isMobile = useIsMobile(700);
   const [busca, setBusca] = useState('');
   const [escolhido, setEscolhido] = useState(null);
@@ -12078,6 +12085,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: T.muted }}>
           {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
+          {multi && escolhidosSet.size > 0 && <span style={{ color: T.gold }}> · {itens.filter(x => escolhidosSet.has(x.id)).length} na sessão</span>}
         </div>
         <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
@@ -12138,18 +12146,31 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
           {daPagina.map(x => {
             const det = detalhesDe ? detalhesDe(x) : [];
             const sobre = aberto === x.id;
+            const marcado = multi && escolhidosSet.has(x.id);
             return (
               <button
                 key={x.id}
                 type="button"
-                onClick={() => setEscolhido(x.id)}
+                aria-pressed={multi ? marcado : undefined}
+                title={multi ? (marcado ? 'Tirar da sessão' : 'Juntar à sessão') : undefined}
+                onClick={() => (multi ? onAlternar(x) : setEscolhido(x.id))}
                 onMouseEnter={() => setAberto(x.id)}
                 onMouseLeave={() => setAberto(a => (a === x.id ? null : a))}
                 style={{
                   display: 'flex', flexDirection: 'column', textAlign: 'left', padding: 6, borderRadius: 8, cursor: 'pointer', ...body,
-                  border: `1px solid ${sobre ? T.gold : T.line}`, background: T.surfaceRaise, color: T.cream, minWidth: 0,
+                  border: `1px solid ${marcado || sobre ? T.gold : T.line}`,
+                  background: marcado ? `${T.crimson}40` : T.surfaceRaise, color: T.cream, minWidth: 0,
+                  position: 'relative', boxShadow: marcado ? `inset 0 0 0 1px ${T.gold}` : 'none',
                 }}
               >
+                {multi && (
+                  <span aria-hidden="true" style={{
+                    position: 'absolute', top: 10, left: 10, zIndex: 2, width: 20, height: 20, borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: marcado ? T.gold : 'rgba(0,0,0,0.45)', border: `1.5px solid ${marcado ? T.gold : 'rgba(255,255,255,0.55)'}`,
+                    color: '#1a1a1a',
+                  }}>{marcado && <Check size={13} strokeWidth={3} />}</span>
+                )}
                 {temEsquema(x)
                   ? <DiagramThumbAnimado key={`${x.id}|${pag}`} diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
                   : <div style={{ aspectRatio: CARTAO_ASPECT, marginBottom: 8, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 11 }}>Sem esquema</div>}
@@ -25225,6 +25246,8 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
      mesmo juntar, por exemplo, um exercício de Ativação a uma sessão
      de outra fase. */
   const [verTodasAsFases, setVerTodasAsFases] = useState(false);
+  // No telemóvel a fase sai da linha do escolhido, para caber o nome.
+  const estreitoSessao = useIsMobile(700);
   const exerciciosVisiveis = verTodasAsFases
     ? exercises
     : exercises.filter(x => x.phase === f.phase || f.exerciseIds.some(e => e.exId === x.id));
@@ -25291,25 +25314,47 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-                {exerciciosVisiveis.map(x => {
-                  const picked = f.exerciseIds.find(e => e.exId === x.id);
-                  return (
-                    <div key={x.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px',
-                      background: picked ? `${T.crimson}33` : T.bg, border: `1px solid ${picked ? T.gold + '66' : T.line}`, borderRadius: 7,
-                    }}>
-                      <input type="checkbox" checked={!!picked} onChange={() => toggleExercise(x.id)} />
-                      <span style={{ flex: 1, fontSize: 13, color: T.cream }}>{x.name}</span>
-                      <span style={{ fontSize: 11, color: T.mutedDim }}>{x.phase}</span>
-                      {picked && (
-                        <Input type="number" value={picked.duration} onChange={e => setDuration(x.id, e.target.value)}
-                          style={{ width: 60, padding: '4px 6px', fontSize: 12 }} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <>
+                {/* OS ESCOLHIDOS, pela ordem da sessão: nome, fase, minutos
+                    (editáveis) e tirar. É aqui que se acerta a duração. */}
+                {f.exerciseIds.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 4 }}>
+                    {f.exerciseIds.map((e, i) => {
+                      const x = exercises.find(ex => ex.id === e.exId);
+                      if (!x) return null;
+                      return (
+                        <div key={e.exId} style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
+                          background: `${T.crimson}33`, border: `1px solid ${T.gold}66`, borderRadius: 7,
+                        }}>
+                          <span style={{ ...mono, fontSize: 11.5, color: T.gold, width: 16, flexShrink: 0, textAlign: 'right' }}>{i + 1}</span>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</span>
+                          {!estreitoSessao && <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{x.phase}</span>}
+                          <Input type="number" value={e.duration} onChange={ev => setDuration(x.id, ev.target.value)}
+                            title="Minutos" style={{ width: 60, padding: '4px 6px', fontSize: 12, flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>min</span>
+                          <button type="button" onClick={() => toggleExercise(x.id)} title="Tirar da sessão" aria-label="Tirar da sessão" style={{
+                            background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0,
+                          }}><X size={14} /></button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* OS CARTÕES, como em "Anexar exercício existente": esquema
+                    em miniatura com ▶, procura, A–Z / Criação. Tocar no
+                    cartão junta à sessão; voltar a tocar tira. */}
+                <EscolherParaCopiar
+                  key={`${f.phase}|${verTodasAsFases ? 'todas' : 'fase'}`}
+                  itens={exerciciosVisiveis}
+                  tipo="exercicio"
+                  fase={verTodasAsFases ? 'todas as fases' : f.phase}
+                  nomeDe={(x) => x.name}
+                  detalhesDe={(x) => [x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration}'`, x.material].filter(Boolean)}
+                  selecionados={f.exerciseIds.map(e => e.exId)}
+                  onAlternar={(x) => toggleExercise(x.id)}
+                />
+              </>
             )}
           </div>
 
