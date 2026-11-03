@@ -12107,8 +12107,8 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
           {multi ? (
             /* Cada parte num espaço de largura fixa: trocar de fase para
                "todas as fases" ou mudar os números não desloca nada. */
-            <>Exercícios de <span style={{ color: T.cream, display: 'inline-block', width: 140, verticalAlign: 'bottom', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fase}</span>
-              {' · '}<span style={{ ...mono, display: 'inline-block', minWidth: '3ch' }}>{itens.length}</span></>
+            /* Sem o número total: a contagem já está nos cartões ("1–5 de 21"). */
+            <>Exercícios de <span style={{ color: T.cream, display: 'inline-block', width: 140, verticalAlign: 'bottom', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fase}</span></>
           ) : (
             <>{tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}</>
           )}
