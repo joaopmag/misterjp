@@ -11922,9 +11922,13 @@ const COPIAR_ORDENS = [
    num cartão junta-o à sessão (ou tira-o), sem abrir a pré-visualização.
    Os escolhidos ficam com o visto e a borda dourada. Sem `onAlternar`,
    tudo funciona exatamente como antes (copiar ideia/exercício). */
-function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar }) {
+function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar, minutosDe, onMinutos }) {
   const multi = typeof onAlternar === 'function';
   const escolhidosSet = React.useMemo(() => new Set(selecionados || []), [selecionados]);
+  // Posição de cada escolhido na sessão (1, 2, 3…), para o número no cartão.
+  const ordemNaSessao = React.useMemo(() => new Map((selecionados || []).map((id, i) => [id, i + 1])), [selecionados]);
+  // "Na sessão": mostra só os escolhidos, pela ordem da sessão.
+  const [soNaSessao, setSoNaSessao] = useState(false);
   const isMobile = useIsMobile(700);
   const [busca, setBusca] = useState('');
   const [escolhido, setEscolhido] = useState(null);
@@ -11969,6 +11973,10 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   const porLinha = largura ? Math.max(2, Math.min(6, Math.floor((largura + GAP) / (MIN + GAP)))) : (isMobile ? 2 : 5);
 
   const ordenados = React.useMemo(() => {
+    if (multi && soNaSessao) {
+      const porId = new Map(itens.map(x => [x.id, x]));
+      return (selecionados || []).map(id => porId.get(id)).filter(Boolean);
+    }
     const lista = itens.map((x, i) => ({ x, i }));
     if (ordem === 'az') {
       lista.sort((p, q) => String(nomeDe(p.x)).localeCompare(String(nomeDe(q.x)), 'pt', { sensitivity: 'base', numeric: true }));
@@ -11976,7 +11984,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
       lista.sort((p, q) => q.i - p.i);
     }
     return lista.map(p => p.x);
-  }, [itens, ordem, nomeDe]);
+  }, [itens, ordem, nomeDe, multi, soNaSessao, selecionados]);
   // Sem acentos nem maiúsculas: "pressao" encontra "Pressão".
   const semAcentos = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const q = semAcentos(busca.trim());
@@ -12104,13 +12112,23 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
       {/* Ordem + paginação */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 4, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 3 }}>
-          {COPIAR_ORDENS.map(o => (
-            <button key={o.id} type="button" onClick={() => setOrdem(o.id)} style={{
+          {COPIAR_ORDENS.map(o => {
+            const on = ordem === o.id && !(multi && soNaSessao);
+            return (
+            <button key={o.id} type="button" onClick={() => { setOrdem(o.id); setSoNaSessao(false); }} style={{
               padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, ...body,
-              background: ordem === o.id ? T.surfaceRaise : 'transparent', color: ordem === o.id ? T.cream : T.mutedDim,
-              fontWeight: ordem === o.id ? 600 : 400,
+              background: on ? T.surfaceRaise : 'transparent', color: on ? T.cream : T.mutedDim,
+              fontWeight: on ? 600 : 400,
             }}>{o.label}</button>
-          ))}
+            );
+          })}
+          {multi && (
+            <button type="button" onClick={() => { setSoNaSessao(true); setPagina(0); }} title="Ver só os exercícios desta sessão, pela ordem" style={{
+              padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, ...body,
+              background: soNaSessao ? T.surfaceRaise : 'transparent', color: soNaSessao ? T.gold : T.mutedDim,
+              fontWeight: soNaSessao ? 600 : 400, whiteSpace: 'nowrap',
+            }}>Na sessão <span style={{ ...mono }}>{(selecionados || []).length}</span></button>
+          )}
         </div>
         <div style={{ flex: 1 }} />
         {/* Sempre presente (mesmo sem resultados): a altura não muda. */}
@@ -12147,10 +12165,16 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
             const det = detalhesDe ? detalhesDe(x) : [];
             const sobre = aberto === x.id;
             const marcado = multi && escolhidosSet.has(x.id);
+            // No modo escolha múltipla o cartão tem um campo de minutos lá
+            // dentro: um <input> não pode viver dentro de um <button>, por
+            // isso aí o cartão é um <div> com papel de botão.
+            const Cartao = multi ? 'div' : 'button';
             return (
-              <button
+              <Cartao
                 key={x.id}
-                type="button"
+                {...(multi
+                  ? { role: 'button', tabIndex: 0, onKeyDown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onAlternar(x); } } }
+                  : { type: 'button' })}
                 aria-pressed={multi ? marcado : undefined}
                 title={multi ? (marcado ? 'Tirar da sessão' : 'Juntar à sessão') : undefined}
                 onClick={() => (multi ? onAlternar(x) : setEscolhido(x.id))}
@@ -12169,7 +12193,8 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     background: marcado ? T.gold : 'rgba(0,0,0,0.45)', border: `1.5px solid ${marcado ? T.gold : 'rgba(255,255,255,0.55)'}`,
                     color: '#1a1a1a',
-                  }}>{marcado && <Check size={13} strokeWidth={3} />}</span>
+                    ...mono, fontSize: 11, fontWeight: 700,
+                  }}>{marcado ? (ordemNaSessao.get(x.id) || <Check size={13} strokeWidth={3} />) : null}</span>
                 )}
                 {temEsquema(x)
                   ? <DiagramThumbAnimado key={`${x.id}|${pag}`} diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
@@ -12178,10 +12203,37 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
                   fontSize: 12.5, color: T.cream, lineHeight: 1.3, padding: '0 2px',
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 33,
                 }}>{nomeDe(x)}</div>
+                {multi ? (
+                  /* Altura fixa: com ou sem o campo dos minutos, o cartão
+                     tem sempre o mesmo tamanho. */
+                  <div style={{ height: 24, display: 'flex', alignItems: 'center', gap: 5, padding: '3px 2px 0', minWidth: 0 }}>
+                    {marcado && onMinutos ? (
+                      <>
+                        <input
+                          type="number" min={0} value={minutosDe ? minutosDe(x) : ''}
+                          onClick={e => e.stopPropagation()}
+                          onKeyDown={e => e.stopPropagation()}
+                          onChange={e => onMinutos(x, e.target.value)}
+                          title="Minutos deste exercício na sessão"
+                          style={{
+                            width: 52, height: 22, boxSizing: 'border-box', padding: '1px 5px', borderRadius: 5, fontSize: 12, ...mono,
+                            border: `1px solid ${T.gold}88`, background: T.bg, color: T.cream, outline: 'none',
+                          }}
+                        />
+                        <span style={{ fontSize: 10.5, color: T.mutedDim }}>min</span>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 10.5, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {[...det, editadoHa(x)].filter(Boolean).join(' · ') || ' '}
+                      </span>
+                    )}
+                  </div>
+                ) : (
                 <div style={{ fontSize: 10.5, color: T.mutedDim, padding: '3px 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[...det, editadoHa(x)].filter(Boolean).join(' · ') || ' '}
                 </div>
-              </button>
+                )}
+              </Cartao>
             );
           })}
           {/* Lugares vazios na última linha: a altura não muda entre páginas. */}
@@ -25246,8 +25298,6 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
      mesmo juntar, por exemplo, um exercício de Ativação a uma sessão
      de outra fase. */
   const [verTodasAsFases, setVerTodasAsFases] = useState(false);
-  // No telemóvel a fase sai da linha do escolhido, para caber o nome.
-  const estreitoSessao = useIsMobile(700);
   const exerciciosVisiveis = verTodasAsFases
     ? exercises
     : exercises.filter(x => x.phase === f.phase || f.exerciseIds.some(e => e.exId === x.id));
@@ -25317,7 +25367,10 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
               <>
                 {/* OS CARTÕES, como em "Anexar exercício existente": esquema
                     em miniatura com ▶, procura, A–Z / Criação. Tocar no
-                    cartão junta à sessão; voltar a tocar tira. */}
+                    cartão junta à sessão; voltar a tocar tira. Os
+                    escolhidos mostram o número da ordem e os minutos no
+                    próprio cartão, e "Na sessão" mostra só esses. Não há
+                    lista à parte: escolher não muda a altura de nada. */}
                 <EscolherParaCopiar
                   key={`${f.phase}|${verTodasAsFases ? 'todas' : 'fase'}`}
                   itens={exerciciosVisiveis}
@@ -25327,43 +25380,9 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                   detalhesDe={(x) => [x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration}'`, x.material].filter(Boolean)}
                   selecionados={f.exerciseIds.map(e => e.exId)}
                   onAlternar={(x) => toggleExercise(x.id)}
+                  minutosDe={(x) => { const e = f.exerciseIds.find(z => z.exId === x.id); return e ? e.duration : ''; }}
+                  onMinutos={(x, v) => setDuration(x.id, v)}
                 />
-                {/* NA SESSÃO, pela ordem da sessão: nome, fase, minutos
-                    (editáveis) e tirar. Fica POR BAIXO dos cartões e com
-                    ALTURA FIXA (desliza por dentro com mais exercícios):
-                    escolher ou tirar não empurra os cartões nem o resto da
-                    página. */}
-                <div style={{
-                  marginTop: 8, height: 4 * 38 + 3 * 5 + 2, overflowY: 'auto', overflowX: 'hidden',
-                  display: 'flex', flexDirection: 'column', gap: 5, boxSizing: 'content-box', overflowAnchor: 'none',
-                }}>
-                  {f.exerciseIds.length === 0 && (
-                    <div style={{
-                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
-                      border: `1px dashed ${T.line}`, borderRadius: 7, fontSize: 12.5, color: T.mutedDim, padding: '0 12px',
-                    }}>Toca nos cartões para juntar exercícios à sessão.</div>
-                  )}
-                  {f.exerciseIds.map((e, i) => {
-                    const x = exercises.find(ex => ex.id === e.exId);
-                    if (!x) return null;
-                    return (
-                      <div key={e.exId} style={{
-                        display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', height: 38, flexShrink: 0, boxSizing: 'border-box',
-                        background: `${T.crimson}33`, border: `1px solid ${T.gold}66`, borderRadius: 7,
-                      }}>
-                        <span style={{ ...mono, fontSize: 11.5, color: T.gold, width: 16, flexShrink: 0, textAlign: 'right' }}>{i + 1}</span>
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</span>
-                        {!estreitoSessao && <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{x.phase}</span>}
-                        <Input type="number" value={e.duration} onChange={ev => setDuration(x.id, ev.target.value)}
-                          title="Minutos" style={{ width: 56, padding: '3px 6px', fontSize: 12, flexShrink: 0, height: 28, boxSizing: 'border-box' }} />
-                        <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>min</span>
-                        <button type="button" onClick={() => toggleExercise(x.id)} title="Tirar da sessão" aria-label="Tirar da sessão" style={{
-                          background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0,
-                        }}><X size={14} /></button>
-                      </div>
-                    );
-                  })}
-                </div>
               </>
             )}
           </div>
