@@ -4367,7 +4367,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           <TreinosParaEditorCtx.Provider value={{ sessions, players }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
           {tab === 'plantel' && (
             <Plantel
               players={players} setPlayers={setPlayers}
@@ -4384,7 +4384,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} setMatches={setMatches} planoPedido={planoPedido} onPlanoTratado={() => setPlanoPedido(null)} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
             <GestaoEquipa
@@ -4524,7 +4524,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr, clipes }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, setExercises, exercisesMeta, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr, clipes }) {
   const [relatoOpen, setRelatoOpen] = useState(false);
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
@@ -4717,6 +4717,8 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       {sessionModal && (
         <SessionModal
           session={sessionModal} exercises={exercises} players={players}
+          setExercises={setExercises} exercisesMeta={exercisesMeta}
+          sessions={sessions} setSessions={setSessions}
           onClose={() => setSessionModal(null)}
           onSave={(data) => { setSessions(prev => prev.map(x => (x.id === data.id ? data : x))); setSessionModal(null); }}
         />
@@ -10517,7 +10519,10 @@ function Exercicios({ exercises, setExercises, meta }) {
   /* Mais recentes primeiro. A lista chega do servidor por ordem de
      criação (created_at) e os novos entram no fim — por isso basta
      inverter. Editar um exercício não o tira do sítio. */
-  const visible = (filter === 'Todas' ? exercises : exercises.filter(x => x.phase === filter)).slice().reverse();
+  // As versões arquivadas (antigas, guardadas só para as sessões
+  // passadas, ver "GRAVAR POR CIMA" na sessão) não aparecem na biblioteca.
+  const ativos = exercises.filter(x => x && !x.arquivado);
+  const visible = (filter === 'Todas' ? ativos : ativos.filter(x => x.phase === filter)).slice().reverse();
 
   return (
     <div>
@@ -11922,7 +11927,7 @@ const COPIAR_ORDENS = [
    num cartão junta-o à sessão (ou tira-o), sem abrir a pré-visualização.
    Os escolhidos ficam com o visto e a borda dourada. Sem `onAlternar`,
    tudo funciona exatamente como antes (copiar ideia/exercício). */
-function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar, minutosDe, onMinutos }) {
+function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar, selecionados, onAlternar, minutosDe, onMinutos, onEditar }) {
   const multi = typeof onAlternar === 'function';
   const escolhidosSet = React.useMemo(() => new Set(selecionados || []), [selecionados]);
   // Posição de cada escolhido na sessão (1, 2, 3…), para o número no cartão.
@@ -12195,6 +12200,18 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
                     color: '#1a1a1a',
                     ...mono, fontSize: 11, fontWeight: 700,
                   }}>{marcado ? (ordemNaSessao.get(x.id) || <Check size={13} strokeWidth={3} />) : null}</span>
+                )}
+                {/* LÁPIS: editar o exercício sem sair da sessão. Não junta
+                    nem tira o exercício (o toque fica só no lápis). */}
+                {multi && onEditar && (
+                  <span role="button" tabIndex={0} title="Editar este exercício" aria-label="Editar este exercício"
+                    onClick={(e) => { e.stopPropagation(); onEditar(x); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onEditar(x); } }}
+                    style={{
+                      position: 'absolute', top: 10, right: 10, zIndex: 2, width: 24, height: 24, borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                      background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff',
+                    }}><Pencil size={12} /></span>
                 )}
                 {temEsquema(x)
                   ? <DiagramThumbAnimado key={`${x.id}|${pag}`} diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
@@ -17629,7 +17646,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
 
   // Só faz sentido copiar de outros exercícios — nunca do próprio.
   // ... e só os da mesma fase de jogo que está escolhida aqui.
-  const importable = allExercises.filter(x => x && x.id !== (exercise && exercise.id) && x.name && x.phase === f.phase);
+  const importable = allExercises.filter(x => x && !x.arquivado && x.id !== (exercise && exercise.id) && x.name && x.phase === f.phase);
   const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
   const botaoCopiarRef = useRef(null);
   const alternarCopiar = () => {
@@ -22594,7 +22611,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico, convocatorias, setConvocatorias }) {
+function Planeamento({ sessions, setSessions, exercises, setExercises, exercisesMeta, players, setPlayers, matches, setMatches, standings, season, clinico, convocatorias, setConvocatorias }) {
   const isMobile = useIsMobile(700);
   // Ecrã inteiro do Simulador tem scroll próprio (é um overlay `position:
   // fixed`, não faz parte do <main> normal) — precisa da sua própria
@@ -23288,6 +23305,10 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           session={isEditing ? modal : null}
           presetDate={presetDate}
           exercises={exercises}
+          setExercises={setExercises}
+          exercisesMeta={exercisesMeta}
+          sessions={sessions}
+          setSessions={setSessions}
           players={players}
           clinico={clinico}
           onIntegrarConvidado={(c, setLista, lista) => integrarConvidado({
@@ -25262,7 +25283,7 @@ function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado }) {
+function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions }) {
   const [f, setF] = useState(session || {
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
@@ -25298,9 +25319,58 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
      mesmo juntar, por exemplo, um exercício de Ativação a uma sessão
      de outra fase. */
   const [verTodasAsFases, setVerTodasAsFases] = useState(false);
+  /* EDITAR UM EXERCÍCIO A PARTIR DA SESSÃO (lápis no cartão). Abre o
+     mesmo editor de exercício. Ao guardar com alterações, pergunta:
+     gravar por cima (o exercício muda em todo o lado) ou criar um
+     exercício novo (o original fica como estava e esta sessão passa a
+     usar o novo, no mesmo lugar e com os mesmos minutos). */
+  const [editarEx, setEditarEx] = useState(null);
+  const [escolhaGravar, setEscolhaGravar] = useState(null); // dados editados à espera da escolha
+  /* GRAVAR POR CIMA, DAQUI PARA A FRENTE. O exercício muda nesta sessão
+     e nas de data igual ou posterior. As sessões de data ANTERIOR que o
+     usavam ficam como estavam: guarda-se uma cópia da versão antiga
+     (arquivada, não aparece na biblioteca nem nas escolhas) e essas
+     sessões passam a apontar para ela. Assim o histórico de treinos não
+     é reescrito. */
+  const sessoesAnterioresCom = (exId) => (sessions || []).filter(s => s && s.id !== f.id && s.date && f.date && s.date < f.date
+    && (s.exerciseIds || []).some(e => e.exId === exId));
+  const gravarPorCima = (data) => {
+    const original = exercises.find(x => x.id === data.id);
+    const passadas = original && setSessions ? sessoesAnterioresCom(data.id) : [];
+    if (passadas.length) {
+      const arquivo = { ...original, id: uid(), arquivado: true, versaoDe: original.id, arquivadoEm: todayStr() };
+      const ids = new Set(passadas.map(s => s.id));
+      setExercises(prev => [...prev.map(x => (x.id === data.id ? data : x)), arquivo]);
+      setSessions(prev => (prev || []).map(s => (ids.has(s.id)
+        ? { ...s, exerciseIds: (s.exerciseIds || []).map(e => (e.exId === data.id ? { ...e, exId: arquivo.id } : e)) }
+        : s)));
+    } else {
+      setExercises(prev => prev.map(x => (x.id === data.id ? data : x)));
+    }
+    setEscolhaGravar(null); setEditarEx(null);
+  };
+  const gravarComoNovo = (data) => {
+    const original = exercises.find(x => x.id === data.id);
+    const nome = (data.name || '').trim();
+    const novo = {
+      ...data, id: uid(),
+      name: original && nome === (original.name || '').trim() ? `${nome} (cópia)` : nome,
+    };
+    setExercises(prev => [...prev, novo]);
+    setF(prev => {
+      const tem = prev.exerciseIds.some(e => e.exId === data.id);
+      return {
+        ...prev,
+        exerciseIds: tem
+          ? prev.exerciseIds.map(e => (e.exId === data.id ? { ...e, exId: novo.id } : e))
+          : [...prev.exerciseIds, { exId: novo.id, duration: novo.defaultDuration || 15 }],
+      };
+    });
+    setEscolhaGravar(null); setEditarEx(null);
+  };
   const exerciciosVisiveis = verTodasAsFases
-    ? exercises
-    : exercises.filter(x => x.phase === f.phase || f.exerciseIds.some(e => e.exId === x.id));
+    ? exercises.filter(x => !x.arquivado || f.exerciseIds.some(e => e.exId === x.id))
+    : exercises.filter(x => (x.phase === f.phase && !x.arquivado) || f.exerciseIds.some(e => e.exId === x.id));
 
   return (
     <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide xwide fullPage>
@@ -25382,6 +25452,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                   onAlternar={(x) => toggleExercise(x.id)}
                   minutosDe={(x) => { const e = f.exerciseIds.find(z => z.exId === x.id); return e ? e.duration : ''; }}
                   onMinutos={(x, v) => setDuration(x.id, v)}
+                  onEditar={setExercises ? (x) => setEditarEx(x) : undefined}
                 />
               </>
             )}
@@ -25463,6 +25534,58 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn disabled={!f.date} onClick={() => onSave(f)}><Check size={15} /> Guardar sessão</Btn>
       </div>
+
+      {/* O editor fica montado enquanto se escolhe como guardar: "Voltar
+          à edição" volta exatamente ao que estava a ser feito. */}
+      {editarEx && (
+        <ExerciseModal
+          exercise={editarEx}
+          allExercises={exercises}
+          meta={exercisesMeta}
+          onClose={() => setEditarEx(null)}
+          onSave={(data) => {
+            // Sem alterações: fecha, sem perguntar nada.
+            const original = exercises.find(x => x.id === editarEx.id) || editarEx;
+            let igual = false;
+            try { igual = JSON.stringify(data) === JSON.stringify(original); } catch (e) { igual = false; }
+            if (igual) { setEditarEx(null); return; }
+            setEscolhaGravar(data);
+          }}
+        />
+      )}
+      {escolhaGravar && (
+        <Modal title="Guardar as alterações" onClose={() => setEscolhaGravar(null)}>
+          <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, marginBottom: 6 }}>
+            Alteraste <strong>{(editarEx && editarEx.name) || 'este exercício'}</strong>. Como queres guardar?
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0 18px' }}>
+            <button type="button" onClick={() => gravarPorCima(escolhaGravar)} style={{
+              textAlign: 'left', padding: '11px 13px', borderRadius: 8, cursor: 'pointer', ...body,
+              border: `1px solid ${T.line}`, background: T.surfaceRaise, color: T.cream,
+            }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>Gravar por cima</div>
+              <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 3 }}>
+                {(() => {
+                  const n = editarEx ? sessoesAnterioresCom(editarEx.id).length : 0;
+                  return n
+                    ? `O exercício fica alterado a partir desta sessão. ${n === 1 ? 'A sessão anterior que o usa fica' : `As ${n} sessões anteriores que o usam ficam`} com a versão antiga.`
+                    : 'O exercício fica alterado a partir desta sessão, também nas sessões seguintes que o usam.';
+                })()}
+              </div>
+            </button>
+            <button type="button" onClick={() => gravarComoNovo(escolhaGravar)} style={{
+              textAlign: 'left', padding: '11px 13px', borderRadius: 8, cursor: 'pointer', ...body,
+              border: `1px solid ${T.line}`, background: T.surfaceRaise, color: T.cream,
+            }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>Criar novo exercício</div>
+              <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 3 }}>O original fica como estava. Esta sessão passa a usar o novo, no mesmo lugar e com os mesmos minutos.</div>
+            </button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Btn variant="ghost" onClick={() => setEscolhaGravar(null)}><ChevronLeft size={14} /> Voltar à edição</Btn>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
