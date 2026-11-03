@@ -4718,7 +4718,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         <SessionModal
           session={sessionModal} exercises={exercises} players={players}
           setExercises={setExercises} exercisesMeta={exercisesMeta}
-          sessions={sessions} setSessions={setSessions}
+          sessions={sessions} setSessions={setSessions} matches={matches}
           onClose={() => setSessionModal(null)}
           onSave={(data) => { setSessions(prev => prev.map(x => (x.id === data.id ? data : x))); setSessionModal(null); }}
         />
@@ -12099,7 +12099,11 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     <div ref={el => { if (el) alturaListaRef.current = el.offsetHeight; rodaRef(el); }}
       style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10, boxSizing: 'border-box', overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 12, color: T.muted }}>
+        {/* Na sessão (multi) o rótulo tem LARGURA FIXA: trocar para "todas
+            as fases" ou mudar as contagens não empurra a procura. */}
+        <div style={{ fontSize: 12, color: T.muted, ...(multi ? {
+          flex: isMobile ? '1 1 100%' : '0 0 360px', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        } : {}) }}>
           {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
           {/* Sempre no lugar (escondido quando é 0) e com largura fixa:
               escolher ou tirar não pode empurrar a caixa da procura. */}
@@ -23335,6 +23339,7 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
           exercisesMeta={exercisesMeta}
           sessions={sessions}
           setSessions={setSessions}
+          matches={matches}
           players={players}
           clinico={clinico}
           onIntegrarConvidado={(c, setLista, lista) => integrarConvidado({
@@ -25309,7 +25314,7 @@ function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions }) {
+function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions, matches }) {
   const [f, setF] = useState(session || {
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
@@ -25345,6 +25350,27 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
      mesmo juntar, por exemplo, um exercício de Ativação a uma sessão
      de outra fase. */
   const [verTodasAsFases, setVerTodasAsFases] = useState(false);
+  /* PRÓXIMO ADVERSÁRIO AUTOMÁTICO: o primeiro jogo marcado no dia da
+     sessão ou depois. Só preenche se o campo estiver vazio ou ainda
+     tiver o valor que foi posto automaticamente (mudar a data troca-o);
+     o que o treinador escrever à mão nunca é substituído. */
+  const proximoJogoSessao = React.useMemo(() => {
+    if (!f.date) return null;
+    return (matches || [])
+      .filter(m => m && m.date && m.date >= f.date && String(m.opponent || '').trim())
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))[0] || null;
+  }, [matches, f.date]);
+  const adversarioAutoRef = useRef(null);
+  useEffect(() => {
+    if (f.phase === 'Descanso') return;
+    const auto = proximoJogoSessao ? String(proximoJogoSessao.opponent).trim() : '';
+    const atual = String(f.opponent || '').trim();
+    const podeMudar = !atual || (adversarioAutoRef.current != null && atual === adversarioAutoRef.current);
+    if (!podeMudar || atual === auto) { if (atual === auto && auto) adversarioAutoRef.current = auto; return; }
+    adversarioAutoRef.current = auto || null;
+    setF(prev => ({ ...prev, opponent: auto }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proximoJogoSessao, f.phase]);
   /* EDITAR UM EXERCÍCIO A PARTIR DA SESSÃO (lápis no cartão). Abre o
      mesmo editor de exercício. Ao guardar com alterações, pergunta:
      gravar por cima (o exercício muda em todo o lado) ou criar um
@@ -25424,7 +25450,11 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
         {f.phase !== 'Descanso' && (
           <>
             <Field label="Título / foco da sessão"><Input value={f.focus} onChange={e => setF({ ...f, focus: e.target.value })} placeholder="Ex: Pressing alto e coberturas" /></Field>
-            <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
+            <Field label="Próximo adversário (opcional)">
+              <Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz"
+                title={proximoJogoSessao && String(f.opponent || '').trim() === String(proximoJogoSessao.opponent).trim()
+                  ? `Do próximo jogo marcado: ${fmtDate(proximoJogoSessao.date)}` : undefined} />
+            </Field>
           </>
         )}
       </div>
