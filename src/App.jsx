@@ -8189,7 +8189,13 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
     setErro('');
     setACarregar(true);
     try {
-      const caminho = `${teamId}/${uid()}-${file.name}`;
+      /* O Supabase Storage recusa acentos e alguns símbolos no caminho
+         ("Invalid key"), por isso o nome no Storage vai limpo, como nos
+         vídeos. O nome original continua a aparecer na lista. */
+      const nomeLimpo = file.name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9.\-]/g, '_');
+      const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
       const { error } = await supabase.storage.from('documentos').upload(caminho, file, { upsert: false });
       if (error) throw error;
       setDocumentos(prev => [...(prev || []), {
