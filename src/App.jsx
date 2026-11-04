@@ -4426,7 +4426,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          <TreinosParaEditorCtx.Provider value={{ sessions, players, matches }}>
+          <TreinosParaEditorCtx.Provider value={{ sessions, players, matches, epoca: season && season.name }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
           {tab === 'plantel' && (
             <Plantel
@@ -4538,13 +4538,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               <DocumentosApp
                 ref={documentosRef}
                 documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions}
-                matches={matches} clinico={clinico} teamId={teamId} semBotaoTopo
+                matches={matches} clinico={clinico} teamId={teamId} semBotaoTopo epoca={season && season.name}
               />
             </div>
           </div>
           {tab === 'desenvolvimento' && (
             <DesenvolvimentoIndividual
               players={players}
+              setPlayers={setPlayers}
+              documentos={documentos}
               desenvolvimento={desenvolvimento}
               setDesenvolvimento={setDesenvolvimento}
               autorizarRemocaoEmMassa={autorizarApagarMomento}
@@ -7890,7 +7892,277 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
 }
 
 
-const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo }, ref) {
+
+/* FICHA INDIVIDUAL DO JOGADOR (Word) — UM SÓ .docx COM UMA FICHA POR
+   JOGADOR, cada uma numa página.
+
+   Lê o modelo carregado em Documentos (tal como está, com o cabeçalho, as
+   cores e a formatação) e encontra cada caixa pelo TEXTO do rótulo, sem
+   ser preciso mexer no Word:
+   · "Nome Completo": a caixa à direita;
+   · "Data nascimento", "Nacionalidade", "Posição", "Clube Anterior",
+     "Peso", "Altura", "Lateralidade", "Contacto": a caixa por baixo;
+   · "FOTO": a própria caixa, com a fotografia;
+   · em cada "Avaliação Inicial / Intermédia / Final": o texto a seguir a
+     "Observações:" e o número na caixa à direita de "Nível Atual" e de
+     "Potencial" (da Avaliação da época, na ficha do jogador). */
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const semAcentosDoc = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+function textoDoNo(no) {
+  return [...no.getElementsByTagNameNS(W_NS, 't')].map(t => t.textContent).join('');
+}
+// Escreve um texto na caixa (no 1.º parágrafo, com o tipo de letra do parágrafo).
+function escreverNaCelula(doc, tc, texto) {
+  const p = tc.getElementsByTagNameNS(W_NS, 'p')[0];
+  if (!p) return;
+  [...p.childNodes].forEach(n => { if (n.localName === 'r' || n.localName === 'hyperlink') p.removeChild(n); });
+  const linhas = String(texto == null ? '' : texto).split(/\r?\n/);
+  const pPr = p.getElementsByTagNameNS(W_NS, 'pPr')[0];
+  const rPrMarca = pPr ? [...pPr.childNodes].find(n => n.localName === 'rPr') : null;
+  const r = doc.createElementNS(W_NS, 'w:r');
+  if (rPrMarca) {
+    // Mantém o tipo e o tamanho de letra, mas não a COR: há modelos em que
+    // as caixas vazias guardam o branco dos rótulos, e o texto ficava
+    // invisível (branco sobre branco). Sem cor, fica a do documento.
+    const rPr = rPrMarca.cloneNode(true);
+    [...rPr.childNodes].forEach(n => { if (n.localName === 'color') rPr.removeChild(n); });
+    r.appendChild(rPr);
+  }
+  linhas.forEach((l, i) => {
+    if (i > 0) r.appendChild(doc.createElementNS(W_NS, 'w:br'));
+    const t = doc.createElementNS(W_NS, 'w:t');
+    t.setAttribute('xml:space', 'preserve');
+    t.textContent = l;
+    r.appendChild(t);
+  });
+  p.appendChild(r);
+}
+// Observações: parágrafos novos logo a seguir ao rótulo, sem negrito nem sublinhado.
+function escreverObservacoes(doc, tc, texto) {
+  const ps = [...tc.getElementsByTagNameNS(W_NS, 'p')];
+  const rotulo = ps.find(p => /observa/i.test(semAcentosDoc(textoDoNo(p)))) || ps[0];
+  if (!rotulo) return;
+  // Os parágrafos vazios que já lá estavam (o espaço da caixa) ficam.
+  const linhas = String(texto || '').split(/\r?\n/);
+  let depois = rotulo;
+  linhas.forEach(l => {
+    const p = doc.createElementNS(W_NS, 'w:p');
+    const pPr0 = rotulo.getElementsByTagNameNS(W_NS, 'pPr')[0];
+    if (pPr0) {
+      const pPr = pPr0.cloneNode(true);
+      [...pPr.childNodes].forEach(n => { if (n.localName === 'rPr') pPr.removeChild(n); });
+      p.appendChild(pPr);
+    }
+    const r = doc.createElementNS(W_NS, 'w:r');
+    const t = doc.createElementNS(W_NS, 'w:t');
+    t.setAttribute('xml:space', 'preserve');
+    t.textContent = l;
+    r.appendChild(t);
+    p.appendChild(r);
+    tc.insertBefore(p, depois.nextSibling);
+    depois = p;
+  });
+}
+// Grelha de uma tabela: para cada linha, as caixas com a coluna onde começam.
+function grelhaDaTabela(tbl) {
+  return [...tbl.childNodes].filter(n => n.localName === 'tr').map(tr => {
+    let col = 0;
+    return [...tr.childNodes].filter(n => n.localName === 'tc').map(tc => {
+      const span = Number((tc.getElementsByTagNameNS(W_NS, 'gridSpan')[0] || { getAttribute: () => 1 }).getAttribute('w:val')) || 1;
+      const c = { tc, col, span };
+      col += span;
+      return c;
+    });
+  });
+}
+function dataPt(d) {
+  if (!d) return '';
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(d);
+}
+// dataURL → bytes + tamanho natural (para a foto).
+async function fotoParaWord(src) {
+  if (!src || typeof src !== 'string') return null;
+  try {
+    const resp = await fetch(src);
+    const blob = await resp.blob();
+    const tipo = /png/i.test(blob.type) ? 'png' : 'jpeg';
+    const url = URL.createObjectURL(blob);
+    const dim = await new Promise((res) => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res(null); im.src = url; });
+    URL.revokeObjectURL(url);
+    if (!dim || !dim.w || !dim.h) return null;
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), tipo, ...dim };
+  } catch (e) { return null; }
+}
+async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) throw new Error('Este ficheiro não é um Word (.docx) válido.');
+  const xml = await docFile.async('string');
+  const parser = new DOMParser();
+  const modelo = parser.parseFromString(xml, 'application/xml');
+  const corpo = modelo.getElementsByTagNameNS(W_NS, 'body')[0];
+  if (!corpo) throw new Error('Não encontrei o conteúdo do Word.');
+  if (!/nome completo/.test(semAcentosDoc(textoDoNo(corpo)))) throw new Error('Este Word não tem os campos da Ficha Individual do Jogador ("Nome Completo", "Posição"…).');
+  const filhos = [...corpo.childNodes].filter(n => n.nodeType === 1);
+  const sectPr = filhos.find(n => n.localName === 'sectPr') || null;
+  const conteudo = filhos.filter(n => n !== sectPr);
+  conteudo.forEach(n => corpo.removeChild(n));
+
+  // Relações e tipos (para as fotos).
+  const relsPath = 'word/_rels/document.xml.rels';
+  let rels = zip.file(relsPath) ? await zip.file(relsPath).async('string') : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
+  let tipos = await zip.file('[Content_Types].xml').async('string');
+  const garantirTipo = (ext, mime) => {
+    if (!new RegExp(`Extension="${ext}"`, 'i').test(tipos)) tipos = tipos.replace('<Types ', '<Types ').replace(/<Types([^>]*)>/, `<Types$1><Default Extension="${ext}" ContentType="${mime}"/>`);
+  };
+  let idDesenho = 5000;
+
+  const LABELS_ABAIXO = {
+    'data nascimento': (p) => dataPt(p.birthdate),
+    'data de nascimento': (p) => dataPt(p.birthdate),
+    'nacionalidade': (p) => p.nationality || '',
+    'posicao': (p) => [p.position, p.secondaryPosition].filter(Boolean).join('/'),
+    'clube anterior': (p) => p.previousClub || '',
+    'peso': (p) => (p.weight ? `${p.weight} kg` : ''),
+    'altura': (p) => (p.height ? `${p.height} cm` : ''),
+    'lateralidade': (p) => p.laterality || '',
+    'contacto': (p) => p.contact || '',
+  };
+  const FASE_DO_TITULO = (t) => (/avaliacao inicial/.test(t) ? 'inicial' : /avaliacao intermedia/.test(t) ? 'intermedia' : /avaliacao final/.test(t) ? 'final' : null);
+
+  for (let k = 0; k < players.length; k++) {
+    const p = players[k];
+    const av = avaliacaoBaseDoJogador(p, epoca);
+    const copia = conteudo.map(n => n.cloneNode(true));
+    const foto = p.photo ? await fotoParaWord(p.photo) : null;
+    let fase = null;
+    copia.forEach(no => {
+      const tabelas = no.localName === 'tbl' ? [no] : [...no.getElementsByTagNameNS(W_NS, 'tbl')];
+      tabelas.forEach(tbl => {
+        const g = grelhaDaTabela(tbl);
+        g.forEach((linha, ri) => {
+          linha.forEach((c, ci) => {
+            const t = semAcentosDoc(textoDoNo(c.tc));
+            const f = FASE_DO_TITULO(t);
+            if (f) { fase = f; return; }
+            const ao_lado = linha[ci + 1] ? linha[ci + 1].tc : null;
+            const abaixo = (g[ri + 1] || []).find(x => x.col === c.col);
+            if (t === 'nome completo') { if (ao_lado) escreverNaCelula(modelo, ao_lado, p.name || ''); return; }
+            if (LABELS_ABAIXO[t]) { if (abaixo) escreverNaCelula(modelo, abaixo.tc, LABELS_ABAIXO[t](p)); return; }
+            if (/^observacoes:?$/.test(t) && fase) { if ((av[fase] || {}).obs) escreverObservacoes(modelo, c.tc, av[fase].obs); return; }
+            if (t === 'nivel atual' && fase && ao_lado) { escreverNaCelula(modelo, ao_lado, (av[fase] || {}).nivel ? String(av[fase].nivel) : ''); return; }
+            if (t === 'potencial' && fase && ao_lado) { escreverNaCelula(modelo, ao_lado, (av[fase] || {}).potencial ? String(av[fase].potencial) : ''); return; }
+            if (t === 'foto') {
+              if (!foto) { escreverNaCelula(modelo, c.tc, ''); return; }
+              // Tamanho: a largura da caixa (menos margens) e a altura das
+              // linhas que ela ocupa; a foto é recortada ao centro para
+              // encher esse retângulo, sem esticar.
+              const tcW = Number((c.tc.getElementsByTagNameNS(W_NS, 'tcW')[0] || { getAttribute: () => 2000 }).getAttribute('w:w')) || 2000;
+              let altTw = 0;
+              for (let rj = ri; rj < g.length; rj++) {
+                const cel = g[rj].find(x => x.col === c.col);
+                if (rj > ri && !(cel && cel.tc.getElementsByTagNameNS(W_NS, 'vMerge')[0])) break;
+                const tr = cel ? cel.tc.parentNode : null;
+                const trH = tr && tr.getElementsByTagNameNS(W_NS, 'trHeight')[0];
+                altTw += trH ? Number(trH.getAttribute('w:val')) || 400 : 400;
+              }
+              // Retrato (3:4), com a altura das linhas da caixa (as linhas
+              // "pelo menos" ficam maiores do que o declarado, por isso usa-se
+              // um mínimo de ~3,2 cm) e nunca mais larga do que a caixa.
+              const altFoto = Math.max(1800, altTw - 120);
+              const largFoto = Math.min(Math.max(600, tcW - 240), Math.round(altFoto * 0.75));
+              const caixaW = largFoto * 635;
+              const caixaH = Math.round((largFoto / 0.75)) * 635;
+              const ratioCaixa = caixaW / caixaH; const ratioFoto = foto.w / foto.h;
+              let l = 0, r = 0, tt = 0, b = 0;
+              if (ratioFoto > ratioCaixa) { const corte = (1 - ratioCaixa / ratioFoto) / 2; l = r = Math.round(corte * 100000); }
+              else { const corte = (1 - ratioFoto / ratioCaixa) / 2; tt = b = Math.round(corte * 100000); }
+              const ext = foto.tipo === 'png' ? 'png' : 'jpeg';
+              const nomeMedia = `media/mjp_foto_${k + 1}.${ext}`;
+              zip.file(`word/${nomeMedia}`, foto.bytes);
+              garantirTipo(ext, ext === 'png' ? 'image/png' : 'image/jpeg');
+              const rId = `rIdMjpFoto${k + 1}`;
+              rels = rels.replace('</Relationships>', `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${nomeMedia}"/></Relationships>`);
+              idDesenho += 1;
+              const desenhoXml = `<w:r xmlns:w="${W_NS}"><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${caixaW}" cy="${caixaH}"/><wp:docPr id="${idDesenho}" name="Foto ${idDesenho}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${idDesenho}" name="foto"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="${rId}"/><a:srcRect l="${l}" t="${tt}" r="${r}" b="${b}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${caixaW}" cy="${caixaH}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+              const run = parser.parseFromString(desenhoXml, 'application/xml').documentElement;
+              const par = c.tc.getElementsByTagNameNS(W_NS, 'p')[0];
+              if (par) {
+                [...par.childNodes].forEach(n => { if (n.localName === 'r') par.removeChild(n); });
+                // Centrada na caixa.
+                let pPr = [...par.childNodes].find(n => n.localName === 'pPr');
+                if (!pPr) { pPr = modelo.createElementNS(W_NS, 'w:pPr'); par.insertBefore(pPr, par.firstChild); }
+                [...pPr.childNodes].forEach(n => { if (n.localName === 'jc') pPr.removeChild(n); });
+                const jc = modelo.createElementNS(W_NS, 'w:jc'); jc.setAttribute('w:val', 'center');
+                const depoisDe = [...pPr.childNodes].find(n => n.localName === 'rPr');
+                pPr.insertBefore(jc, depoisDe || null);
+                par.appendChild(modelo.importNode(run, true));
+              }
+            }
+          });
+        });
+      });
+    });
+    // Quebra de página entre fichas.
+    if (k > 0) {
+      const pq = modelo.createElementNS(W_NS, 'w:p');
+      const rq = modelo.createElementNS(W_NS, 'w:r');
+      const br = modelo.createElementNS(W_NS, 'w:br');
+      br.setAttribute('w:type', 'page');
+      rq.appendChild(br); pq.appendChild(rq);
+      corpo.insertBefore(pq, sectPr);
+    }
+    copia.forEach(n => corpo.insertBefore(n, sectPr));
+  }
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
+  zip.file(relsPath, rels);
+  zip.file('[Content_Types].xml', tipos);
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function GerarFichasIndividuaisForm({ doc, players, epoca, onClose }) {
+  const hoje = todayStr();
+  const ativos = sortByPosition((players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje)));
+  const [aProcessar, setAProcessar] = useState(false);
+  const [erro, setErro] = useState('');
+  const chaveEpoca = String(epoca || '').trim() || 'sem-epoca';
+  const gerar = async () => {
+    setErro(''); setAProcessar(true);
+    try {
+      const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+      if (error) throw error;
+      const blob = await gerarFichasIndividuais(await ficheiro.arrayBuffer(), ativos, chaveEpoca);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${doc.nome || 'Fichas individuais'} - ${String(epoca || '').replace('/', '-') || 'época'}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Não consegui gerar o ficheiro.');
+    } finally { setAProcessar(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.5 }}>
+        Um só Word com uma ficha por página para {ativos.length} jogador{ativos.length === 1 ? '' : 'es'} do plantel (os que já saíram ficam de fora), pela ordem das posições.
+      </div>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
+        Dados da ficha de cada jogador no Plantel e da Avaliação da época {epoca || ''} (Observações, Nível atual e Potencial de cada fase).
+      </div>
+      {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={gerar} disabled={aProcessar || !ativos.length}>
+          {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
+        </Btn>
+      </div>
+    </div>
+  );
+}
+const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo, epoca }, ref) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
@@ -7990,12 +8262,23 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                       <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
                     </Btn>
                   )}
+                  {/\.docx$/i.test(doc.fileName) && (
+                    <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                      <FileText size={14} /> Gerar fichas dos jogadores
+                    </Btn>
+                  )}
+                  {/\.doc$/i.test(doc.fileName) && (
+                    <span title="Abre no Word e guarda como .docx, depois carrega esse ficheiro" style={{ fontSize: 11.5, color: T.warn }}>Guarda como .docx para gerar</span>
+                  )}
                   <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, flexShrink: 0 }}>
                     <Trash2 size={15} />
                   </button>
                 </div>
               </div>
-              {aGerar === doc.id && (
+              {aGerar === doc.id && /\.docx$/i.test(doc.fileName) && (
+                <GerarFichasIndividuaisForm doc={doc} players={players} epoca={epoca} onClose={() => setAGerar(null)} />
+              )}
+              {aGerar === doc.id && !/\.docx$/i.test(doc.fileName) && (
                 <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
               )}
             </div>
@@ -8901,7 +9184,7 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
    As sessões e o plantel chegam por contexto (posto à volta do conteúdo
    da app), para não ter de passar props por todos os sítios onde o
    editor aparece. */
-const TreinosParaEditorCtx = React.createContext({ sessions: [], players: [], matches: [] });
+const TreinosParaEditorCtx = React.createContext({ sessions: [], players: [], matches: [], epoca: '' });
 
 // Sessões que interessam para carregar: de ontem para a frente, com gente.
 function sessoesParaCarregar(sessions) {
@@ -10559,26 +10842,59 @@ function CaptainArmband({ rank, size = 16, title }) {
   );
 }
 
+/* AVALIAÇÃO DA ÉPOCA (ficha do jogador): três fases, cada uma com o
+   Nível atual e o Potencial (a escala de 1 a 5 do estatuto) e as
+   Observações. Fica guardada por época em `avaliacoesEpoca[época]`, para
+   a época seguinte começar em branco sem perder o histórico.
+   O "Estatuto principal" (statusMain) e o "Estatuto secundário"
+   (statusSecondary), usados no resto da app (selo da ficha, contagens do
+   Plantel, sugestões do onze), passam a ser os da ÚLTIMA fase preenchida:
+   Nível atual → principal, Potencial → secundário. */
+const FASES_AVALIACAO = [
+  { id: 'inicial', label: 'Avaliação Inicial' },
+  { id: 'intermedia', label: 'Avaliação Intermédia' },
+  { id: 'final', label: 'Avaliação Final' },
+];
+function avaliacaoDaEpoca(p, epoca) {
+  const todas = (p && p.avaliacoesEpoca) || {};
+  return (epoca && todas[epoca]) || null;
+}
+// A última fase com cada valor preenchido (para o estatuto atual).
+function estatutoDaAvaliacao(av) {
+  let nivel = null; let potencial = null; let fase = null;
+  FASES_AVALIACAO.forEach(fa => {
+    const x = av && av[fa.id];
+    if (x && Number(x.nivel) >= 1) { nivel = Number(x.nivel); fase = fa; }
+    if (x && Number(x.potencial) >= 1) potencial = Number(x.potencial);
+  });
+  return { nivel, potencial, fase };
+}
+
 function PlayerModal({ player, onClose, onSave }) {
   const [f, setF] = useState(player || {
     name: '', number: '', position: 'MC', secondaryPosition: '', nationality: '', birthdate: '', laterality: '', contact: '',
     weight: '', height: '', previousClub: '', entryDate: '', exitDate: '',
     statusMain: '', statusSecondary: '', photo: null,
   });
+  /* A Avaliação da época edita-se agora em Desenvolvimento › Estatuto
+     da época (o plantel todo numa grelha). Aqui fica só o resumo. */
+  const { epoca } = React.useContext(TreinosParaEditorCtx);
+  const chaveEpoca = String(epoca || '').trim() || 'sem-epoca';
+  const estatutoAtual = estatutoDaAvaliacao(avaliacaoBaseDoJogador(f, chaveEpoca));
+  const guardar = () => onSave(f);
 
   return (
     <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide xwide fullPage>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Identificação</div>
         <div style={{ ...FIELD_GRID }}>
-          <div style={FIELD_FULL}>
+          {/* Nome completo e o NOME POR QUE É CONHECIDO no balneário (ex.:
+              "Cadilhe", "Dani") lado a lado. O segundo é o que aparece em
+              toda a app onde o nome é curto: campo, convocatória,
+              relatórios, Portal… Sem ele, a app escolhe o primeiro nome (ou
+              o apelido, se houver dois iguais). */}
+          <div style={{ ...FIELD_FULL, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
             <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
-          </div>
-          {/* O NOME POR QUE É CONHECIDO no balneário (ex.: "Cadilhe", "Dani").
-              É este que aparece em toda a app onde o nome é curto: campo,
-              convocatória, relatórios, Portal… Sem ele, a app escolhe o
-              primeiro nome (ou o apelido, se houver dois iguais). */}
-          <div style={FIELD_FULL}>
             <Field label="Nome no clube (como é conhecido)"><Input value={f.alcunha || ''} onChange={e => setF({ ...f, alcunha: e.target.value })} placeholder="Ex.: Dani, Cadilhe, Rodri" /></Field>
           </div>
           <Field label="Nº"><Input value={f.number} onChange={e => setF({ ...f, number: e.target.value })} placeholder="10" /></Field>
@@ -10607,23 +10923,13 @@ function PlayerModal({ player, onClose, onSave }) {
           <Field label="Clube anterior"><Input value={f.previousClub} onChange={e => setF({ ...f, previousClub: e.target.value })} /></Field>
           <Field label="Data de entrada"><Input type="date" value={f.entryDate} onChange={e => setF({ ...f, entryDate: e.target.value })} /></Field>
           <Field label="Data de saída"><Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} /></Field>
-        </div>
-      </div>
-
-      <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
-        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Estatuto no Plantel</div>
-        <div style={{ ...FIELD_GRID }}>
-          <Field label="Estatuto principal">
-            <Select value={f.statusMain} onChange={e => setF({ ...f, statusMain: e.target.value })}>
-              <option value="">—</option>
-              {STATUS_OPTIONS.map((s, i) => <option key={s} value={s}>{i + 1} · {s}</option>)}
-            </Select>
-          </Field>
-          <Field label="Estatuto secundário">
-            <Select value={f.statusSecondary} onChange={e => setF({ ...f, statusSecondary: e.target.value })}>
-              <option value="">—</option>
-              {STATUS_OPTIONS.map((s, i) => <option key={s} value={s}>{i + 1} · {s}</option>)}
-            </Select>
+          {/* Só leitura: edita-se em Desenvolvimento › Estatuto na época. */}
+          <Field label={`Estatuto ${epoca ? `· ${epoca}` : 'da época'}`}>
+            <div title="Edita-se em Desenvolvimento › Estatuto na época" style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: estatutoAtual.nivel ? T.cream : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {estatutoAtual.nivel
+                ? `${estatutoAtual.nivel} · ${STATUS_OPTIONS[estatutoAtual.nivel - 1]}${estatutoAtual.potencial ? ` · pot. ${estatutoAtual.potencial}` : ''}`
+                : 'Sem avaliação'}
+            </div>
           </Field>
           <Field label="Capitania">
             <Select
@@ -10635,6 +10941,9 @@ function PlayerModal({ player, onClose, onSave }) {
             </Select>
           </Field>
         </div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 10 }}>
+          O estatuto (Nível atual e Potencial de cada fase) avalia-se em Desenvolvimento › Estatuto na época.
+        </div>
       </div>
 
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
@@ -10645,7 +10954,7 @@ function PlayerModal({ player, onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.name} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name} onClick={guardar}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
@@ -19628,8 +19937,269 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
   );
 }
 
-function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, autorizarRemocaoEmMassa, userEmail, setTarefas }) {
+/* ESTATUTO DA ÉPOCA (Desenvolvimento): o plantel inteiro numa grelha,
+   para avaliar todos de seguida em cada fase (Inicial, Intermédia,
+   Final) e comparar enquanto se escolhe. Antes estava dentro da ficha de
+   cada jogador, o que obrigava a abrir e fechar 25 janelas por fase.
+
+   Os dados continuam no mesmo sítio (`avaliacoesEpoca[época]` de cada
+   jogador) e o estatuto que o resto da app usa (statusMain /
+   statusSecondary) continua a ser o da última fase preenchida, por isso
+   as contagens do Plantel, o selo da ficha e o Word não mudam.
+
+   Só a fase escolhida em cima se edita; as outras aparecem como números,
+   para não se mexer numa fase já fechada por engano. A nota do
+   Desenvolvimento (equipa técnica, último momento) aparece em pequeno só
+   como referência: não preenche nada sozinha. */
+function avaliacaoBaseDoJogador(p, chaveEpoca) {
+  const existente = avaliacaoDaEpoca(p, chaveEpoca);
+  if (existente) return existente;
+  // Primeira vez nesta época: o estatuto que já tinha passa a Inicial.
+  const nivel = STATUS_OPTIONS.indexOf(p && p.statusMain) + 1;
+  const potencial = STATUS_OPTIONS.indexOf(p && p.statusSecondary) + 1;
+  return (nivel || potencial) ? { inicial: { nivel: nivel || '', potencial: potencial || '', obs: '' } } : {};
+}
+function jogadorComAvaliacao(p, chaveEpoca, av) {
+  const { nivel, potencial } = estatutoDaAvaliacao(av);
+  return {
+    ...p,
+    avaliacoesEpoca: { ...(p.avaliacoesEpoca || {}), [chaveEpoca]: av },
+    statusMain: nivel ? STATUS_OPTIONS[nivel - 1] : '',
+    statusSecondary: potencial ? STATUS_OPTIONS[potencial - 1] : '',
+  };
+}
+
+function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
   const isNarrow = useIsMobile(760);
+  const { epoca } = React.useContext(TreinosParaEditorCtx);
+  const chaveEpoca = String(epoca || '').trim() || 'sem-epoca';
+  const hoje = todayStr();
+  const ativos = sortByPosition((players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje)));
+
+  // Começa na fase mais avançada que já tem alguma coisa preenchida.
+  const [fase, setFase] = useState(() => {
+    let ultima = 'inicial';
+    FASES_AVALIACAO.forEach(fa => {
+      if (ativos.some(p => { const x = (avaliacaoDaEpoca(p, chaveEpoca) || {})[fa.id]; return x && (x.nivel || x.potencial || x.obs); })) ultima = fa.id;
+    });
+    return ultima;
+  });
+  const [obsDe, setObsDe] = useState(null); // { playerId, texto }
+  // A linha das fases fica presa logo por baixo dos separadores do
+  // Desenvolvimento (40 px de botão + 8 px de folga em cima e em baixo).
+  const ecraApp = useIsMobile();
+  const topoFases = (ecraApp ? MOBILE_BAR_H : 0) + 56;
+  const faseFixa = { position: 'sticky', top: topoFases, zIndex: 5, background: T.bg, padding: '0 0 10px', marginBottom: 2 };
+  const [fichas, setFichas] = useState(false);
+
+  const mudar = (p, campo, valor) => {
+    setPlayers(prev => prev.map(x => {
+      if (x.id !== p.id) return x;
+      const av = avaliacaoBaseDoJogador(x, chaveEpoca);
+      const novo = { ...av, [fase]: { ...(av[fase] || {}), [campo]: valor } };
+      return jogadorComAvaliacao(x, chaveEpoca, novo);
+    }));
+  };
+
+  // Nota da equipa técnica no último momento do Desenvolvimento em que o jogador a tem.
+  const notaDev = React.useMemo(() => {
+    const mapa = new Map();
+    diMomentos(desenvolvimento).forEach(m => {
+      diRegistosDoMomento(desenvolvimento, m.id).forEach((reg, pid) => {
+        if (mapa.has(pid) || !reg || !reg.staff) return;
+        const s = diScoreGlobal(reg.staff);
+        if (s.score != null) mapa.set(pid, s.score);
+      });
+    });
+    return mapa;
+  }, [desenvolvimento]);
+
+  const contagem = [1, 2, 3, 4, 5].map(n => ativos.filter(p => Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel) === n).length);
+  const porAvaliar = ativos.filter(p => !Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel)).length;
+  const modelos = (documentos || []).filter(d => d && /\.docx$/i.test(d.fileName || ''));
+  const [modeloId, setModeloId] = useState(null);
+  const modelo = modelos.find(d => d.id === modeloId) || modelos[0] || null;
+
+  const sel = { ...inputStyle, height: 32, lineHeight: '30px', fontSize: 13, padding: '0 6px' };
+  const opcoes = (
+    <>
+      <option value="">—</option>
+      {STATUS_OPTIONS.map((s0, i) => <option key={s0} value={i + 1}>{i + 1} · {s0}</option>)}
+    </>
+  );
+  const numeros = (x) => (x && (x.nivel || x.potencial)) ? `${x.nivel || '–'} · ${x.potencial || '–'}` : '—';
+  const colunas = isNarrow ? null : 'minmax(180px, 1.4fr) 64px 64px 64px minmax(150px, 1fr) minmax(150px, 1fr) 96px';
+  const faseLabel = (FASES_AVALIACAO.find(fa => fa.id === fase) || {}).label || '';
+  const curto = { inicial: 'Inicial', intermedia: 'Intermédia', final: 'Final' };
+
+  return (
+    <div>
+      {/* Fase a preencher + legenda da escala. */}
+      {isNarrow ? (
+        // Telemóvel: as três fases numa só linha, com o nome curto.
+        <div style={{ ...faseFixa, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          {FASES_AVALIACAO.map(fa => (
+            <ChipBtn key={fa.id} active={fase === fa.id} onClick={() => setFase(fa.id)}>{curto[fa.id]}</ChipBtn>
+          ))}
+        </div>
+      ) : (
+        <div style={{ ...faseFixa, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginRight: 4 }}>A preencher</span>
+          {FASES_AVALIACAO.map(fa => (
+            <ChipBtn key={fa.id} active={fase === fa.id} onClick={() => setFase(fa.id)}>{fa.label}</ChipBtn>
+          ))}
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 12, color: T.mutedDim }}>Época {epoca || '—'}</span>
+        </div>
+      )}
+
+      {/* Equilíbrio do plantel nesta fase. Larguras fixas: os números
+          mudam e nada à volta se mexe. */}
+      <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: 8, marginBottom: 14 }}>
+        {STATUS_OPTIONS.map((s0, i) => (
+          <div key={s0} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+            <div style={{ ...mono, fontSize: 18, color: contagem[i] ? T.cream : T.mutedDim }}>{contagem[i]}</div>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i + 1} · {s0}</div>
+          </div>
+        ))}
+        <div style={{ background: T.surface, border: `1px solid ${porAvaliar ? T.warn + '66' : T.line}`, borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+          <div style={{ ...mono, fontSize: 18, color: porAvaliar ? T.warn : T.mutedDim }}>{porAvaliar}</div>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>Por avaliar</div>
+        </div>
+      </div>
+
+      {ativos.length === 0 ? (
+        <EmptyState text="Sem jogadores ativos no Plantel." />
+      ) : (
+        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
+          {!isNarrow && (
+            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', padding: '9px 14px', borderBottom: `1px solid ${T.line}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              <span>Jogador</span>
+              {FASES_AVALIACAO.map(fa => (
+                <span key={fa.id} title="Nível atual · Potencial" style={{ textAlign: 'center', color: fa.id === fase ? T.warn : T.muted }}>{curto[fa.id]}</span>
+              ))}
+              <span>Nível atual · {curto[fase]}</span>
+              <span>Potencial · {curto[fase]}</span>
+              <span>Observações</span>
+            </div>
+          )}
+          {ativos.map((p, idx) => {
+            const av = avaliacaoBaseDoJogador(p, chaveEpoca);
+            const x = av[fase] || {};
+            const nota = notaDev.get(p.id);
+            const nome = (
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.number ? <span style={{ ...mono, color: T.mutedDim, marginRight: 6 }}>{p.number}</span> : null}{p.name}
+                </div>
+                <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
+                  {[p.position, p.secondaryPosition].filter(Boolean).join('/') || '—'}
+                  {nota != null && <span title="Nota da equipa técnica no último momento do Desenvolvimento (só referência)"> · Desenv. {nota.toFixed(1).replace('.', ',')}</span>}
+                </div>
+              </div>
+            );
+            const botaoObs = (
+              <button onClick={() => setObsDe({ playerId: p.id, texto: x.obs || '' })} title={x.obs || 'Escrever observações'} style={{
+                ...ESTILO_BOTAO_PEQUENO, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', ...body,
+                background: x.obs ? `${T.gold}22` : 'transparent', border: `1px solid ${x.obs ? T.gold : T.line}`, color: x.obs ? T.warn : T.muted, width: '100%',
+              }}>
+                <Pencil size={ICONE_BOTAO_PEQUENO} style={{ flexShrink: 0 }} /> {x.obs ? 'Ver' : (isNarrow ? 'Obs.' : 'Escrever')}
+              </button>
+            );
+            const selNivel = (
+              <select value={x.nivel || ''} onChange={e => mudar(p, 'nivel', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Nível atual de ${p.name}`}>{opcoes}</select>
+            );
+            const selPot = (
+              <select value={x.potencial || ''} onChange={e => mudar(p, 'potencial', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Potencial de ${p.name}`}>{opcoes}</select>
+            );
+            const fundo = idx % 2 ? 'transparent' : `${T.bg}55`;
+            if (isNarrow) {
+              return (
+                <div key={p.id} style={{ padding: '10px 12px', borderTop: idx ? `1px solid ${T.line}` : 'none', background: fundo, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {nome}
+                    <span style={{ marginLeft: 'auto', ...mono, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
+                      {FASES_AVALIACAO.filter(fa => fa.id !== fase).map(fa => `${curto[fa.id].slice(0, 3)}. ${numeros(av[fa.id])}`).join('  ')}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 88px', gap: 8 }}>{selNivel}{selPot}{botaoObs}</div>
+                </div>
+              );
+            }
+            return (
+              <div key={p.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', padding: '7px 14px', borderTop: idx ? `1px solid ${T.line}` : 'none', background: fundo, minHeight: 48, boxSizing: 'border-box' }}>
+                {nome}
+                {FASES_AVALIACAO.map(fa => (
+                  <span key={fa.id} style={{ ...mono, fontSize: 12.5, textAlign: 'center', color: fa.id === fase ? T.warn : T.muted }}>{numeros(av[fa.id])}</span>
+                ))}
+                {selNivel}
+                {selPot}
+                {botaoObs}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Word com as fichas: o mesmo de Documentos, à mão de quem avalia. */}
+      <div style={{ marginTop: 16, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <FileText size={16} color={T.muted} />
+          <span style={{ fontSize: 13, color: T.cream }}>Fichas individuais em Word</span>
+          {modelos.length > 1 && (
+            <select value={modelo ? modelo.id : ''} onChange={e => setModeloId(e.target.value)} style={{ ...sel, width: 'auto', minWidth: 200 }}>
+              {modelos.map(d => <option key={d.id} value={d.id}>{d.nome || d.fileName}</option>)}
+            </select>
+          )}
+          <span style={{ flex: 1 }} />
+          {modelo ? (
+            <Btn variant="ghost" onClick={() => setFichas(v => !v)}><FileText size={14} /> Gerar fichas dos jogadores</Btn>
+          ) : (
+            <span style={{ fontSize: 12, color: T.mutedDim }}>Carrega o modelo .docx em Documentos para gerar daqui.</span>
+          )}
+        </div>
+        {fichas && modelo && (
+          <GerarFichasIndividuaisForm doc={modelo} players={players} epoca={epoca} onClose={() => setFichas(false)} />
+        )}
+      </div>
+
+      {obsDe && (() => {
+        const p = (players || []).find(x => x.id === obsDe.playerId);
+        if (!p) return null;
+        return (
+          <Modal title={`Observações · ${faseLabel}`} subtitle={p.name} onClose={() => setObsDe(null)}>
+            <TextArea autoFocus value={obsDe.texto} onChange={e => setObsDe({ ...obsDe, texto: e.target.value })} placeholder="Observações desta fase" style={{ minHeight: 160 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+              <Btn variant="ghost" onClick={() => setObsDe(null)}>Cancelar</Btn>
+              <Btn onClick={() => { mudar(p, 'obs', obsDe.texto); setObsDe(null); }}><Check size={15} /> Guardar</Btn>
+            </div>
+          </Modal>
+        );
+      })()}
+    </div>
+  );
+}
+
+function DesenvolvimentoIndividual({ players, setPlayers, documentos, desenvolvimento, setDesenvolvimento, autorizarRemocaoEmMassa, userEmail, setTarefas }) {
+  const isNarrow = useIsMobile(760);
+  /* Duas vistas: as Autoavaliações (os momentos com questionário, o que
+     já existia) e o Estatuto na época.
+     Os separadores ficam presos no topo ao fazer scroll e a página não
+     salta ao trocar: a zona de baixo tem sempre pelo menos a altura do
+     ecrã, e se os separadores já estavam presos, a vista nova abre com
+     eles no mesmo sítio e o conteúdo a começar logo por baixo. */
+  const [vistaDI, setVistaDI] = useState('avaliacoes');
+  const ecraApp = useIsMobile();
+  const topoSeparadores = ecraApp ? MOBILE_BAR_H : 0;
+  const separadoresRef = useRef(null);
+  const ancoraRef = useRef(null);
+  const trocarVistaDI = (v) => {
+    if (v === vistaDI) return;
+    const el = separadoresRef.current;
+    const presos = el && el.getBoundingClientRect().top <= topoSeparadores + 1;
+    setVistaDI(v);
+    if (presos) requestAnimationFrame(() => { if (ancoraRef.current) ancoraRef.current.scrollIntoView({ block: 'start' }); });
+  };
   const [aba, setAba] = useState('geral');
   const [momentoId, setMomentoId] = useState(null);
   const [jogadorId, setJogadorId] = useState(null);
@@ -19754,7 +20324,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
   const ABAS = [
     { id: 'geral', label: 'Visão geral' },
-    { id: 'avaliacoes', label: 'Avaliações' },
+    { id: 'avaliacoes', label: 'Questionários' },
     { id: 'gap', label: 'Comparação / GAP' },
     { id: 'radares', label: 'Radares' },
     { id: 'reuniao', label: 'Reunião' },
@@ -19869,13 +20439,39 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
         title="Desenvolvimento Individual"
         subtitle="Avaliação e plano de desenvolvimento."
         action={
-          <Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: [] })} disabled={!players.length}>
-            <Plus size={15} /> Avaliar
-          </Btn>
+          // Nas Avaliações individuais o botão fica invisível mas a ocupar
+          // o lugar, para o título e os separadores não subirem.
+          <div style={{ visibility: vistaDI === 'avaliacoes' ? 'visible' : 'hidden' }} aria-hidden={vistaDI !== 'avaliacoes'}>
+            <Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: [] })} disabled={!players.length || vistaDI !== 'avaliacoes'}>
+              <Plus size={15} /> Avaliar
+            </Btn>
+          </div>
         }
       />
 
-      {players.length === 0 ? (
+      <div ref={ancoraRef} style={{ scrollMarginTop: topoSeparadores }} />
+      <div ref={separadoresRef} style={{
+        position: 'sticky', top: topoSeparadores, zIndex: 6, background: T.bg,
+        display: 'grid', gridTemplateColumns: isNarrow ? '1fr 1fr' : 'repeat(2, 210px)', gap: 8,
+        padding: '8px 0', margin: '-8px 0 8px',
+      }}>
+        {[{ id: 'avaliacoes', label: 'Avaliações' }, { id: 'estatuto', label: 'Estatuto na época' }].map(v => {
+          const on = vistaDI === v.id;
+          return (
+            <button key={v.id} onClick={() => trocarVistaDI(v.id)} style={{
+              height: 40, padding: isNarrow ? '0 6px' : '0 12px', borderRadius: 8, cursor: 'pointer', ...body, fontSize: isNarrow ? 12.5 : 13,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', boxSizing: 'border-box',
+              border: `1px solid ${on ? T.gold : T.line}`, background: on ? `${T.gold}22` : T.surface,
+              color: on ? T.warn : T.cream,
+            }}>{v.label}</button>
+          );
+        })}
+      </div>
+
+      <div style={{ minHeight: `calc(100vh - ${topoSeparadores + 56}px)` }}>
+      {vistaDI === 'estatuto' ? (
+        <EstatutoDaEpoca players={players} setPlayers={setPlayers} desenvolvimento={desenvolvimento} documentos={documentos} />
+      ) : players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de criar avaliações." />
       ) : !momento ? semMomento : (
         <>
@@ -20178,6 +20774,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
           )}
         </>
       )}
+      </div>
 
       {/* Questionário dos indicadores. */}
       {questionario && momento && (
