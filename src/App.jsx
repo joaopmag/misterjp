@@ -4426,7 +4426,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          <TreinosParaEditorCtx.Provider value={{ sessions, players }}>
+          <TreinosParaEditorCtx.Provider value={{ sessions, players, matches }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
           {tab === 'plantel' && (
             <Plantel
@@ -8902,7 +8902,7 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
    As sessões e o plantel chegam por contexto (posto à volta do conteúdo
    da app), para não ter de passar props por todos os sítios onde o
    editor aparece. */
-const TreinosParaEditorCtx = React.createContext({ sessions: [], players: [] });
+const TreinosParaEditorCtx = React.createContext({ sessions: [], players: [], matches: [] });
 
 // Sessões que interessam para carregar: de ontem para a frente, com gente.
 function sessoesParaCarregar(sessions) {
@@ -8934,11 +8934,66 @@ function elementosDaSessao(sessao, players, equipa) {
         // Vários no mesmo lugar: lado a lado, ao longo da largura do campo.
         y = 1 + py * 68 + (i - (lista.length - 1) / 2) * 5.2;
       }
+      const doPlantel = (players || []).find(pp => pp && pp.id === j.chave);
       els.push({
         id: uid(), kind: l.id === 'GR' ? 'keeper' : 'player', team: equipa || 'A',
         number: l.id === 'fora' ? (j.pos || '') : l.rotulo, nome: j.nome,
+        // Número da camisola (para quando o esquema mostra "Nº").
+        ...(doPlantel && doPlantel.number != null && String(doPlantel.number).trim() !== '' ? { camisola: String(doPlantel.number).trim(), playerId: doPlantel.id } : {}),
         x: Math.max(-2, Math.min(107, x)), y: Math.max(-2, Math.min(76, y)),
       });
+    });
+  });
+  return els;
+}
+
+/* CONVOCADOS DO JOGO → campo (plano de jogo de um jogo específico).
+   Titulares nos lugares da formação do jogo (com o alinhamento escolhido
+   à mão, se houver; sem onze definido, os convocados arrumados pela
+   posição de cada um). Suplentes numa fila fora do campo, junto aos
+   bancos. Cada um leva o número da camisola e o nome. */
+function nomeNoIcone(p) {
+  const alc = String((p && p.alcunha) || '').trim();
+  return alc || nomeCurtoNaPrancheta((p && p.name) || '');
+}
+function elementosDoJogo(match, players, equipa) {
+  if (!match) return [];
+  const porId = new Map((players || []).filter(Boolean).map(p => [p.id, p]));
+  const convocados = (match.convocados || []).map(id => porId.get(id)).filter(Boolean);
+  const titIds = Array.isArray(match.starters) && match.starters.length ? match.starters : null;
+  const titulares = titIds ? titIds.map(id => porId.get(id)).filter(Boolean) : convocados;
+  const formacao = FORMACOES[match.formacao] ? match.formacao : '4-3-3';
+  const { lugares, colocados, sobram } = distribuirOnzeNoCampo(titulares, formacao, titIds ? match.alinhamento : null);
+  const pontos = LAYOUT_FORMACAO[formacao] || [];
+  const camisola = (p) => (p && p.number != null && String(p.number).trim() !== '' ? String(p.number).trim() : undefined);
+  const els = [];
+  const usados = new Set();
+  colocados.forEach((p, i) => {
+    if (!p) return;
+    usados.add(p.id);
+    const [px, py] = pontos[i] || [0.5, 0.5];
+    const ehGR = lugares[i] === 'GR';
+    els.push({
+      id: uid(), kind: ehGR ? 'keeper' : 'player', team: equipa || 'A',
+      number: ehGR ? 1 : lugares[i], camisola: camisola(p), nome: nomeNoIcone(p), playerId: p.id,
+      x: 1 + px * 105, y: 1 + py * 68,
+    });
+  });
+  // Suplentes: os convocados que não são titulares (e os que não couberam).
+  const suplentes = [...convocados.filter(p => !usados.has(p.id) && !(titIds || []).includes(p.id)), ...(sobram || []).filter(p => !usados.has(p.id))];
+  const vistos = new Set();
+  // Em fila, centrada por baixo da linha lateral, na zona dos bancos.
+  const lista = suplentes.filter(p => (vistos.has(p.id) ? false : (vistos.add(p.id), true)));
+  const POR_FILA = 16; const PASSO = 6;
+  lista.forEach((p, i) => {
+    const ehGR = String(p.position || '').toUpperCase() === 'GR';
+    const fila = Math.floor(i / POR_FILA);
+    const naFila = Math.min(POR_FILA, lista.length - fila * POR_FILA);
+    const j = i % POR_FILA;
+    els.push({
+      id: uid(), kind: ehGR ? 'keeper' : 'player', team: equipa || 'A', suplente: true,
+      number: ehGR ? 1 : (p.position || ''), camisola: camisola(p), nome: nomeNoIcone(p), playerId: p.id,
+      x: 53.5 + (j - (naFila - 1) / 2) * PASSO, y: 74.2 + fila * 4.4,
     });
   });
   return els;
@@ -11324,7 +11379,7 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
           aberto={planos ? planos.aberto : null} setAberto={planos ? planos.setAberto : () => {}}
           onVer={onVer} onNovaParaJogo={planos ? planos.onNovaParaJogo : () => {}}
           onEditar={planos ? planos.onEditar : () => {}} onRemover={planos ? planos.onRemover : () => {}}
-          onIdeiasJogo={planos ? planos.onIdeiasJogo : null} />
+          onIdeiasJogo={planos ? planos.onIdeiasJogo : null} onRevelarOnze={planos ? planos.onRevelarOnze : null} />
       ) : (
         <>
           <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
@@ -11354,7 +11409,7 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
 }
 
 /* ---------- Planos de Jogo ---------- */
-function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo }) {
+function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo, onRevelarOnze }) {
   const prox = planoProximoJogo(matches);
   const hoje = todayStr();
   const jogos = (matches || []).filter(m => m && m.date && !jogoNaoJogado(m));
@@ -11366,7 +11421,7 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   if (jogo) {
     return <PlanoDeJogoPagina jogo={jogo} prox={prox} ideias={ideias} setIdeias={setIdeias} labelOf={labelOf}
       onBack={() => setAberto(null)} onVer={onVer} onNovaParaJogo={onNovaParaJogo} onEditar={onEditar} onRemover={onRemover}
-      onIdeiasJogo={onIdeiasJogo} />;
+      onIdeiasJogo={onIdeiasJogo} onRevelarOnze={onRevelarOnze} />;
   }
 
   const cartao = (m) => {
@@ -11424,7 +11479,7 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   );
 }
 
-function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo }) {
+function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo, onRevelarOnze }) {
   const [vista, setVista] = useState('plano'); // plano | juntar
   const noPlano = ideias.filter(x => ideiaNoPlano(x, jogo.id));
   const gerais = ideias.filter(x => !ideiaParaJogo(x));
@@ -11456,6 +11511,33 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
       <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
         {fmtDate(jogo.date)}{jogo.competition ? ` · ${competitionLabel(jogo.competition)}` : ''} · {noPlano.length} ideia{noPlano.length === 1 ? '' : 's'} no plano
       </div>
+
+      {/* O ONZE NO PORTAL. Até ser revelado, os atletas veem as ideias
+          deste plano só com as posições (sem números, nomes nem
+          suplentes), para não ficarem a saber o onze antes do tempo. O
+          próprio servidor é que tira esses dados (ver
+          `checkin_plano_jogo`). Revela-se aqui, ou sozinho à hora da
+          concentração da convocatória. */}
+      {onRevelarOnze && !passado && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px',
+          background: T.surface, border: `1px solid ${jogo.onzeRevelado ? T.gold : T.line}`, borderRadius: 8, ...body,
+        }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <div style={{ fontSize: 13, color: T.cream, fontWeight: 600 }}>
+              {jogo.onzeRevelado ? 'Onze revelado no Portal' : 'Onze escondido no Portal'}
+            </div>
+            <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2, lineHeight: 1.45 }}>
+              {jogo.onzeRevelado
+                ? `Os atletas veem os números, os nomes e os suplentes${jogo.onzeReveladoEm ? ` desde ${new Date(jogo.onzeReveladoEm).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}.`
+                : 'Os atletas veem as ideias só com as posições. Revela-se sozinho à hora da concentração da convocatória.'}
+            </div>
+          </div>
+          {jogo.onzeRevelado
+            ? <Btn variant="ghost" onClick={() => onRevelarOnze(jogo.id, false)}>Voltar a esconder</Btn>
+            : <Btn onClick={() => onRevelarOnze(jogo.id, true)}><Eye size={14} /> Revelar o onze no Portal</Btn>}
+        </div>
+      )}
 
       {onIdeiasJogo && (
         <div style={{ marginBottom: 14 }}>
@@ -11639,6 +11721,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
             onEditar: (x) => setModal(x),
             onRemover: (x) => remove(x.id),
             onIdeiasJogo: setMatches ? (jogoId, texto) => setMatches(prev => prev.map(m => (m.id === jogoId ? { ...m, ideias: texto } : m))) : null,
+            onRevelarOnze: setMatches ? (jogoId, sim) => setMatches(prev => prev.map(m => (m.id === jogoId ? { ...m, onzeRevelado: !!sim, onzeReveladoEm: sim ? new Date().toISOString() : null } : m))) : null,
           }} />
       ) : (
         <>
@@ -12472,6 +12555,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
             exerciseInfo={{ name: f.name, phase: f.phase }}
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
+            jogoId={f.jogoId || null}
           />
         </Field>
       </div>
@@ -12936,6 +13020,47 @@ function quebrarTexto(texto, maxChars) {
 function elementLabel(number, isKeeper) {
   if (isKeeper) return 'GR';
   return POSITION_LABELS[number] || String(number);
+}
+/* O QUE APARECE NO CÍRCULO DE CADA JOGADOR — escolhido para o esquema
+   inteiro (`diagram.rotulos`) e copiado para cada jogador (`el.rotulo`),
+   para todos os sítios que desenham o campo (editor, apresentação,
+   miniaturas, impressão, Portal) mostrarem igual sem precisarem de saber
+   de onde vem o esquema:
+   · 'posicao' (ou nada): a sigla da posição, como sempre (DD, DC, GR…);
+   · 'numero': o número da camisola (`el.camisola`; sem ele, o número
+     clássico da posição: 2 DD, 3 DE, 4 e 5 DC… e 1 no GR);
+   · 'cor': só a cor, sem texto. */
+const ROTULOS_JOGADOR = [
+  { id: 'posicao', label: 'Posição', title: 'Mostra a posição (DD, DC, MC…)' },
+  { id: 'numero', label: 'Nº', title: 'Mostra o número da camisola' },
+  { id: 'cor', label: 'Cor', title: 'Só a cor, sem texto' },
+];
+function rotuloIcone(el) {
+  if (!el) return '';
+  const isKeeper = el.kind === 'keeper';
+  if (el.rotulo === 'cor') return '';
+  if (el.rotulo === 'numero') {
+    const c = el.camisola != null && String(el.camisola).trim() !== '' ? String(el.camisola).trim() : null;
+    if (c) return c;
+    return typeof el.number === 'number' ? String(el.number) : (isKeeper ? '1' : '');
+  }
+  return elementLabel(el.number, isKeeper);
+}
+// Copia o modo do esquema para cada jogador (também nos passos da animação).
+function carimbarRotulos(diagram, modo) {
+  const m = modo === 'numero' || modo === 'cor' ? modo : undefined;
+  const marcar = (lista) => (lista || []).map(el => {
+    if (!el || (el.kind !== 'player' && el.kind !== 'keeper')) return el;
+    if (m) return el.rotulo === m ? el : { ...el, rotulo: m };
+    if (el.rotulo === undefined) return el;
+    const { rotulo, ...resto } = el; return resto;
+  });
+  return {
+    ...diagram,
+    rotulos: m,
+    elements: marcar(diagram.elements),
+    sequence: Array.isArray(diagram.sequence) ? diagram.sequence.map(st => (st && st.elements ? { ...st, elements: marcar(st.elements) } : st)) : diagram.sequence,
+  };
 }
 
 function pentagon(cx, cy, r) {
@@ -14579,8 +14704,8 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                 ) : (
                   <circle cx={el.x} cy={el.y} r={1.9 * k} fill={tm.fill} stroke={printMode ? '#1A1A1A' : TEXT_ON_ACCENT} strokeWidth={0.27 * k} />
                 )}
-                <text x={el.x} y={el.y + 0.71 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
-                  {elementLabel(el.number, isKeeper)}
+                <text x={el.x} y={el.y + 0.71 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={(rotuloIcone(el).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                  {rotuloIcone(el)}
                 </text>
                 {/* Nome por baixo (jogadores carregados de um treino). */}
                 {el.nome && (
@@ -15414,7 +15539,7 @@ const LINE_LABELS = {
   'line-dashed': 'Linha tracejada',
 };
 
-function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onSpaceZonesChange, activeColor, onColorChange }) {
+function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onSpaceZonesChange, activeColor, onColorChange, jogoId }) {
   /* A APRESENTAÇÃO PODE DEMORAR VÁRIOS SEGUNDOS A CORRER (um passo atrás
      do outro, com pausas). `runPresentStep` chama-se A SI PRÓPRIA por
      `setTimeout` para passar ao passo seguinte — e cada uma dessas
@@ -15734,14 +15859,50 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const viewBoxEditor = editorCompacto ? (vistaCampo === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX) : viewBoxDaVista(vistaCampo);
   const gVistaRef = useRef(null);
   const mudarVista = (v) => { if (v !== vistaCampo) commit({ ...value, vista: v === 'meio' ? 'meio' : undefined }); };
+  // O QUE APARECE NO CÍRCULO (ver ROTULOS_JOGADOR), para o esquema inteiro.
+  const rotulosEsquema = value && (value.rotulos === 'numero' || value.rotulos === 'cor') ? value.rotulos : 'posicao';
+  const mudarRotulos = (m) => { if (m !== rotulosEsquema) commit(carimbarRotulos(value || { elements: [], arrows: [] }, m)); };
+  // Próximo número de camisola livre, na cor (para jogadores colocados à mão em "Nº").
+  const proximaCamisola = (team, isKeeper) => {
+    const usados = new Set((elements || []).filter(el => el && (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === (team || 'A'))
+      .map(el => Number(rotuloIcone({ ...el, rotulo: 'numero' }))).filter(n => n > 0));
+    if (isKeeper && !usados.has(1)) return 1;
+    for (let n = isKeeper ? 1 : 2; n < 100; n++) if (!usados.has(n)) return n;
+    return 1;
+  };
+  const comRotulo = (novo) => (rotulosEsquema === 'posicao' ? novo : {
+    ...novo, rotulo: rotulosEsquema,
+    ...(rotulosEsquema === 'numero' && novo.camisola == null ? { camisola: proximaCamisola(novo.team, novo.kind === 'keeper') } : {}),
+  });
   // JOGADORES DO TREINO (ver elementosDaSessao): junta ao campo os presentes
   // de uma sessão, na cor escolhida, nos lugares do Quadro de posições.
   const treinosCtx = React.useContext(TreinosParaEditorCtx);
   const sessoesCarregaveis = sessoesParaCarregar(treinosCtx.sessions);
+  // CONVOCADOS DO JOGO (só numa ideia ligada a um jogo).
+  const jogoDoEsquema = jogoId ? (treinosCtx.matches || []).find(m => m && m.id === jogoId) || null : null;
+  const convocadosDoJogo = jogoDoEsquema
+    ? (jogoDoEsquema.convocados || []).map(id => (treinosCtx.players || []).find(p => p && p.id === id)).filter(Boolean)
+    : [];
+  const carregarConvocados = () => {
+    const novos = elementosDoJogo(jogoDoEsquema, treinosCtx.players || [], activeColor || 'A');
+    if (!novos.length) return;
+    // No plano de um jogo, o esquema passa a mostrar os números.
+    commit(carimbarRotulos({ ...value, elements: [...elements, ...novos] }, 'numero'));
+  };
+  // "Quem é": dá a um jogador do campo o número e o nome de um convocado.
+  const atribuirConvocado = (pid) => {
+    if (!selectedEl) return;
+    const p = convocadosDoJogo.find(x => x.id === pid);
+    const dados = p
+      ? { playerId: p.id, nome: nomeNoIcone(p), camisola: p.number != null && String(p.number).trim() !== '' ? String(p.number).trim() : undefined }
+      : { playerId: undefined, nome: undefined };
+    const mudar = (lista) => (lista || []).map(el => (el && el.id === selectedEl.id ? { ...el, ...dados } : el));
+    commit({ ...value, elements: mudar(elements), sequence: Array.isArray(value.sequence) ? value.sequence.map(st => (st && st.elements ? { ...st, elements: mudar(st.elements) } : st)) : value.sequence });
+  };
   const carregarSessao = (id) => {
     const s = sessoesCarregaveis.find(x => x.id === id);
     if (!s) return;
-    const novos = elementosDaSessao(s, treinosCtx.players || [], activeColor || 'A');
+    const novos = elementosDaSessao(s, treinosCtx.players || [], activeColor || 'A').map(comRotulo);
     if (!novos.length) return;
     commit({ ...value, elements: [...elements, ...novos] });
   };
@@ -16235,10 +16396,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       eraseAt(p);
     } else if (tool === 'player') {
       const number = nextPlayerNumber(elements, activeColor);
-      colocarElemento({ id: uid(), kind: 'player', team: activeColor, number, x: p.x, y: p.y });
+      colocarElemento(comRotulo({ id: uid(), kind: 'player', team: activeColor, number, x: p.x, y: p.y }));
     } else if (tool === 'keeper') {
       const number = nextKeeperNumber(elements, activeColor);
-      colocarElemento({ id: uid(), kind: 'keeper', team: activeColor, number, x: p.x, y: p.y });
+      colocarElemento(comRotulo({ id: uid(), kind: 'keeper', team: activeColor, number, x: p.x, y: p.y }));
     } else if (tool === 'goalmarker') {
       const newId = uid();
       colocarElemento({ id: newId, kind: 'goalmarker', rotation: 0, w: 3.6, h: 2.2, x: p.x, y: p.y });
@@ -16625,6 +16786,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const changeSelectedNumber = (delta) => {
     if (!selectedEl) return;
+    if (rotulosEsquema === 'numero' && (selectedEl.kind === 'player' || selectedEl.kind === 'keeper')) {
+      // Número da camisola (1–99). É a identidade do jogador, por isso
+      // muda também nos passos da animação.
+      const atual = Number(rotuloIcone(selectedEl)) || 1;
+      const n = ((atual - 1 + delta + 99) % 99) + 1;
+      const mudar = (lista) => (lista || []).map(el => (el && el.id === selectedEl.id ? { ...el, camisola: n } : el));
+      commit({ ...value, elements: mudar(elements), sequence: Array.isArray(value.sequence) ? value.sequence.map(st => (st && st.elements ? { ...st, elements: mudar(st.elements) } : st)) : value.sequence });
+      return;
+    }
     if (selectedEl.kind === 'player') {
       const n = Math.max(2, Math.min(11, (selectedEl.number || 2) + delta));
       commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, number: n } : el)) });
@@ -16794,7 +16964,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         }}>
           <span style={{ fontSize: 12, color: T.cream, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {selectedEl.kind === 'player' || selectedEl.kind === 'keeper'
-              ? `${teamInfo(selectedEl.team)?.label} · ${elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}`
+              ? `${teamInfo(selectedEl.team)?.label} · ${selectedEl.rotulo === 'numero' ? `nº ${rotuloIcone(selectedEl)}` : elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}${selectedEl.nome ? ` · ${selectedEl.nome}` : ''}`
               : selectedEl.kind === 'goalmarker' ? 'Baliza' : selectedEl.kind === 'stake' ? 'Estaca' : selectedEl.kind === 'coach' ? 'Treinador' : selectedEl.kind === 'text' ? 'Texto' : selectedEl.kind === 'cone' ? 'Cone' : 'Bola'}
           </span>
           {selectedEl.kind === 'text' && (
@@ -16903,8 +17073,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               ...(isNarrowEditor ? { flexShrink: 1, minWidth: 0 } : { marginLeft: 'auto', flexShrink: 0 }),
             }}>
               <button type="button" onClick={() => changeSelectedNumber(-1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
-              <span style={{ ...mono, color: T.warn, width: 30, textAlign: 'center', flexShrink: 0 }}>{elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}</span>
+              <span style={{ ...mono, color: T.warn, width: 30, textAlign: 'center', flexShrink: 0 }}>{rotulosEsquema === 'numero' ? rotuloIcone(selectedEl) : elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}</span>
               <button type="button" onClick={() => changeSelectedNumber(1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
+              {convocadosDoJogo.length > 0 && (
+                <Select value={selectedEl.playerId || ''} onChange={e => atribuirConvocado(e.target.value)} title="Quem é este jogador (dá-lhe o número e o nome)"
+                  style={{ width: 'auto', maxWidth: 170, height: 24, lineHeight: '22px', fontSize: 11.5, padding: '0 6px', borderRadius: 6, marginLeft: 4 }}>
+                  <option value="">Quem é…</option>
+                  {[...convocadosDoJogo].sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)).map(p => (
+                    <option key={p.id} value={p.id}>{p.number != null && String(p.number).trim() !== '' ? `${p.number} · ` : ''}{nomeNoIcone(p)}</option>
+                  ))}
+                </Select>
+              )}
             </div>
           )}
           {selectedEl.kind === 'goalmarker' && (
@@ -16996,12 +17175,38 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           />
         ))}
         <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
+        {/* O QUE APARECE NO CÍRCULO DOS JOGADORES — para o esquema inteiro
+            (ver ROTULOS_JOGADOR). Fica nesta linha, que tinha espaço livre,
+            para as ferramentas e o campo não mexerem. */}
+        <div title="O que aparece no círculo dos jogadores (no esquema todo)" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: T.mutedDim }}>Mostrar:</span>
+          <div style={{ display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden' }}>
+            {ROTULOS_JOGADOR.map(r => (
+              <button key={r.id} type="button" title={r.title} onPointerDown={(e) => { e.preventDefault(); mudarRotulos(r.id); }}
+                style={{
+                  padding: '0 10px', height: 22, fontSize: 12, cursor: 'pointer', border: 'none', ...body,
+                  background: rotulosEsquema === r.id ? T.gold : 'transparent', color: rotulosEsquema === r.id ? TEXT_ON_ACCENT : T.muted,
+                  fontWeight: rotulosEsquema === r.id ? 600 : 400,
+                }}>{r.label}</button>
+            ))}
+          </div>
+        </div>
+        {/* CONVOCADOS DO JOGO — só numa ideia para um jogo específico. */}
+        {jogoDoEsquema && (
+          <button type="button" onClick={carregarConvocados} disabled={!convocadosDoJogo.length}
+            title={convocadosDoJogo.length ? 'Junta os convocados: titulares nos lugares do onze, suplentes numa fila fora do campo, com número e nome' : 'Este jogo ainda não tem convocados'}
+            style={{
+              height: 24, padding: '0 12px', borderRadius: 16, fontSize: 12, ...body, flexShrink: 0,
+              border: `1px solid ${T.line}`, background: 'transparent', color: convocadosDoJogo.length ? T.cream : T.mutedDim,
+              cursor: convocadosDoJogo.length ? 'pointer' : 'not-allowed', opacity: convocadosDoJogo.length ? 1 : 0.55,
+            }}>Convocados do jogo</button>
+        )}
         {/* JOGADORES DO TREINO — carrega os presentes de uma sessão do
             Planeamento (hoje primeiro), nos lugares do Quadro de posições. */}
         {sessoesCarregaveis.length > 0 && (
           <Select value="" onChange={e => { carregarSessao(e.target.value); e.target.value = ''; }}
             title="Junta ao campo os jogadores presentes num treino do Planeamento, com o nome e nos lugares do Quadro de posições, na cor escolhida"
-            style={{ marginLeft: 'auto', width: 'auto', maxWidth: 260, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 8px', borderRadius: 16 }}>
+            style={{ width: 'auto', maxWidth: 260, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 8px', borderRadius: 16 }}>
             <option value="">Jogadores do treino…</option>
             {sessoesCarregaveis.map(s => {
               const n = (s.attendance || []).length + (s.convidados || []).length;
@@ -17012,7 +17217,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         )}
         {/* VISTA DO CAMPO — campo inteiro (horizontal) ou meio-campo
             (vertical). Só muda o enquadramento: nada do desenho se perde. */}
-        <div style={{ marginLeft: sessoesCarregaveis.length > 0 ? 0 : 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
           {[['completo', 'Campo inteiro'], ['meio', 'Meio-campo']].map(([id, rot]) => (
             <button key={id} type="button" onPointerDown={(e) => { e.preventDefault(); mudarVista(id); }}
               title={id === 'meio' ? 'Meio-campo na vertical, com a baliza em cima' : 'Campo inteiro na horizontal'}
@@ -17668,8 +17873,8 @@ function AnimOverlay({ items, iconScale = 1 }) {
               <circle cx={it.x} cy={it.y} r={2 * k} fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth={0.28 * k} opacity="0.92" />
             )}
             {it.mover && (
-              <text x={it.x} y={it.y + 0.72 * k} transform={rodarTexto(it.x, it.y)} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.45 : 2.05) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
-                {elementLabel(it.mover.number, isKeeper)}
+              <text x={it.x} y={it.y + 0.72 * k} transform={rodarTexto(it.x, it.y)} textAnchor="middle" fontSize={(rotuloIcone(it.mover).length > 2 ? 1.45 : 2.05) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                {rotuloIcone(it.mover)}
               </text>
             )}
             {it.mover && it.mover.nome && (
@@ -37676,6 +37881,8 @@ function PlayerPlanoJogoTab({ code, teamId }) {
   if (ideias.length === 0) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhum plano de jogo partilhado contigo.</div>;
   }
+  // Onze ainda por revelar: o servidor manda as ideias só com as posições.
+  const onzeEscondido = ideias.some(x => x && x.onzeEscondido);
   // Mesma organização por momento de jogo do "Ideia de Jogo" — reaproveita
   // `MOMENTOS_JOGO`/`ColunaIdeias`, para o atleta encontrar as coisas nos
   // dois sítios da mesma forma, em vez de teres de aprender duas
@@ -37689,6 +37896,12 @@ function PlayerPlanoJogoTab({ code, teamId }) {
   // este sítio (são dois componentes diferentes, mesmo mostrando o
   // mesmo tipo de conteúdo).
   return (
+    <>
+    {onzeEscondido && (
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5, ...body }}>
+        Por agora as ideias mostram só as posições. Os números e os nomes aparecem quando o onze for revelado.
+      </div>
+    )}
     <div style={{
       display: 'flex', flexWrap: 'nowrap', gap: 16, overflowX: 'auto', paddingBottom: 8,
       WebkitOverflowScrolling: 'touch',
@@ -37712,6 +37925,7 @@ function PlayerPlanoJogoTab({ code, teamId }) {
         );
       })()}
     </div>
+    </>
   );
 }
 
