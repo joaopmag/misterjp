@@ -11037,8 +11037,22 @@ function PlayerModal({ player, onClose, onSave }) {
      da época (o plantel todo numa grelha). Aqui fica só o resumo. */
   const { epoca } = React.useContext(TreinosParaEditorCtx);
   const chaveEpoca = String(epoca || '').trim() || 'sem-epoca';
-  const estatutoAtual = estatutoDaAvaliacao(avaliacaoBaseDoJogador(f, chaveEpoca));
-  const guardar = () => onSave(f);
+  /* O ESTATUTO INICIAL preenche-se aqui (é o mesmo valor da Avaliação
+     Inicial do Estatuto na época, por isso um alimenta o outro). As
+     fases seguintes avaliam-se no Desenvolvimento, e o Estatuto final
+     mostra o da última fase preenchida, só para ler. */
+  const [inicial, setInicial] = useState(() => {
+    const x = (avaliacaoBaseDoJogador(player || {}, chaveEpoca).inicial) || {};
+    return { nivel: x.nivel || '', potencial: x.potencial || '' };
+  });
+  const [inicialMexido, setInicialMexido] = useState(false);
+  const mudarInicial = (campo, valor) => { setInicial(prev => ({ ...prev, [campo]: valor })); setInicialMexido(true); };
+  const avComInicial = (() => {
+    const base = avaliacaoBaseDoJogador(f, chaveEpoca);
+    return { ...base, inicial: { ...(base.inicial || {}), nivel: inicial.nivel, potencial: inicial.potencial } };
+  })();
+  const estatutoAtual = estatutoDaAvaliacao(avComInicial);
+  const guardar = () => onSave(inicialMexido ? jogadorComAvaliacao(f, chaveEpoca, avComInicial) : f);
 
   return (
     <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide xwide fullPage>
@@ -11080,9 +11094,21 @@ function PlayerModal({ player, onClose, onSave }) {
           <Field label="Clube anterior"><Input value={f.previousClub} onChange={e => setF({ ...f, previousClub: e.target.value })} /></Field>
           <Field label="Data de entrada"><Input type="date" value={f.entryDate} onChange={e => setF({ ...f, entryDate: e.target.value })} /></Field>
           <Field label="Data de saída"><Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} /></Field>
-          {/* Só leitura: edita-se em Desenvolvimento › Estatuto na época. */}
-          <Field label={`Estatuto ${epoca ? `· ${epoca}` : 'da época'}`}>
-            <div title="Edita-se em Desenvolvimento › Estatuto na época" style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: estatutoAtual.nivel ? T.cream : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Field label="Nível inicial">
+            <Select value={inicial.nivel || ''} onChange={e => mudarInicial('nivel', e.target.value ? Number(e.target.value) : '')}>
+              <option value="">—</option>
+              {STATUS_OPTIONS.map((s0, i) => <option key={s0} value={i + 1}>{i + 1} · {s0}</option>)}
+            </Select>
+          </Field>
+          <Field label="Potencial inicial">
+            <Select value={inicial.potencial || ''} onChange={e => mudarInicial('potencial', e.target.value ? Number(e.target.value) : '')}>
+              <option value="">—</option>
+              {STATUS_OPTIONS.map((s0, i) => <option key={s0} value={i + 1}>{i + 1} · {s0}</option>)}
+            </Select>
+          </Field>
+          {/* Só leitura: o da última fase preenchida no Desenvolvimento. */}
+          <Field label="Estatuto final">
+            <div title={estatutoAtual.fase ? `Da ${estatutoAtual.fase.label} (Desenvolvimento › Estatuto na época)` : 'Avalia-se em Desenvolvimento › Estatuto na época'} style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: estatutoAtual.nivel ? T.cream : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {estatutoAtual.nivel
                 ? `${estatutoAtual.nivel} · ${STATUS_OPTIONS[estatutoAtual.nivel - 1]}${estatutoAtual.potencial ? ` · pot. ${estatutoAtual.potencial}` : ''}`
                 : 'Sem avaliação'}
@@ -11099,7 +11125,7 @@ function PlayerModal({ player, onClose, onSave }) {
           </Field>
         </div>
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 10 }}>
-          O estatuto (Nível atual e Potencial de cada fase) avalia-se em Desenvolvimento › Estatuto na época.
+          {epoca ? `Época ${epoca}. ` : ''}O estatuto inicial preenche-se aqui; as fases seguintes avaliam-se em Desenvolvimento › Estatuto na época, e o Estatuto final mostra o da última fase preenchida{estatutoAtual.fase && estatutoAtual.fase.id !== 'inicial' ? ` (agora: ${estatutoAtual.fase.label})` : ''}.
         </div>
       </div>
 
@@ -20205,24 +20231,49 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
 
   return (
     <div>
-      <div style={{ ...faseFixa, display: isNarrow ? 'grid' : 'flex', gridTemplateColumns: isNarrow ? 'repeat(3, 1fr)' : undefined, alignItems: 'center', gap: 6 }}>
-        {FASES_AVALIACAO.map(fa => (
-          <button key={fa.id} onClick={() => setFase(fa.id)} style={btnFase(fase === fa.id)}>{isNarrow ? curto[fa.id] : fa.label}</button>
-        ))}
-        {!isNarrow && <span style={{ flex: 1 }} />}
-        {!isNarrow && <span style={{ fontSize: 12, color: T.mutedDim }}>Época {epoca || '—'}</span>}
+      {/* MESMA ESTRUTURA DAS AVALIAÇÕES, LINHA A LINHA, para nada saltar
+          ao trocar de separador: um campo (Época, no lugar do Momento de
+          avaliação), uma linha de botões da mesma altura (as fases e as
+          contagens, no lugar de Visão geral… Histórico) e a tabela a
+          começar no mesmo sítio. No telemóvel, os botões das Avaliações
+          ocupam 4 linhas de 2; aqui também: as fases numa linha e as
+          seis contagens em três linhas de 2. */}
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Época" solto>
+          <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: T.cream }}>{epoca || '—'}</div>
+        </Field>
       </div>
-
-      {/* Equilíbrio do plantel nesta fase. Larguras fixas: os números
-          mudam e nada à volta se mexe. */}
-      <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: 8, marginBottom: 14 }}>
-        {[...STATUS_OPTIONS.map((s0, i) => ({ n: contagem[i], label: `${i + 1} · ${s0}`, aviso: false })), { n: porAvaliar, label: 'Por avaliar', aviso: porAvaliar > 0 }].map(c => (
-          <div key={c.label} style={{ ...card, padding: '8px 12px', minWidth: 0, borderColor: c.aviso ? `${T.warn}66` : T.line }}>
-            <div style={{ ...mono, fontSize: 16, color: c.aviso ? T.warn : (c.n ? T.cream : T.mutedDim) }}>{c.n}</div>
-            <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</div>
+      {(() => {
+        const CURTOS = ['Dispensável', 'Reserva', 'Alternativa', 'Pot. Titular', 'Elite'];
+        const contagens = [...STATUS_OPTIONS.map((s0, i) => ({ n: contagem[i], label: CURTOS[i] || s0, titulo: `${i + 1} · ${s0}`, aviso: false })), { n: porAvaliar, label: 'Por avaliar', titulo: 'Por avaliar', aviso: porAvaliar > 0 }];
+        const chip = (c) => (
+          <span key={c.titulo} title={`${c.titulo}: ${c.n}`} style={{
+            ...btnFase(false), cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: isNarrow ? 'flex-start' : 'center',
+            color: c.aviso ? T.warn : T.mutedDim, borderColor: c.aviso ? `${T.warn}66` : T.line, minWidth: 0,
+            ...(isNarrow ? {} : { flex: '0 1 auto' }),
+          }}>
+            <span style={{ ...mono, color: c.aviso ? T.warn : (c.n ? T.cream : T.mutedDim) }}>{c.n}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
+          </span>
+        );
+        const fases = FASES_AVALIACAO.map(fa => (
+          <button key={fa.id} onClick={() => setFase(fa.id)} style={{ ...btnFase(fase === fa.id), flexShrink: 0 }}>{curto[fa.id]}</button>
+        ));
+        return isNarrow ? (
+          <div style={{ ...faseFixa, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, padding: 0, marginBottom: 16 }}>
+            <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>{fases}</div>
+            {contagens.map(chip)}
           </div>
-        ))}
-      </div>
+        ) : (
+          // Numa só linha, sempre: com pouco espaço as contagens encolhem (com
+          // reticências) em vez de passarem para baixo e empurrarem a tabela.
+          <div style={{ ...faseFixa, display: 'flex', gap: 6, flexWrap: 'nowrap', padding: 0, marginBottom: 16, minWidth: 0 }}>
+            {fases}
+            <span style={{ flex: 1 }} />
+            {contagens.map(chip)}
+          </div>
+        );
+      })()}
 
       {ativos.length === 0 ? (
         <EmptyState text="Sem jogadores ativos no Plantel." />
