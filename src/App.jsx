@@ -8272,6 +8272,318 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
+/* QUE MODELO WORD É ESTE? Pelos textos de dentro, não pelo nome do
+   ficheiro: a Ficha Individual tem "Nome Completo"; a Organização do
+   Plantel tem uma tabela com "Nome" e "Ano Nasc." (e o campo). */
+function tipoDoModeloWord(xml) {
+  const t = semAcentosDoc(String(xml || '').replace(/<[^>]+>/g, ' '));
+  if (/ano nasc/.test(t) && /\bnome\b/.test(t)) return 'organizacao';
+  if (/nome completo/.test(t)) return 'fichas';
+  return null;
+}
+async function tipoDoDocumentoWord(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const f = zip.file('word/document.xml');
+  return f ? tipoDoModeloWord(await f.async('string')) : null;
+}
+
+// As duas formações mais usadas nos jogos ("4-3-3" → "1-4-3-3").
+function estruturasMaisUsadas(matches) {
+  const conta = new Map();
+  (matches || []).forEach(m => { if (m && m.formacao) conta.set(m.formacao, (conta.get(m.formacao) || 0) + 1); });
+  const ordem = [...conta.entries()].sort((a, b) => b[1] - a[1]).map(([f]) => (/^1-/.test(f) ? f : `1-${f}`));
+  return { principal: ordem[0] || '', secundaria: ordem[1] || '' };
+}
+
+/* ORGANIZAÇÃO DO PLANTEL (Word com a tabela e o campo).
+
+   · Tabela: uma linha por jogador ativo, pela ordem das posições. As
+     colunas encontram-se pelo texto do cabeçalho (Nome, Ano Nasc.,
+     Posição, Lat., Clube anterior, Entrada-Saída, Av. Ini/Int/Final), por
+     isso a ordem e a largura podem mudar no modelo. Com mais jogadores do
+     que linhas, acrescentam-se linhas e baixa-se a altura de todas para a
+     tabela ocupar a mesma altura (a folha continua a ser uma só).
+   · Est. Principal / Est. Secundária: a estrutura tática escrita no
+     formulário (vem preenchida com as formações mais usadas nos jogos).
+   · Campo: cada caixa de texto com o código de uma posição (GR, DC, DE,
+     DD, MD, MC, MOC, EE, ED, PL) recebe os jogadores dessa posição
+     principal e, a seguir, com "(s)", os que a têm como secundária. Duas
+     caixas com o mesmo código (ex.: dois DC) repartem os jogadores. A
+     altura da caixa acompanha o número de nomes. */
+async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const docFile = zip.file('word/document.xml');
+  if (!docFile) throw new Error('Este ficheiro não é um Word (.docx) válido.');
+  const modelo = new DOMParser().parseFromString(await docFile.async('string'), 'application/xml');
+  const corpo = modelo.getElementsByTagNameNS(W_NS, 'body')[0];
+  if (!corpo) throw new Error('Não encontrei o conteúdo do Word.');
+  const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+  const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+  const WP_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+  const WPS_NS = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape';
+  const filho = (no, nome) => [...no.childNodes].find(n => n.nodeType === 1 && n.localName === nome) || null;
+  const dentroDeFallback = (no) => { for (let p = no.parentNode; p; p = p.parentNode) if (p.localName === 'Fallback' && p.namespaceURI === MC_NS) return true; return false; };
+  const dataCurta = (d) => { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : ''; };
+  const nomeTabela = (n) => { const s = String(n || '').trim(); if (s.length <= 24) return s; const pt = s.split(/\s+/); return pt.length > 1 ? `${pt[0]} ${pt[pt.length - 1]}` : s; };
+
+  const hoje = todayStr();
+  const ativos = sortByPosition((players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje)));
+
+  // 1. Tabela.
+  const tabelas = [...corpo.getElementsByTagNameNS(W_NS, 'tbl')];
+  let feitaTabela = false;
+  for (const tbl of tabelas) {
+    if (feitaTabela) break;
+    const g = grelhaDaTabela(tbl);
+    const iCab = g.findIndex(l => l.some(c => semAcentosDoc(textoDoNo(c.tc)) === 'nome') && l.some(c => /^ano nasc/.test(semAcentosDoc(textoDoNo(c.tc)))));
+    if (iCab < 0) continue;
+    feitaTabela = true;
+    const cab = {};
+    g[iCab].forEach(c => {
+      const t = semAcentosDoc(textoDoNo(c.tc));
+      if (t === 'nome') cab.nome = c.col;
+      else if (/^ano nasc/.test(t)) cab.ano = c.col;
+      else if (/^posic/.test(t)) cab.pos = c.col;
+      else if (/^lat/.test(t)) cab.lat = c.col;
+      else if (/^clube/.test(t)) cab.clube = c.col;
+      else if (/^entrada/.test(t)) cab.datas = c.col;
+      else if (/^av\.? ?ini/.test(t)) cab.inicial = c.col;
+      else if (/^av\.? ?int/.test(t)) cab.intermedia = c.col;
+      else if (/^av\.? ?fin/.test(t)) cab.final = c.col;
+      else if (/^est\.? ?principal/.test(t)) cab.estP = c;
+      else if (/^est\.? ?secund/.test(t)) cab.estS = c;
+    });
+    // Estrutura principal / secundária: na célula logo a seguir ao rótulo.
+    [['estP', estruturas && estruturas.principal], ['estS', estruturas && estruturas.secundaria]].forEach(([k, v]) => {
+      const c = cab[k];
+      if (!c) return;
+      const lado = g[iCab].find(x => x.col === c.col + c.span);
+      if (lado) escreverNaCelula(modelo, lado.tc, v || '');
+    });
+    const linhasTr = [...tbl.childNodes].filter(n => n.localName === 'tr');
+    let dados = linhasTr.slice(iCab + 1);
+    if (!dados.length) break;
+    // Mais jogadores do que linhas: clona a última e reparte a altura.
+    if (ativos.length > dados.length) {
+      const alturaDe = (tr) => { const pr = filho(tr, 'trPr'); const h = pr && filho(pr, 'trHeight'); return Number(h && h.getAttribute('w:val')) || 0; };
+      /* A altura a repartir é a maior entre a soma das linhas e a da imagem
+         do campo (que está numa célula ao lado e ocupa as linhas todas):
+         assim a tabela nunca fica mais curta do que o campo. */
+      const doCampo = Math.max(0, ...[...tbl.getElementsByTagNameNS(WP_NS, 'inline')].map(inl => {
+        const ex = [...inl.childNodes].find(n => n.localName === 'extent');
+        if (!ex) return 0;
+        const xf = inl.getElementsByTagNameNS(A_NS, 'xfrm')[0];
+        const rot = Number(xf && xf.getAttribute('rot')) || 0;
+        const deitado = Math.round(rot / 5400000) % 2 === 1;
+        return Math.round(Number(ex.getAttribute(deitado ? 'cx' : 'cy')) / 635);
+      }));
+      const total = Math.max(dados.reduce((s0, tr) => s0 + alturaDe(tr), 0), doCampo);
+      const ultima = dados[dados.length - 1];
+      while (dados.length < ativos.length) {
+        const nova = ultima.cloneNode(true);
+        tbl.insertBefore(nova, dados[dados.length - 1].nextSibling);
+        dados.push(nova);
+      }
+      if (total > 0) {
+        const cada = Math.max(180, Math.floor(total / dados.length));
+        dados.forEach(tr => {
+          let pr = filho(tr, 'trPr');
+          if (!pr) { pr = modelo.createElementNS(W_NS, 'w:trPr'); tr.insertBefore(pr, filho(tr, 'tblPrEx') ? filho(tr, 'tblPrEx').nextSibling : tr.firstChild); }
+          let h = filho(pr, 'trHeight');
+          if (!h) { h = modelo.createElementNS(W_NS, 'w:trHeight'); pr.appendChild(h); }
+          h.setAttribute('w:val', String(cada)); h.setAttribute('w:hRule', 'exact');
+        });
+      }
+    }
+    const gDados = grelhaDaTabela(tbl).slice(iCab + 1);
+    gDados.forEach((linha, i) => {
+      const p = ativos[i];
+      const celula = (col) => (col == null ? null : (linha.find(c => c.col === col) || null));
+      const pos0 = linha.find(c => c.col === 0);
+      if (pos0 && i >= 25) escreverNaCelula(modelo, pos0.tc, String(i + 1));
+      // Dados sempre sem negrito e centrados (o Nome à esquerda), mesmo
+      // que uma linha do modelo tenha ficado com outro formato.
+      const escrever = (col, v) => {
+        const c = celula(col);
+        if (!c) return;
+        escreverNaCelula(modelo, c.tc, v);
+        const par = c.tc.getElementsByTagNameNS(W_NS, 'p')[0];
+        if (!par) return;
+        [...par.getElementsByTagNameNS(W_NS, 'b'), ...par.getElementsByTagNameNS(W_NS, 'bCs')].forEach(n => n.parentNode.removeChild(n));
+        let ppr = filho(par, 'pPr');
+        if (!ppr) { ppr = modelo.createElementNS(W_NS, 'w:pPr'); par.insertBefore(ppr, par.firstChild); }
+        let jc = filho(ppr, 'jc');
+        if (!jc) {
+          jc = modelo.createElementNS(W_NS, 'w:jc');
+          const antes = [...ppr.childNodes].find(n => n.nodeType === 1 && ['textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr', 'sectPr', 'pPrChange'].includes(n.localName));
+          ppr.insertBefore(jc, antes || null);
+        }
+        jc.setAttribute('w:val', col === cab.nome ? 'left' : 'center');
+      };
+      if (!p) return;
+      const av = avaliacaoBaseDoJogador(p, epoca);
+      const lat = String(p.laterality || '').trim();
+      escrever(cab.nome, nomeTabela(p.name));
+      escrever(cab.ano, (String(p.birthdate || '').match(/^(\d{4})/) || [])[1] || '');
+      escrever(cab.pos, [p.position, p.secondaryPosition].filter(Boolean).join('/'));
+      escrever(cab.lat, lat ? lat[0].toUpperCase() : '');
+      escrever(cab.clube, p.previousClub || '');
+      escrever(cab.datas, [dataCurta(p.entryDate), dataCurta(p.exitDate)].filter(Boolean).join(' - '));
+      escrever(cab.inicial, (av.inicial || {}).nivel ? String(av.inicial.nivel) : '');
+      escrever(cab.intermedia, (av.intermedia || {}).nivel ? String(av.intermedia.nivel) : '');
+      escrever(cab.final, (av.final || {}).nivel ? String(av.final.nivel) : '');
+    });
+  }
+  if (!feitaTabela) throw new Error('Este Word não tem a tabela da Organização do Plantel ("Nome", "Ano Nasc."…).');
+
+  // 2. Campo: caixas de texto com o código da posição.
+  const caixas = [...corpo.getElementsByTagNameNS(W_NS, 'txbxContent')].filter(c => !dentroDeFallback(c));
+  const porCodigo = new Map();
+  caixas.forEach(c => {
+    const cod = textoDoNo(c).replace(/[-–\s]/g, '').toUpperCase();
+    if (!POSITIONS.includes(cod)) return;
+    if (!porCodigo.has(cod)) porCodigo.set(cod, []);
+    porCodigo.get(cod).push(c);
+  });
+  const nivelAtual = (p) => { const e = estatutoDaAvaliacao(avaliacaoBaseDoJogador(p, epoca)); return e.nivel || 0; };
+  const ordenar = (lista) => [...lista].sort((a, b) => (nivelAtual(b) - nivelAtual(a)) || ((Number(a.number) || 99) - (Number(b.number) || 99)));
+  const rotulo = (p) => `${p.number ? `${p.number} ` : ''}${shortPlayerName(p, players)}`;
+  const LINHA_EMU = 95000;
+  porCodigo.forEach((lista, cod) => {
+    const principais = ordenar(ativos.filter(p => p.position === cod));
+    const secundarios = ordenar(ativos.filter(p => p.secondaryPosition === cod && p.position !== cod));
+    lista.forEach((caixa, j) => {
+      const k = lista.length;
+      const linhas = [
+        ...principais.filter((_, i) => i % k === j).map(p => ({ t: rotulo(p), sec: false })),
+        ...secundarios.filter((_, i) => i % k === j).map(p => ({ t: `${rotulo(p)} (s)`, sec: true })),
+      ];
+      const escreverCaixa = (conteudo) => {
+        const ps = [...conteudo.childNodes].filter(n => n.localName === 'p');
+        const molde = ps[0];
+        const pPr = molde ? filho(molde, 'pPr') : null;
+        const rPrBase = (() => {
+          const r0 = molde ? [...molde.getElementsByTagNameNS(W_NS, 'r')][0] : null;
+          const rp = (r0 && filho(r0, 'rPr')) || (pPr && filho(pPr, 'rPr'));
+          if (!rp) return null;
+          const c0 = rp.cloneNode(true);
+          [...c0.childNodes].forEach(n => { if (['b', 'bCs', 'color'].includes(n.localName)) c0.removeChild(n); });
+          return c0;
+        })();
+        ps.forEach(p => conteudo.removeChild(p));
+        (linhas.length ? linhas : [{ t: '–', sec: false }]).forEach(l => {
+          const p = modelo.createElementNS(W_NS, 'w:p');
+          if (pPr) p.appendChild(pPr.cloneNode(true));
+          const r = modelo.createElementNS(W_NS, 'w:r');
+          const rp = rPrBase ? rPrBase.cloneNode(true) : modelo.createElementNS(W_NS, 'w:rPr');
+          if (l.sec) rp.appendChild(modelo.createElementNS(W_NS, 'w:i'));
+          r.appendChild(rp);
+          const t = modelo.createElementNS(W_NS, 'w:t');
+          t.setAttribute('xml:space', 'preserve'); t.textContent = l.t;
+          r.appendChild(t); p.appendChild(r); conteudo.appendChild(p);
+        });
+      };
+      escreverCaixa(caixa);
+      // A mesma caixa na versão de recurso (programas antigos), se houver.
+      let alt = caixa.parentNode; while (alt && !(alt.localName === 'AlternateContent' && alt.namespaceURI === MC_NS)) alt = alt.parentNode;
+      const fb = alt && [...alt.childNodes].find(n => n.localName === 'Fallback');
+      const gemea = fb && fb.getElementsByTagNameNS(W_NS, 'txbxContent')[0];
+      if (gemea) escreverCaixa(gemea);
+      // Altura da caixa para caberem os nomes (o Word não a recalcula ao abrir).
+      const wsp = (() => { let n = caixa.parentNode; while (n && !(n.localName === 'wsp' && n.namespaceURI === WPS_NS)) n = n.parentNode; return n; })();
+      if (wsp) {
+        const bodyPr = wsp.getElementsByTagNameNS(WPS_NS, 'bodyPr')[0];
+        const ins = bodyPr ? (Number(bodyPr.getAttribute('tIns')) || 45720) + (Number(bodyPr.getAttribute('bIns')) || 45720) : 91440;
+        const precisa = ins + Math.max(1, linhas.length) * LINHA_EMU;
+        const ext = wsp.getElementsByTagNameNS(A_NS, 'ext')[0];
+        if (ext && Number(ext.getAttribute('cy')) < precisa) ext.setAttribute('cy', String(precisa));
+        let anc = wsp.parentNode; while (anc && !(anc.localName === 'anchor' && anc.namespaceURI === WP_NS)) anc = anc.parentNode;
+        const ex = anc && [...anc.childNodes].find(n => n.localName === 'extent');
+        if (ex && Number(ex.getAttribute('cy')) < precisa) ex.setAttribute('cy', String(precisa));
+      }
+    });
+  });
+
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+function GerarOrganizacaoPlantelForm({ doc, players, matches, epoca, onClose }) {
+  const hoje = todayStr();
+  const ativos = (players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje));
+  const sugestao = estruturasMaisUsadas(matches);
+  const [principal, setPrincipal] = useState(sugestao.principal);
+  const [secundaria, setSecundaria] = useState(sugestao.secundaria);
+  const [aProcessar, setAProcessar] = useState(false);
+  const [erro, setErro] = useState('');
+  const chaveEpoca = String(epoca || '').trim() || 'sem-epoca';
+  const gerar = async () => {
+    setErro(''); setAProcessar(true);
+    try {
+      const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+      if (error) throw error;
+      const blob = await gerarOrganizacaoPlantel(await ficheiro.arrayBuffer(), players, chaveEpoca, { principal: principal.trim(), secundaria: secundaria.trim() });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${doc.nome || 'Organização do plantel'} - ${String(epoca || '').replace('/', '-') || 'época'}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Não consegui gerar o ficheiro.');
+    } finally { setAProcessar(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.5 }}>
+        {ativos.length} jogador{ativos.length === 1 ? '' : 'es'} do plantel (os que já saíram ficam de fora), na tabela e no campo pelas posições.
+      </div>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
+        Av. Ini, Int e Final: o Nível atual de cada fase do Estatuto na época {epoca || ''}. No campo, (s) é quem tem essa posição como secundária.
+      </div>
+      <div style={{ ...FIELD_GRID, marginTop: 12 }}>
+        <Field label="Estrutura principal"><Input value={principal} onChange={e => setPrincipal(e.target.value)} placeholder="Ex.: 1-4-3-3" /></Field>
+        <Field label="Estrutura secundária"><Input value={secundaria} onChange={e => setSecundaria(e.target.value)} placeholder="Ex.: 1-4-4-2" /></Field>
+      </div>
+      {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={gerar} disabled={aProcessar || !ativos.length}>
+          {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+/* Um Word carregado antes de a app saber distinguir os modelos não tem
+   `tipoWord`: lê-se o ficheiro uma vez, guarda-se o tipo e abre-se o
+   formulário certo. */
+function GerarWordForm({ doc, players, matches, epoca, setDocumentos, onClose }) {
+  const [tipo, setTipo] = useState(doc.tipoWord || null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    if (tipo) return undefined;
+    let vivo = true;
+    (async () => {
+      try {
+        const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+        if (error) throw error;
+        const t = (await tipoDoDocumentoWord(await ficheiro.arrayBuffer())) || 'fichas';
+        if (!vivo) return;
+        setTipo(t);
+        if (setDocumentos) setDocumentos(prev => (prev || []).map(d => (d.id === doc.id ? { ...d, tipoWord: t } : d)));
+      } catch (e) { if (vivo) setErro(e.message || 'Não consegui ler o modelo.'); }
+    })();
+    return () => { vivo = false; };
+  }, [tipo, doc.id, doc.storagePath, setDocumentos]);
+  if (erro) return <div style={{ marginTop: 14, fontSize: 12, color: T.bad }}>{erro}</div>;
+  if (!tipo) return <div style={{ marginTop: 14, fontSize: 12, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 8 }}><Loader2 size={14} className="spin" /> A ler o modelo…</div>;
+  return tipo === 'organizacao'
+    ? <GerarOrganizacaoPlantelForm doc={doc} players={players} matches={matches} epoca={epoca} onClose={onClose} />
+    : <GerarFichasIndividuaisForm doc={doc} players={players} epoca={epoca} onClose={onClose} />;
+}
 function GerarFichasIndividuaisForm({ doc, players, epoca, onClose }) {
   const hoje = todayStr();
   const ativos = sortByPosition((players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje)));
@@ -8349,9 +8661,13 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
       const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
       const { error } = await supabase.storage.from('documentos').upload(caminho, file, { upsert: false });
       if (error) throw error;
+      // Um Word: vê já que modelo é (Ficha Individual ou Organização do Plantel).
+      let tipoWord = null;
+      if (/\.docx$/i.test(file.name)) { try { tipoWord = await tipoDoDocumentoWord(await file.arrayBuffer()); } catch (e) { tipoWord = null; } }
       setDocumentos(prev => [...(prev || []), {
         id: uid(), nome: file.name.replace(/\.[^.]+$/, ''), fileName: file.name,
         storagePath: caminho, tamanho: file.size, criadoEm: new Date().toISOString(),
+        ...(tipoWord ? { tipoWord } : {}),
       }]);
     } catch (e) {
       setErro(`Não consegui carregar o ficheiro: ${e.message || e}. Confirma que o balde "documentos" existe no Supabase Storage.`);
@@ -8421,7 +8737,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                   )}
                   {/\.docx$/i.test(doc.fileName) && (
                     <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
-                      <FileText size={14} /> Gerar fichas dos jogadores
+                      <FileText size={14} /> {doc.tipoWord === 'organizacao' ? 'Gerar organização do plantel' : 'Gerar fichas dos jogadores'}
                     </Btn>
                   )}
                   {/\.doc$/i.test(doc.fileName) && (
@@ -8433,7 +8749,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                 </div>
               </div>
               {aGerar === doc.id && /\.docx$/i.test(doc.fileName) && (
-                <GerarFichasIndividuaisForm doc={doc} players={players} epoca={epoca} onClose={() => setAGerar(null)} />
+                <GerarWordForm doc={doc} players={players} matches={matches} epoca={epoca} setDocumentos={setDocumentos} onClose={() => setAGerar(null)} />
               )}
               {aGerar === doc.id && !/\.docx$/i.test(doc.fileName) && (
                 <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
@@ -20199,7 +20515,7 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
 
   const contagem = [1, 2, 3, 4, 5].map(n => ativos.filter(p => Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel) === n).length);
   const porAvaliar = ativos.filter(p => !Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel)).length;
-  const modelos = (documentos || []).filter(d => d && /\.docx$/i.test(d.fileName || ''));
+  const modelos = (documentos || []).filter(d => d && /\.docx$/i.test(d.fileName || '') && d.tipoWord !== 'organizacao');
   const [modeloId, setModeloId] = useState(null);
   const modelo = modelos.find(d => d.id === modeloId) || modelos[0] || null;
 
