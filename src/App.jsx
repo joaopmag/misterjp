@@ -42148,8 +42148,9 @@ function NecessidadeResumo({ n, scouting, players, clinico, onAbrir, onEditar, o
       cursor: 'pointer', minWidth: 0, background: T.surface, border: `1px solid ${T.line}`, borderTop: `3px solid ${pr.cor()}`,
       borderRadius: 12, padding: '14px 12px 16px 16px', display: 'flex', flexDirection: 'column',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <div style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>
+      {/* 26px de linha (e menos 4px de margem): sem cortar as pernas das letras. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <div style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '26px', ...umaLinha }}>
           {n.posicao} · {NEC_NOME_POSICAO[n.posicao] || n.posicao}
         </div>
         <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}>
@@ -42640,8 +42641,12 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
                       <div style={{ minWidth: 0 }}>
                         {/* Nome e ações na mesma linha; os ícones ficam juntos
                             para deixar o máximo de espaço ao nome. */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                          <div title={x.name} style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{nomeCurto}</div>
+                        {/* Linha do nome com 26px (era 22px): com 22px o "corte" do
+                            texto numa linha (overflow) apanhava as pernas das
+                            letras como o g, o p ou o j. A margem por baixo
+                            desce os mesmos 4px, por isso o cartão fica igual. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <div title={x.name} style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '26px', ...umaLinha }}>{nomeCurto}</div>
                           <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}>
                             {(() => {
                               // Etiqueta das Necessidades: encaixa numa necessidade ativa.
@@ -54306,7 +54311,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
                 background: `color-mix(in srgb, ${cor} 35%, #fff)`, border: '1px solid rgba(0,0,0,.08)',
               }}><span style={{ ...display, fontSize: 20, color: '#14231a' }}>{iniciais}</span></div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ ...display, fontSize: 22, lineHeight: 1.1, color: '#14231a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome}</div>
+                <div style={{ ...display, fontSize: 22, lineHeight: 1.3, margin: '-2px 0', color: '#14231a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome}</div>
                 <div style={{ fontSize: 11.5, color: '#5a5f58' }}>{funcao}{teste ? ' · teste' : ''}</div>
               </div>
 
