@@ -8027,7 +8027,8 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
     'peso': (p) => (p.weight ? `${p.weight} kg` : ''),
     'altura': (p) => (p.height ? `${p.height} cm` : ''),
     'lateralidade': (p) => p.laterality || '',
-    'contacto': (p) => p.contact || '',
+    // Sem espaços: "+351 939 433 012" sai "+351939433012" e cabe na célula.
+    'contacto': (p) => String(p.contact || '').replace(/\s+/g, ''),
   };
   const FASE_DO_TITULO = (t) => (/avaliacao inicial/.test(t) ? 'inicial' : /avaliacao intermedia/.test(t) ? 'intermedia' : /avaliacao final/.test(t) ? 'final' : null);
 
@@ -20176,7 +20177,7 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
   const [modeloId, setModeloId] = useState(null);
   const modelo = modelos.find(d => d.id === modeloId) || modelos[0] || null;
 
-  const sel = { ...inputStyle, height: 32, lineHeight: '30px', fontSize: 13, padding: '0 6px' };
+  const sel = { ...inputStyle, height: 28, lineHeight: '26px', fontSize: 12, padding: '0 6px' };
   const opcoes = (
     <>
       <option value="">—</option>
@@ -20184,125 +20185,104 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
     </>
   );
   const numeros = (x) => (x && (x.nivel || x.potencial)) ? `${x.nivel || '–'} · ${x.potencial || '–'}` : '—';
-  const colunas = isNarrow ? null : 'minmax(180px, 1.4fr) 64px 64px 64px minmax(150px, 1fr) minmax(150px, 1fr) 96px';
   const faseLabel = (FASES_AVALIACAO.find(fa => fa.id === fase) || {}).label || '';
   const curto = { inicial: 'Inicial', intermedia: 'Intermédia', final: 'Final' };
 
+  /* Mesma imagem do resto do Desenvolvimento: fases com os botões dos
+     separadores da Visão geral (vermelho quando escolhido), tabela dentro
+     de um cartão com os cabeçalhos pequenos em maiúsculas, posição em
+     letra fixa antes do nome e a nota de desenvolvimento com a mesma
+     barra da coluna Staff. */
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+  const btnFase = (on) => ({
+    padding: '7px 13px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', ...body,
+    textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+    border: `1px solid ${on ? '#B5393F' : T.line}`,
+  });
+  const th = { fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '0 8px 8px', whiteSpace: 'nowrap', fontWeight: 400 };
+  const td = { padding: '8px', fontSize: 12.5, whiteSpace: 'nowrap' };
+
   return (
     <div>
-      {/* Fase a preencher + legenda da escala. */}
-      {isNarrow ? (
-        // Telemóvel: as três fases numa só linha, com o nome curto.
-        <div style={{ ...faseFixa, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-          {FASES_AVALIACAO.map(fa => (
-            <ChipBtn key={fa.id} active={fase === fa.id} onClick={() => setFase(fa.id)}>{curto[fa.id]}</ChipBtn>
-          ))}
-        </div>
-      ) : (
-        <div style={{ ...faseFixa, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginRight: 4 }}>A preencher</span>
-          {FASES_AVALIACAO.map(fa => (
-            <ChipBtn key={fa.id} active={fase === fa.id} onClick={() => setFase(fa.id)}>{fa.label}</ChipBtn>
-          ))}
-          <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: T.mutedDim }}>Época {epoca || '—'}</span>
-        </div>
-      )}
+      <div style={{ ...faseFixa, display: isNarrow ? 'grid' : 'flex', gridTemplateColumns: isNarrow ? 'repeat(3, 1fr)' : undefined, alignItems: 'center', gap: 6 }}>
+        {FASES_AVALIACAO.map(fa => (
+          <button key={fa.id} onClick={() => setFase(fa.id)} style={btnFase(fase === fa.id)}>{isNarrow ? curto[fa.id] : fa.label}</button>
+        ))}
+        {!isNarrow && <span style={{ flex: 1 }} />}
+        {!isNarrow && <span style={{ fontSize: 12, color: T.mutedDim }}>Época {epoca || '—'}</span>}
+      </div>
 
       {/* Equilíbrio do plantel nesta fase. Larguras fixas: os números
           mudam e nada à volta se mexe. */}
       <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(3, 1fr)' : 'repeat(6, 1fr)', gap: 8, marginBottom: 14 }}>
-        {STATUS_OPTIONS.map((s0, i) => (
-          <div key={s0} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
-            <div style={{ ...mono, fontSize: 18, color: contagem[i] ? T.cream : T.mutedDim }}>{contagem[i]}</div>
-            <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i + 1} · {s0}</div>
+        {[...STATUS_OPTIONS.map((s0, i) => ({ n: contagem[i], label: `${i + 1} · ${s0}`, aviso: false })), { n: porAvaliar, label: 'Por avaliar', aviso: porAvaliar > 0 }].map(c => (
+          <div key={c.label} style={{ ...card, padding: '8px 12px', minWidth: 0, borderColor: c.aviso ? `${T.warn}66` : T.line }}>
+            <div style={{ ...mono, fontSize: 16, color: c.aviso ? T.warn : (c.n ? T.cream : T.mutedDim) }}>{c.n}</div>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</div>
           </div>
         ))}
-        <div style={{ background: T.surface, border: `1px solid ${porAvaliar ? T.warn + '66' : T.line}`, borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
-          <div style={{ ...mono, fontSize: 18, color: porAvaliar ? T.warn : T.mutedDim }}>{porAvaliar}</div>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>Por avaliar</div>
-        </div>
       </div>
 
       {ativos.length === 0 ? (
         <EmptyState text="Sem jogadores ativos no Plantel." />
       ) : (
-        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
-          {!isNarrow && (
-            <div style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', padding: '9px 14px', borderBottom: `1px solid ${T.line}`, fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              <span>Jogador</span>
-              {FASES_AVALIACAO.map(fa => (
-                <span key={fa.id} title="Nível atual · Potencial" style={{ textAlign: 'center', color: fa.id === fase ? T.warn : T.muted }}>{curto[fa.id]}</span>
-              ))}
-              <span>Nível atual · {curto[fase]}</span>
-              <span>Potencial · {curto[fase]}</span>
-              <span>Observações</span>
-            </div>
-          )}
-          {ativos.map((p, idx) => {
-            const av = avaliacaoBaseDoJogador(p, chaveEpoca);
-            const x = av[fase] || {};
-            const nota = notaDev.get(p.id);
-            const nome = (
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {/* Número numa coluna de largura fixa: os nomes ficam alinhados. */}
-                  <span style={{ ...mono, color: T.mutedDim, display: 'inline-block', width: 24, marginRight: 6, textAlign: 'right' }}>{p.number || ''}</span>{p.name}
-                </div>
-                <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', paddingLeft: 30 }}>
-                  {[p.position, p.secondaryPosition].filter(Boolean).join('/') || '—'}
-                  {nota != null && <span title="Nota da equipa técnica no último momento do Desenvolvimento (só referência)"> · Desenv. {nota.toFixed(1).replace('.', ',')}</span>}
-                </div>
-              </div>
-            );
-            const botaoObs = (
-              <button onClick={() => setObsDe({ playerId: p.id, texto: x.obs || '' })} title={x.obs || 'Escrever observações'} style={{
-                ...ESTILO_BOTAO_PEQUENO, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', ...body,
-                background: x.obs ? `${T.gold}22` : 'transparent', border: `1px solid ${x.obs ? T.gold : T.line}`, color: x.obs ? T.warn : T.muted, width: '100%',
-              }}>
-                <Pencil size={ICONE_BOTAO_PEQUENO} style={{ flexShrink: 0 }} /> {x.obs ? 'Ver' : (isNarrow ? 'Obs.' : 'Escrever')}
-              </button>
-            );
-            const selNivel = (
-              <select value={x.nivel || ''} onChange={e => mudar(p, 'nivel', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Nível atual de ${p.name}`}>{opcoes}</select>
-            );
-            const selPot = (
-              <select value={x.potencial || ''} onChange={e => mudar(p, 'potencial', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Potencial de ${p.name}`}>{opcoes}</select>
-            );
-            const fundo = idx % 2 ? 'transparent' : `${T.bg}55`;
-            if (isNarrow) {
-              return (
-                <div key={p.id} style={{ padding: '10px 12px', borderTop: idx ? `1px solid ${T.line}` : 'none', background: fundo, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {nome}
-                    <span style={{ marginLeft: 'auto', ...mono, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
-                      {FASES_AVALIACAO.filter(fa => fa.id !== fase).map(fa => `${curto[fa.id].slice(0, 3)}. ${numeros(av[fa.id])}`).join('  ')}
-                    </span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 88px', gap: 8 }}>{selNivel}{selPot}{botaoObs}</div>
-                </div>
-              );
-            }
-            return (
-              <div key={p.id} style={{ display: 'grid', gridTemplateColumns: colunas, gap: 10, alignItems: 'center', padding: '7px 14px', borderTop: idx ? `1px solid ${T.line}` : 'none', background: fundo, minHeight: 48, boxSizing: 'border-box' }}>
-                {nome}
+        <div style={{ ...card, overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 780 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}>Jogador</th>
+                <th style={{ ...th, textAlign: 'center' }} title="Nota da equipa técnica no último momento das Avaliações (só referência)">Desenv.</th>
                 {FASES_AVALIACAO.map(fa => (
-                  <span key={fa.id} style={{ ...mono, fontSize: 12.5, textAlign: 'center', color: fa.id === fase ? T.warn : T.muted }}>{numeros(av[fa.id])}</span>
+                  <th key={fa.id} title="Nível atual · Potencial" style={{ ...th, textAlign: 'center', color: fa.id === fase ? T.warn : T.muted }}>{curto[fa.id]}</th>
                 ))}
-                {selNivel}
-                {selPot}
-                {botaoObs}
-              </div>
-            );
-          })}
+                <th style={{ ...th, textAlign: 'left' }}>Nível atual · {curto[fase]}</th>
+                <th style={{ ...th, textAlign: 'left' }}>Potencial · {curto[fase]}</th>
+                <th style={{ ...th, textAlign: 'center' }}>Obs.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ativos.map(p => {
+                const av = avaliacaoBaseDoJogador(p, chaveEpoca);
+                const x = av[fase] || {};
+                const nota = notaDev.get(p.id);
+                return (
+                  <tr key={p.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                    <td style={{ ...td, color: T.cream }}>
+                      {/* Posição numa largura fixa: os nomes ficam alinhados. */}
+                      <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, display: 'inline-block', width: 24 }}>{p.position || '--'}</span>
+                      {shortPlayerName(p, players)}
+                    </td>
+                    <td style={{ ...td, textAlign: 'center' }}><DiBarra valor={nota} largura={54} /></td>
+                    {FASES_AVALIACAO.map(fa => (
+                      <td key={fa.id} style={{ ...td, textAlign: 'center', ...mono, fontSize: 11.5, color: fa.id === fase ? T.cream : T.mutedDim }}>{numeros(av[fa.id])}</td>
+                    ))}
+                    <td style={{ ...td, minWidth: 170 }}>
+                      <select value={x.nivel || ''} onChange={e => mudar(p, 'nivel', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Nível atual de ${p.name}`}>{opcoes}</select>
+                    </td>
+                    <td style={{ ...td, minWidth: 170 }}>
+                      <select value={x.potencial || ''} onChange={e => mudar(p, 'potencial', e.target.value ? Number(e.target.value) : '')} style={sel} aria-label={`Potencial de ${p.name}`}>{opcoes}</select>
+                    </td>
+                    <td style={{ ...td, textAlign: 'center' }}>
+                      <button onClick={() => setObsDe({ playerId: p.id, texto: x.obs || '' })}
+                        title={x.obs || 'Escrever observações'} aria-label={`Observações de ${p.name}`}
+                        style={{ background: 'none', border: 'none', color: x.obs ? T.warn : T.mutedDim, cursor: 'pointer', padding: 2, display: 'inline-flex' }}>
+                        {x.obs ? <FileText size={14} /> : <Pencil size={13} />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
       {/* Word com as fichas: o mesmo de Documentos, à mão de quem avalia. */}
-      <div style={{ marginTop: 16, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ ...card, marginTop: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <FileText size={16} color={T.muted} />
-          <span style={{ fontSize: 13, color: T.cream }}>Fichas individuais em Word</span>
+          <span style={{ fontSize: 12.5, color: T.cream }}>Fichas individuais em Word</span>
           {modelos.length > 1 && (
             <select value={modelo ? modelo.id : ''} onChange={e => setModeloId(e.target.value)} style={{ ...sel, width: 'auto', minWidth: 200 }}>
               {modelos.map(d => <option key={d.id} value={d.id}>{d.nome || d.fileName}</option>)}
