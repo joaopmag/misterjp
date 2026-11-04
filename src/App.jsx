@@ -8178,6 +8178,65 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
         corpo.insertBefore(paragrafoExato(distanciaTopo || 20, k > 0), sectPr);
       }
     }
+    /* 4. Todas as tabelas encostadas à margem, em qualquer programa.
+          Word, WPS e LibreOffice não concordam onde pôr a borda esquerda
+          de uma tabela: uns encostam a borda à margem, outros encostam o
+          TEXTO e empurram a borda para fora tanto quanto a margem
+          interior da primeira célula. Com essa margem a zero, as duas
+          regras dão o mesmo sítio; o texto das células da primeira coluna
+          recebe o mesmo recuo como avanço de parágrafo, por isso continua
+          à mesma distância da borda. */
+    const ORDEM_DEPOIS_IND = ['contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc', 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr', 'sectPr', 'pPrChange'];
+    const filhoW = (no, nome) => [...no.childNodes].find(n => n.nodeType === 1 && n.localName === nome) || null;
+    copia.filter(n => n.localName === 'tbl').forEach(tbl => {
+      const tblPr = filhoW(tbl, 'tblPr');
+      const margemTabela = (() => {
+        const m = tblPr && filhoW(tblPr, 'tblCellMar');
+        const l = m && (filhoW(m, 'left') || filhoW(m, 'start'));
+        return l ? Number(l.getAttribute('w:w')) || 0 : 108;
+      })();
+      [...tbl.childNodes].filter(n => n.localName === 'tr').forEach(tr => {
+        const tc = filhoW(tr, 'tc');
+        if (!tc) return;
+        let tcPr = filhoW(tc, 'tcPr');
+        if (!tcPr) { tcPr = modelo.createElementNS(W_NS, 'w:tcPr'); tc.insertBefore(tcPr, tc.firstChild); }
+        let tcMar = filhoW(tcPr, 'tcMar');
+        const ex = filhoW(tr, 'tblPrEx');
+        const mEx = ex && filhoW(ex, 'tblCellMar');
+        const lEx = mEx && (filhoW(mEx, 'left') || filhoW(mEx, 'start'));
+        let margem = lEx ? Number(lEx.getAttribute('w:w')) || 0 : margemTabela;
+        let esq = tcMar && (filhoW(tcMar, 'left') || filhoW(tcMar, 'start'));
+        if (esq) margem = Number(esq.getAttribute('w:w')) || 0;
+        if (!margem) return;
+        if (!tcMar) {
+          tcMar = modelo.createElementNS(W_NS, 'w:tcMar');
+          // Ordem do Word dentro de tcPr: tcMar vem antes de textDirection, tcFitText, vAlign, hideMark.
+          const antes = [...tcPr.childNodes].find(n => n.nodeType === 1 && ['textDirection', 'tcFitText', 'vAlign', 'hideMark', 'headers', 'cellIns', 'cellDel', 'cellMerge', 'tcPrChange'].includes(n.localName));
+          tcPr.insertBefore(tcMar, antes || null);
+        }
+        if (!esq) {
+          esq = modelo.createElementNS(W_NS, 'w:left');
+          const antes = [...tcMar.childNodes].find(n => n.nodeType === 1 && ['bottom', 'end', 'right'].includes(n.localName));
+          tcMar.insertBefore(esq, antes || null);
+        }
+        esq.setAttribute('w:w', '0'); esq.setAttribute('w:type', 'dxa');
+        [...tc.getElementsByTagNameNS(W_NS, 'p')].forEach(par => {
+          let ppr = filhoW(par, 'pPr');
+          if (!ppr) { ppr = modelo.createElementNS(W_NS, 'w:pPr'); par.insertBefore(ppr, par.firstChild); }
+          const jc = filhoW(ppr, 'jc');
+          const alinh = jc ? jc.getAttribute('w:val') : '';
+          if (alinh === 'center' || alinh === 'right' || alinh === 'end') return; // centrado: 0,1 mm de diferença, não se nota
+          let ind = filhoW(ppr, 'ind');
+          if (!ind) {
+            ind = modelo.createElementNS(W_NS, 'w:ind');
+            const antes = [...ppr.childNodes].find(n => n.nodeType === 1 && ORDEM_DEPOIS_IND.includes(n.localName));
+            ppr.insertBefore(ind, antes || null);
+          }
+          const atr = ind.hasAttribute('w:start') ? 'w:start' : 'w:left';
+          ind.setAttribute(atr, String((Number(ind.getAttribute(atr)) || 0) + margem));
+        });
+      });
+    });
     copia.forEach(n => corpo.insertBefore(n, sectPr));
   }
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
@@ -20161,9 +20220,10 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
             const nome = (
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {p.number ? <span style={{ ...mono, color: T.mutedDim, marginRight: 6 }}>{p.number}</span> : null}{p.name}
+                  {/* Número numa coluna de largura fixa: os nomes ficam alinhados. */}
+                  <span style={{ ...mono, color: T.mutedDim, display: 'inline-block', width: 24, marginRight: 6, textAlign: 'right' }}>{p.number || ''}</span>{p.name}
                 </div>
-                <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', paddingLeft: 30 }}>
                   {[p.position, p.secondaryPosition].filter(Boolean).join('/') || '—'}
                   {nota != null && <span title="Nota da equipa técnica no último momento do Desenvolvimento (só referência)"> · Desenv. {nota.toFixed(1).replace('.', ',')}</span>}
                 </div>
