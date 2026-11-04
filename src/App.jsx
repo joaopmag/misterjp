@@ -8934,7 +8934,16 @@ function elementosDaSessao(sessao, players, equipa) {
         const [px, py] = l.ponto || [0.5, 0.5];
         x = 1 + px * 105;
         // Vários no mesmo lugar: lado a lado, ao longo da largura do campo.
-        y = 1 + py * 68 + (i - (lista.length - 1) / 2) * 5.2;
+        // A coluna inteira é empurrada para dentro do campo, para nenhum
+        // jogador (nem o nome por baixo) ficar cortado na borda: o de cima
+        // fica pelo menos a 3 m da linha e o de baixo deixa lugar ao nome.
+        const PASSO = 5.2; const Y_MIN = 4; const Y_MAX = 65;
+        const meio = 1 + py * 68;
+        const altura = (lista.length - 1) * PASSO;
+        let topo = meio - altura / 2;
+        if (topo < Y_MIN) topo = Y_MIN;
+        if (topo + altura > Y_MAX) topo = Math.max(Y_MIN, Y_MAX - altura);
+        y = topo + i * PASSO;
       }
       const doPlantel = (players || []).find(pp => pp && pp.id === j.chave);
       els.push({
