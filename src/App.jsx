@@ -4481,7 +4481,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              eram dois separadores e continua a ser agora que são duas
              sub-abas: o `display: none` é justamente o que o permite. */}
           <div style={{ display: tab === 'biblioteca' ? 'block' : 'none' }}>
-            <SectionHeader title="Sala de Vídeo" subtitle="Vídeos e apresentações da equipa." />
+            <SectionHeader title="Sala de Vídeo" subtitle="Vídeos e apresentações da equipa."
+              action={biblioteca === 'apresentacoes'
+                ? <Btn onClick={() => apresentacoesRef.current?.abrirNovo()}><Plus size={15} /> Adicionar ficheiro</Btn>
+                : <Btn onClick={() => canalRef.current?.abrirNovo()}><Plus size={15} /> Adicionar vídeo</Btn>} />
             {/* Um botão só, na mesma linha dos separadores, alinhado à
                 direita — o rótulo e o clique mudam consoante a sub-aba
                 aberta, mas é sempre este único botão a aparecer, nunca um
@@ -4498,12 +4501,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 ]}
                 semMargem
               />
-              {biblioteca === 'videos' && (
-                <Btn onClick={() => canalRef.current?.abrirNovo()}><Plus size={15} /> Adicionar vídeo</Btn>
-              )}
-              {biblioteca === 'apresentacoes' && (
-                <Btn onClick={() => apresentacoesRef.current?.abrirNovo()}><Plus size={15} /> Adicionar ficheiro</Btn>
-              )}
             </div>
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
@@ -25538,7 +25535,10 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <SectionHeader title="Boletim Clínico" subtitle="Uma ficha por lesão, com a evolução datada." />
+      {/* "Nova ocorrência" no cabeçalho, no mesmo sítio do "Novo exercício",
+          "Nova ideia", "Nova sessão"… em todas as páginas. */}
+      <SectionHeader title="Boletim Clínico" subtitle="Uma ficha por lesão, com a evolução datada."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>} />
 
       {partidas.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 10, border: `1px solid ${T.warn}`, background: T.surface }}>
@@ -25585,7 +25585,6 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
 
       <Panel
         title="Lista clínica"
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>}
       >
         {/* Quantos e em que nível, antes da lista: é a pergunta que se faz
             ao abrir o separador. */}
@@ -42826,7 +42825,30 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
 
   return (
     <div>
-      <SectionHeader title="Scouting" subtitle="Jogadores e adversários para acompanhar ao longo da época." />
+      {/* A ação de cada separador fica no cabeçalho, no mesmo sítio do
+          "Novo exercício" e das outras páginas. "Exportar CSV" fica por
+          baixo de "Adicionar jogador", pequeno, por cima do espaço livre
+          da linha dos separadores (posição absoluta): o cabeçalho tem a
+          mesma altura em todos os separadores e nada mexe ao trocar. */}
+      <SectionHeader title="Scouting" subtitle="Jogadores e adversários para acompanhar ao longo da época."
+        action={
+          !viewing && !modal && subTab === 'jogadores' ? (
+            <div style={{ position: 'relative' }}>
+              <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
+              {scouting.length > 0 && (
+                <button type="button" onClick={() => exportScoutingCSV(scouting)} title="Descarregar a lista de jogadores em CSV" style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, padding: '3px 8px',
+                  color: T.muted, fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+                }}><Download size={12} /> Exportar CSV</button>
+              )}
+            </div>
+          ) : !viewing && !modal && subTab === 'adversarios' && !editandoAdversario ? (
+            <Btn onClick={() => setEditandoAdversario('new')}><Plus size={15} /> Adicionar adversário</Btn>
+          ) : !viewing && !modal && subTab === 'necessidades' && !necVista && necApi.estado !== 'sem-tabela' && necApi.estado !== 'erro' ? (
+            <Btn onClick={() => setNecVista({ tipo: 'form', inicial: {} })} disabled={!necCarregado}><Plus size={15} /> Lançar necessidade</Btn>
+          ) : null
+        } />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
         <SubTabs
           value={subTab}
@@ -42858,20 +42880,6 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
             AdversariosApp) exatamente pela mesma razão: fica na mesma
             linha dos separadores, alinhada do lado oposto, como as
             ações de "Jogadores". */}
-        {!viewing && !modal && subTab === 'jogadores' && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            {scouting.length > 0 && (
-              <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
-            )}
-            <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
-          </div>
-        )}
-        {!viewing && !modal && subTab === 'adversarios' && !editandoAdversario && (
-          <Btn onClick={() => setEditandoAdversario('new')}><Plus size={15} /> Adicionar adversário</Btn>
-        )}
-        {!viewing && !modal && subTab === 'necessidades' && !necVista && necApi.estado !== 'sem-tabela' && necApi.estado !== 'erro' && (
-          <Btn onClick={() => setNecVista({ tipo: 'form', inicial: {} })} disabled={!necCarregado}><Plus size={15} /> Lançar necessidade</Btn>
-        )}
       </div>
 
       {viewing ? (
