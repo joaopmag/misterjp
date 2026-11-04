@@ -8104,14 +8104,65 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
         });
       });
     });
-    // Quebra de página entre fichas.
-    if (k > 0) {
-      const pq = modelo.createElementNS(W_NS, 'w:p');
-      const rq = modelo.createElementNS(W_NS, 'w:r');
-      const br = modelo.createElementNS(W_NS, 'w:br');
-      br.setAttribute('w:type', 'page');
-      rq.appendChild(br); pq.appendChild(rq);
-      corpo.insertBefore(pq, sectPr);
+    /* PÁGINAS E ALINHAMENTO NO WORD.
+
+       1. A tabela de cima do modelo (Nome Completo, foto…) é uma tabela
+          "flutuante", posicionada a uma distância fixa do topo. O Word
+          alinha uma tabela flutuante pela borda e as tabelas normais pelo
+          texto, por isso ela aparecia uns milímetros à direita das de
+          baixo. Passa a ser uma tabela normal, e um parágrafo de altura
+          exata no início guarda a mesma distância ao topo.
+       2. A quebra entre fichas ia num parágrafo próprio. Com a página já
+          cheia, o Word punha esse parágrafo na página seguinte e só depois
+          quebrava: uma página em branco entre cada jogador. Agora a quebra
+          é "começar numa página nova" no parágrafo de abertura da ficha.
+       3. O parágrafo vazio do fim de cada ficha fica com 1 pt de altura,
+          para nunca transbordar sozinho para uma página nova. */
+    const paragrafoExato = (alturaTw, quebra) => {
+      const pp = modelo.createElementNS(W_NS, 'w:p');
+      const ppr = modelo.createElementNS(W_NS, 'w:pPr');
+      if (quebra) ppr.appendChild(modelo.createElementNS(W_NS, 'w:pageBreakBefore'));
+      const sp = modelo.createElementNS(W_NS, 'w:spacing');
+      sp.setAttribute('w:before', '0'); sp.setAttribute('w:after', '0');
+      sp.setAttribute('w:line', String(Math.max(20, Math.round(alturaTw)))); sp.setAttribute('w:lineRule', 'exact');
+      ppr.appendChild(sp);
+      const rpr = modelo.createElementNS(W_NS, 'w:rPr');
+      const sz = modelo.createElementNS(W_NS, 'w:sz'); sz.setAttribute('w:val', '2'); rpr.appendChild(sz);
+      ppr.appendChild(rpr);
+      pp.appendChild(ppr);
+      return pp;
+    };
+    let distanciaTopo = 0;
+    const primeiro = copia[0];
+    if (primeiro && primeiro.localName === 'tbl') {
+      const tblPr = [...primeiro.childNodes].find(n => n.localName === 'tblPr');
+      const tp = tblPr && [...tblPr.childNodes].find(n => n.localName === 'tblpPr');
+      if (tp) {
+        let y = Number(tp.getAttribute('w:tblpY')) || 0;
+        if (tp.getAttribute('w:vertAnchor') === 'page') {
+          const pgMar = sectPr && sectPr.getElementsByTagNameNS(W_NS, 'pgMar')[0];
+          y -= Number(pgMar && pgMar.getAttribute('w:top')) || 0;
+        }
+        distanciaTopo = Math.max(0, y);
+        tblPr.removeChild(tp);
+      }
+    }
+    const ultimo = copia[copia.length - 1];
+    if (ultimo && ultimo.localName === 'p' && !textoDoNo(ultimo).trim() && !ultimo.getElementsByTagNameNS(W_NS, 'drawing').length) {
+      const pp = paragrafoExato(20, false);
+      [...ultimo.childNodes].forEach(n => ultimo.removeChild(n));
+      [...pp.childNodes].forEach(n => ultimo.appendChild(n));
+    }
+    if (k > 0 || distanciaTopo > 0) {
+      if (primeiro && primeiro.localName === 'p' && !distanciaTopo) {
+        let ppr = [...primeiro.childNodes].find(n => n.localName === 'pPr');
+        if (!ppr) { ppr = modelo.createElementNS(W_NS, 'w:pPr'); primeiro.insertBefore(ppr, primeiro.firstChild); }
+        // Ordem do Word: pStyle, keepNext, keepLines e só depois pageBreakBefore.
+        const depois = [...ppr.childNodes].find(n => n.nodeType === 1 && !['pStyle', 'keepNext', 'keepLines'].includes(n.localName));
+        ppr.insertBefore(modelo.createElementNS(W_NS, 'w:pageBreakBefore'), depois || null);
+      } else {
+        corpo.insertBefore(paragrafoExato(distanciaTopo || 20, k > 0), sectPr);
+      }
     }
     copia.forEach(n => corpo.insertBefore(n, sectPr));
   }
