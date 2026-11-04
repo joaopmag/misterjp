@@ -10167,7 +10167,31 @@ function RegistoClinicoJogador({ ocorrencias, onAbrir }) {
    consequência) e as faltas/atrasos registados com motivo. As faltas
    marcadas só nas Presenças já contam nas Presenças, à esquerda. Só a
    equipa técnica vê esta página. */
-function CadastroDisciplinar({ diario, playerId, card, sectionTitle }) {
+/* EXPULSÕES EM JOGO de um atleta (dos relatórios de jogo), com o estado
+   do castigo de cada uma — a mesma regra de `castigadosParaJogo`: cada
+   jogo oficial já disputado depois da expulsão conta como cumprido. */
+function expulsoesEmJogo(matches, playerId) {
+  const hoje = todayStr();
+  const lista = (matches || []).filter(m => m && m.date && m.report && m.report[playerId]
+    && (m.report[playerId].card === 'red' || m.report[playerId].card === 'yellow2'));
+  const oficiais = (matches || []).filter(m => m && m.date && !isFriendlyMatch(m) && !jogoNaoJogado(m));
+  return lista.sort((a, b) => b.date.localeCompare(a.date)).map(m => {
+    const r = m.report[playerId];
+    const amigavel = isFriendlyMatch(m);
+    const n = amigavel ? 0 : jogosDeCastigo(r);
+    const cumpridos = oficiais.filter(x => x.date > m.date && x.date <= hoje && x.id !== m.id).length;
+    let estado;
+    if (amigavel) estado = 'amigável, sem castigo';
+    else if (n === Infinity) estado = 'castigo por definir';
+    else if (n === 0) estado = 'castigo anulado';
+    else if (cumpridos >= n) estado = n === 1 ? 'castigo cumprido' : `castigo cumprido (${n} jogos)`;
+    else estado = `castigo por cumprir (${cumpridos} de ${n})`;
+    return { id: m.id, data: m.date, adversario: m.opponent || 'jogo', cartao: r.card, estado, porCumprir: !amigavel && (n === Infinity || cumpridos < n) && n !== 0 };
+  });
+}
+
+function CadastroDisciplinar({ diario, playerId, card, sectionTitle, matches = [] }) {
+  const emJogo = expulsoesEmJogo(matches, playerId);
   const doAtleta = (diario || []).filter(n => (n.atletas || []).includes(playerId));
   const disciplina = doAtleta.filter(n => chaveDoTipo(n) === 'disciplina')
     .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
@@ -10188,13 +10212,32 @@ function CadastroDisciplinar({ diario, playerId, card, sectionTitle }) {
   return (
     <>
       <div style={sectionTitle}>Cadastro disciplinar</div>
-      {disciplina.length === 0 && faltas.length === 0 ? (
-        <div style={{ ...card, color: T.mutedDim, fontSize: 12.5 }}>Sem registos no Diário.</div>
+      {disciplina.length === 0 && faltas.length === 0 && emJogo.length === 0 ? (
+        <div style={{ ...card, color: T.mutedDim, fontSize: 12.5 }}>Sem registos no Diário nem expulsões em jogo.</div>
       ) : (
         <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 12.5, color: amarelos >= 3 || vermelhos ? T.bad : T.cream }}>
-            {resumo.join(' · ')}{amarelos >= 3 ? ' · acumulação' : ''}
+          {/* EM JOGO: as expulsões dos relatórios de jogo e o castigo de cada uma. */}
+          {emJogo.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 12.5, color: emJogo.some(x => x.porCumprir) ? T.bad : T.cream }}>
+                Em jogo: {emJogo.length} expuls{emJogo.length === 1 ? 'ão' : 'ões'}
+              </div>
+              {emJogo.map(x => (
+                <div key={x.id} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <MiniCartao cor={x.cartao === 'red' ? 'vermelho' : 'amarelo'} />
+                  <div style={{ fontSize: 12, color: T.mutedDim, minWidth: 0 }}>
+                    <span style={mono}>{fmtShort(x.data)}</span> · vs {x.adversario} · {x.cartao === 'red' ? 'vermelho direto' : '2.º amarelo'} ·{' '}
+                    <span style={{ color: x.porCumprir ? T.warn : T.mutedDim }}>{x.estado}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {(disciplina.length > 0 || faltas.length > 0) && (
+          <div style={{ fontSize: 12.5, color: amarelos >= 3 || vermelhos ? T.bad : T.cream, ...(emJogo.length ? { borderTop: `1px solid ${T.line}`, paddingTop: 8 } : {}) }}>
+            No Diário: {resumo.join(' · ')}{amarelos >= 3 ? ' · acumulação' : ''}
           </div>
+          )}
           {disciplina.map(n => (
             <div key={n.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', borderTop: `1px solid ${T.line}`, paddingTop: 8 }}>
               <MiniCartao cor={n.cartao || 'amarelo'} />
@@ -10400,7 +10443,7 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
               : `${momentosAbertos} momento${momentosAbertos === 1 ? '' : 's'} ${momentosAbertos === 1 ? 'aberto' : 'abertos'} de ${momentos.length}${ultimoMomento ? ` · último a ${fmtShort(ultimoMomento.data)}` : ''}`}
           </div>
 
-          <CadastroDisciplinar diario={diario} playerId={player.id} card={card} sectionTitle={sectionTitle} />
+          <CadastroDisciplinar diario={diario} playerId={player.id} card={card} sectionTitle={sectionTitle} matches={matches} />
         </div>
       </div>
 
