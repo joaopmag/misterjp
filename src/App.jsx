@@ -8188,6 +8188,32 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
           à mesma distância da borda. */
     const ORDEM_DEPOIS_IND = ['contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc', 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr', 'sectPr', 'pPrChange'];
     const filhoW = (no, nome) => [...no.childNodes].find(n => n.nodeType === 1 && n.localName === nome) || null;
+    /* 5. Recuos diferentes entre tabelas da mesma largura (um modelo
+          convertido de .doc trazia a de cima com recuo 100 e as de baixo
+          com 0): as tabelas com a largura da mais larga (±5%) ficam
+          todas com o recuo dessa. */
+    {
+      const tabelas = copia.filter(n => n.localName === 'tbl');
+      const largura = (t) => { const pr = filhoW(t, 'tblPr'); const w = pr && filhoW(pr, 'tblW'); return Number(w && w.getAttribute('w:w')) || 0; };
+      const recuo = (t) => { const pr = filhoW(t, 'tblPr'); return (pr && filhoW(pr, 'tblInd')) || null; };
+      const maior = tabelas.reduce((a, t) => (largura(t) > largura(a) ? t : a), tabelas[0]);
+      if (maior && largura(maior) > 0) {
+        const ref = recuo(maior);
+        const valor = ref ? ref.getAttribute('w:w') || '0' : '0';
+        tabelas.forEach(t => {
+          if (t === maior || Math.abs(largura(t) - largura(maior)) > largura(maior) * 0.05) return;
+          const pr = filhoW(t, 'tblPr');
+          if (!pr) return;
+          let ind = recuo(t);
+          if (!ind) {
+            ind = modelo.createElementNS(W_NS, 'w:tblInd');
+            const antes = [...pr.childNodes].find(n => n.nodeType === 1 && ['tblBorders', 'shd', 'tblLayout', 'tblCellMar', 'tblLook', 'tblCaption', 'tblDescription', 'tblPrChange'].includes(n.localName));
+            pr.insertBefore(ind, antes || null);
+          }
+          ind.setAttribute('w:w', valor); ind.setAttribute('w:type', 'dxa');
+        });
+      }
+    }
     copia.filter(n => n.localName === 'tbl').forEach(tbl => {
       const tblPr = filhoW(tbl, 'tblPr');
       const margemTabela = (() => {
