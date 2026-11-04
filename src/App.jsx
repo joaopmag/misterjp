@@ -8861,7 +8861,9 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
       .filter(p => (attendance || []).includes(p.id))
       // `camisola`: só os jogadores do Scouting (adversários) a têm — o
       // nosso plantel continua a aparecer só com o nome, como sempre.
-      .map(p => ({ chave: p.id, nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false, numero: p.camisola || '' })),
+      // O nome por que é conhecido no clube ("Nome no clube"), como no resto
+      // da app; sem ele, o nome curto de sempre.
+      .map(p => ({ chave: p.id, nome: String(p.alcunha || '').trim() || nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false, numero: p.camisola || '' })),
     ...(convidados || []).map(c => ({
       chave: `c:${c.id}`, nome: nomeCurtoNaPrancheta(c.nome), pos: c.position || '', exp: true,
     })),
@@ -8938,8 +8940,10 @@ function elementosDaSessao(sessao, players, equipa) {
       els.push({
         id: uid(), kind: l.id === 'GR' ? 'keeper' : 'player', team: equipa || 'A',
         number: l.id === 'fora' ? (j.pos || '') : l.rotulo, nome: j.nome,
-        // Número da camisola (para quando o esquema mostra "Nº").
-        ...(doPlantel && doPlantel.number != null && String(doPlantel.number).trim() !== '' ? { camisola: String(doPlantel.number).trim(), playerId: doPlantel.id } : {}),
+        // Número da camisola (para quando o esquema mostra "Nº"). Quem está
+        // à experiência não tem número: fica com o círculo vazio.
+        ...(j.exp ? { convidado: true, camisola: '' } : {}),
+        ...(!j.exp && doPlantel && doPlantel.number != null && String(doPlantel.number).trim() !== '' ? { camisola: String(doPlantel.number).trim(), playerId: doPlantel.id } : {}),
         x: Math.max(-2, Math.min(107, x)), y: Math.max(-2, Math.min(76, y)),
       });
     });
@@ -13040,6 +13044,7 @@ function rotuloIcone(el) {
   const isKeeper = el.kind === 'keeper';
   if (el.rotulo === 'cor') return '';
   if (el.rotulo === 'numero') {
+    if (el.convidado) return '';
     const c = el.camisola != null && String(el.camisola).trim() !== '' ? String(el.camisola).trim() : null;
     if (c) return c;
     return typeof el.number === 'number' ? String(el.number) : (isKeeper ? '1' : '');
@@ -15872,7 +15877,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const comRotulo = (novo) => (rotulosEsquema === 'posicao' ? novo : {
     ...novo, rotulo: rotulosEsquema,
-    ...(rotulosEsquema === 'numero' && novo.camisola == null ? { camisola: proximaCamisola(novo.team, novo.kind === 'keeper') } : {}),
+    ...(rotulosEsquema === 'numero' && novo.camisola == null && !novo.convidado ? { camisola: proximaCamisola(novo.team, novo.kind === 'keeper') } : {}),
   });
   // JOGADORES DO TREINO (ver elementosDaSessao): junta ao campo os presentes
   // de uma sessão, na cor escolhida, nos lugares do Quadro de posições.
@@ -17178,7 +17183,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         {/* O QUE APARECE NO CÍRCULO DOS JOGADORES — para o esquema inteiro
             (ver ROTULOS_JOGADOR). Fica nesta linha, que tinha espaço livre,
             para as ferramentas e o campo não mexerem. */}
-        <div title="O que aparece no círculo dos jogadores (no esquema todo)" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <div title="O que aparece no círculo dos jogadores (no esquema todo)" style={{ marginLeft: 10, display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: T.mutedDim }}>Mostrar:</span>
           <div style={{ display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden' }}>
             {ROTULOS_JOGADOR.map(r => (
@@ -17191,6 +17196,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             ))}
           </div>
         </div>
+        {/* Empurra o resto (convocados, treino, vista) para a direita. */}
+        <span aria-hidden="true" style={{ flex: 1, minWidth: 0 }} />
         {/* CONVOCADOS DO JOGO — só numa ideia para um jogo específico. */}
         {jogoDoEsquema && (
           <button type="button" onClick={carregarConvocados} disabled={!convocadosDoJogo.length}
