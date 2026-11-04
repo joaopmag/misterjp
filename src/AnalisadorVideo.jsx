@@ -3255,7 +3255,38 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return () => { cancelado = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId, recuperarOriginal, videosOriginais.length]);
-  const semRegistoVisiveis = semRegisto.filter(o => !(videosOriginais || []).some(v => v && v.storagePath === o.caminho));
+  /* REJEITAR: "Ignorar" esconde o aviso desse ficheiro neste aparelho
+     (fica guardado); "Apagar" tira o ficheiro do Supabase de vez, o que
+     também liberta o espaço que ocupa. */
+  const chaveIgnorados = `misterjp:videos-sem-registo-ignorados:${teamId || ''}`;
+  const [ignorados, setIgnorados] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(chaveIgnorados) || '[]'); } catch (e) { return []; }
+  });
+  const ignorarSemRegisto = (caminho) => {
+    setIgnorados(prev => {
+      const lista = [...new Set([...(prev || []), caminho])];
+      try { localStorage.setItem(chaveIgnorados, JSON.stringify(lista)); } catch (e) { /* sem memória: só esconde agora */ }
+      return lista;
+    });
+  };
+  const apagarSemRegisto = (o) => {
+    const executar = async () => {
+      try { await supabase.storage.from('videos-originais').remove([o.caminho]); } catch (e) { /* esconde na mesma */ }
+      setSemRegisto(prev => prev.filter(x => x.caminho !== o.caminho));
+    };
+    if (askConfirm) {
+      askConfirm({
+        title: 'Apagar este vídeo do Supabase?',
+        label: `Vídeo "${o.titulo}"`,
+        note: 'O ficheiro é apagado de vez e deixa de ocupar espaço. Não aparece em lado nenhum da app, por isso nada mais muda.',
+        confirmLabel: 'Apagar',
+        onConfirm: executar,
+      });
+    } else if (window.confirm(`Apagar o vídeo "${o.titulo}" do Supabase? O ficheiro é apagado de vez.`)) {
+      executar();
+    }
+  };
+  const semRegistoVisiveis = semRegisto.filter(o => !(videosOriginais || []).some(v => v && v.storagePath === o.caminho) && !(ignorados || []).includes(o.caminho));
 
   const apagarOriginal = (video) => {
     const executar = async () => {
@@ -4248,6 +4279,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   {[o.tamanho ? `${(o.tamanho / 1e9).toFixed(2).replace('.', ',')} GB` : '', o.criado ? new Date(o.criado).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''].filter(Boolean).join(' · ')}
                 </span>
                 <Btn variant="solid" onClick={() => recuperarOriginal(o.caminho, o.titulo, o.tamanho)}><Upload size={13} /> Recuperar</Btn>
+                <Btn variant="ghost" onClick={() => ignorarSemRegisto(o.caminho)} title="Deixar de mostrar este aviso (o ficheiro fica no Supabase)">Ignorar</Btn>
+                <Btn variant="ghost" onClick={() => apagarSemRegisto(o)} title="Apagar o ficheiro do Supabase de vez" style={{ color: T.bad }}><X size={13} /> Apagar</Btn>
               </div>
             ))}
           </div>
