@@ -13115,6 +13115,38 @@ const VISTA_MEIO = { u0: -3, v0: -3.36, w: 84, h: 84 * 84 / 115 };
 const PITCH_VIEWBOX_MEIO = `${VISTA_MEIO.u0} ${VISTA_MEIO.v0} ${VISTA_MEIO.w} ${VISTA_MEIO.h.toFixed(3)}`;
 // (x, y) do campo → (u, v) no ecrã: u = y, v = 107 − x.
 const VISTA_MEIO_TRANSFORM = 'matrix(0 -1 1 0 0 107)';
+/* ENQUADRAMENTO SÓ DO EDITOR.
+
+   No computador a moldura do editor tem a mesma altura de sempre (o ecrã
+   menos as ferramentas, a linha das animações e o painel do item
+   selecionado): nada à volta mexe. O campo mantém as proporções reais e
+   fica o maior possível dentro dessa altura, com a mesma margem de
+   relvado à volta toda. Para o campo crescer, saem os bancos de suplentes
+   por baixo do campo (continuam na apresentação, impressão, partilha e
+   miniaturas).
+   Meio-campo: da baliza até à linha do meio-campo, inteira, e com a
+   mesma moldura (trocar de vista não mexe em nada).
+   Se algum item estiver fora desta zona (por exemplo onde estavam os
+   bancos), o editor usa o enquadramento de sempre, para nada ficar
+   escondido. */
+// A MESMA margem à volta do campo todo: 3,5 m para lá das linhas (x 1–106,
+// y 1–69). Dos lados a baliza sai 2,5 m e fica 1 m de folga.
+const EDITOR_MARGEM = 3.5;
+const EDITOR_Y_MIN = 1 - EDITOR_MARGEM;
+const EDITOR_Y_MAX = 69 + EDITOR_MARGEM;
+const EDITOR_BOX = { x: 1 - EDITOR_MARGEM, y: EDITOR_Y_MIN, w: 105 + 2 * EDITOR_MARGEM, h: EDITOR_Y_MAX - EDITOR_Y_MIN };
+const EDITOR_VIEWBOX = `${EDITOR_BOX.x} ${EDITOR_BOX.y} ${EDITOR_BOX.w} ${EDITOR_BOX.h}`;
+// Meio-campo (v = 107 − x): da folga atrás da baliza (sai até v −1,5)
+// até logo a seguir à linha do meio-campo (x 53,5 → v 53,5).
+const EDITOR_MEIO_V0 = -2.3;
+const EDITOR_MEIO_H = 53.5 + 0.8 - EDITOR_MEIO_V0;
+// Mesma proporção da moldura do campo inteiro (trocar de vista não mexe).
+const EDITOR_MEIO_W = EDITOR_MEIO_H * EDITOR_BOX.w / EDITOR_BOX.h;
+const EDITOR_MEIO_U0 = 35 - EDITOR_MEIO_W / 2;
+const EDITOR_VIEWBOX_MEIO = `${EDITOR_MEIO_U0} ${EDITOR_MEIO_V0} ${EDITOR_MEIO_W} ${EDITOR_MEIO_H.toFixed(3)}`;
+// Parte do comprimento do campo que se vê no meio-campo do editor.
+const EDITOR_MEIO_X_MIN = 107 - (EDITOR_MEIO_V0 + EDITOR_MEIO_H);
+const EDITOR_MEIO_X_MAX = 107 - EDITOR_MEIO_V0;
 function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : PITCH_VIEWBOX; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
@@ -14162,7 +14194,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   );
 }
 
-function PitchMarkings({ printMode, cartao = false }) {
+function PitchMarkings({ printMode, cartao = false, semBancos = false }) {
 
   // Em ecrã, linhas brancas translúcidas sobre o relvado escuro; em
   // impressão (fundo branco, para poupar tinto) linhas escuras sólidas,
@@ -14205,7 +14237,7 @@ function PitchMarkings({ printMode, cartao = false }) {
       <CornerFlag cx={1} cy={69} ox={-D} oy={D} color={flagColor} />
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
       {/* Nos cartões não há bancos de suplentes (só o campo). */}
-      {!cartao && <BenchesAndTechnicalArea printMode={printMode} />}
+      {!cartao && !semBancos && <BenchesAndTechnicalArea printMode={printMode} />}
       {/* BALIZA vista de cima (cartões, editor 2D, apresentação e
           impressão): por FORA da linha de baliza, só a armação (fundo e
           laterais, traço fino) e a rede em malha fina e suave — sem postes
@@ -15694,6 +15726,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // VISTA DO CAMPO (ver VistaCampo): gravada no próprio desenho, para a
   // ficha, a impressão, a apresentação e as miniaturas mostrarem igual.
   const vistaCampo = value && value.vista === 'meio' ? 'meio' : 'completo';
+  // Moldura do editor sem os bancos, salvo se houver itens nessa zona.
+  const editorCompacto = !((value && value.elements) || []).some(el => el && typeof el.y === 'number' && (el.y > EDITOR_Y_MAX - 0.5 || el.y < EDITOR_Y_MIN + 0.5
+    // No meio-campo aproximado, um item na metade de baixo que deixa de se ver.
+    || (vistaCampo === 'meio' && typeof el.x === 'number' && el.x >= 49 && el.x < EDITOR_MEIO_X_MIN + 0.5)));
+  const caixaEditor = editorCompacto ? EDITOR_BOX : PITCH_BOX;
+  const viewBoxEditor = editorCompacto ? (vistaCampo === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX) : viewBoxDaVista(vistaCampo);
   const gVistaRef = useRef(null);
   const mudarVista = (v) => { if (v !== vistaCampo) commit({ ...value, vista: v === 'meio' ? 'meio' : undefined }); };
   // JOGADORES DO TREINO (ver elementosDaSessao): junta ao campo os presentes
@@ -15765,11 +15803,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const svg = svgRef.current;
     const { x: vx, y: vy, w: vw, h: vh } = PITCH_BOX;
     // No meio-campo vertical só se coloca na metade que se vê (x ≥ ~49).
-    const xMin = vistaCampo === 'meio' ? 107 - (VISTA_MEIO.v0 + VISTA_MEIO.h) : vx;
-    const xMax = vistaCampo === 'meio' ? 107 - VISTA_MEIO.v0 : vx + vw;
+    const xMin = vistaCampo === 'meio' ? (editorCompacto ? EDITOR_MEIO_X_MIN : 107 - (VISTA_MEIO.v0 + VISTA_MEIO.h)) : vx;
+    const xMax = vistaCampo === 'meio' ? (editorCompacto ? EDITOR_MEIO_X_MAX : 107 - VISTA_MEIO.v0) : vx + vw;
     const limitar = (px, py) => ({
       x: Math.max(xMin, Math.min(xMax, px)),
-      y: Math.max(vy, Math.min(vy + vh, py)),
+      // Com a moldura sem bancos, não se coloca nada onde não se vê.
+      y: Math.max(editorCompacto ? EDITOR_Y_MIN : vy, Math.min(editorCompacto ? EDITOR_Y_MAX : vy + vh, py)),
     });
     if (!svg) return limitar(0, 0);
     try {
@@ -17188,13 +17227,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
              dica, linha das animações, painel do selecionado), ver
              CHROME_EDITOR_PX.
              Assim as ferramentas e o campo inteiro veem-se sem scroll. */
-          ...(isNarrowEditor ? {} : { maxWidth: `min(100%, calc((100vh - ${CHROME_EDITOR_PX}px) * ${PITCH_BOX.w} / ${PITCH_BOX.h}))` }),
+          /* A moldura tem SEMPRE a mesma forma (a do campo inteiro do
+             editor), nas duas vistas e mesmo no enquadramento antigo: a
+             altura nunca muda e nada à volta mexe. */
+          aspectRatio: `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`,
+          ...(isNarrowEditor ? {} : { maxWidth: `min(100%, calc((100vh - ${CHROME_EDITOR_PX}px) * ${EDITOR_BOX.w} / ${EDITOR_BOX.h}))` }),
           position: 'relative',
         }}
       >
         <svg
           ref={svgRef}
-          viewBox={viewBoxDaVista(vistaCampo)}
+          viewBox={viewBoxEditor}
           /* "meet" e não "none": mesmo que o contentor fique com uma
              proporção ligeiramente diferente (arredondamentos, limites de
              largura), o desenho encaixa dentro sem esticar. Com "none" um
@@ -17241,7 +17284,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           onPointerCancel={finishInteraction}
         >
           <VistaCampo vista={vistaCampo} gRef={gVistaRef}>
-          <PitchMarkings />
+          <PitchMarkings semBancos={editorCompacto} />
           {zones.map(z => {
             const meters = resizingZoneId === z.id && liveZoneSize ? liveZoneSize : { w: z.w, h: z.h };
             return (
@@ -17906,11 +17949,15 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
         <div style={FIELD_FULL}>
           <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
         </div>
-        <Field label="Fase de jogo">
+        {/* "Momento" (era "Fase de jogo") e com duas colunas de largura:
+            "Organização Defensiva" ficava cortado na caixa. */}
+        <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+        <Field label="Momento">
           <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
             {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
         </Field>
+        </div>
         <Field label="Tempo (min)"><TempoInput value={f.defaultDuration} onChange={v => setF({ ...f, defaultDuration: v })} placeholder="Ex: 15 ou 7+7" /></Field>
         <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
