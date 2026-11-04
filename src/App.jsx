@@ -8143,8 +8143,22 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
           const pgMar = sectPr && sectPr.getElementsByTagNameNS(W_NS, 'pgMar')[0];
           y -= Number(pgMar && pgMar.getAttribute('w:top')) || 0;
         }
-        distanciaTopo = Math.max(0, y);
         tblPr.removeChild(tp);
+        /* Com a tabela flutuante, os parágrafos vazios que vinham a seguir
+           a ela ficavam no espaço de cima, ao lado da distância ao topo, e
+           não gastavam altura. Agora vêm depois da tabela: ficam com 1 pt
+           e descontam-se da distância, para a ficha ocupar exatamente a
+           mesma altura de antes (senão a última linha passava de página). */
+        let vazios = 0;
+        for (let i = 1; i < copia.length; i++) {
+          const n = copia[i];
+          if (n.localName !== 'p' || textoDoNo(n).trim() || n.getElementsByTagNameNS(W_NS, 'drawing').length) break;
+          const pp = paragrafoExato(20, false);
+          [...n.childNodes].forEach(c => n.removeChild(c));
+          [...pp.childNodes].forEach(c => n.appendChild(c));
+          vazios++;
+        }
+        distanciaTopo = Math.max(20, y - 20 * vazios);
       }
     }
     const ultimo = copia[copia.length - 1];
