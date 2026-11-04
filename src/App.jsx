@@ -9495,8 +9495,10 @@ function Panel({ title, children, action }) {
 
 /* Botões pequenos por baixo da ação principal do cabeçalho (Dossier,
    Portal, Exportar CSV): todos com o mesmo tamanho, em todas as páginas. */
-const ESTILO_BOTAO_PEQUENO = { padding: '0 10px', height: 20, fontSize: 11.5, gap: 5, borderRadius: 5, whiteSpace: 'nowrap', lineHeight: 1 };
-const ICONE_BOTAO_PEQUENO = 12;
+// 26 px: cabem no espaço por baixo do cabeçalho, com folga até à linha
+// seguinte (os Momentos na Ideia de Jogo, os separadores no Scouting).
+const ESTILO_BOTAO_PEQUENO = { padding: '0 12px', height: 26, fontSize: 12.5, gap: 6, borderRadius: 6, whiteSpace: 'nowrap', lineHeight: 1 };
+const ICONE_BOTAO_PEQUENO = 14;
 
 function SectionHeader({ title, subtitle, action }) {
   return (
