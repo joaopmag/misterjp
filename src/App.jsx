@@ -24724,7 +24724,7 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
 
 /* Uma linha do boletim. A mesma no painel das ocorrências abertas e no
    histórico — muda só a informação que faz sentido em cada um. */
-function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJogador = true }) {
+function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJogador = true, destaque }) {
   const o = normalizarOcorrencia(original);
   const hoje = todayStr();
   const aberta = !original.fim;
@@ -24750,10 +24750,11 @@ function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJo
           {[original.tipo, original.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
         </div>
         <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
+          {/* Com alta, a data da alta vem primeiro: é por ela que o
+              histórico está ordenado (quem voltou mais recentemente). */}
           {[
-            aberta ? nivel.label : 'Alta',
-            original.inicio ? fmtDate(original.inicio) : null,
-            original.fim ? `até ${fmtDate(original.fim)}` : null,
+            aberta ? nivel.label : (original.fim ? `Alta ${fmtDate(original.fim)}` : 'Alta'),
+            aberta ? (original.inicio ? fmtDate(original.inicio) : null) : (original.inicio ? `desde ${fmtDate(original.inicio)}` : null),
             dias != null ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : null,
             aberta && original.previsaoRetorno ? `previsão ${fmtShort(original.previsaoRetorno)}` : null,
             (o.evolucao || []).some(e => e.recaida) ? 'com recaída' : null,
@@ -24766,6 +24767,9 @@ function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJo
           </div>
         )}
       </div>
+      {destaque && (
+        <span style={{ flexShrink: 0, fontSize: 11.5, color: T.good || T.gold, border: `1px solid ${(T.good || T.gold)}66`, borderRadius: 12, padding: '2px 9px', whiteSpace: 'nowrap' }}>{destaque}</span>
+      )}
       {/* A previsão de retorno já passou e ninguém deu alta: não é um erro,
           mas é a única coisa nesta lista que pede uma ação. */}
       {atrasada && (
@@ -25162,7 +25166,24 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
      lançada com início na semana que vem também está por fechar e tem de
      se ver. */
   const abertas = ordenar((clinico || []).filter(o => !o.fim));
-  const fechadas = ordenar((clinico || []).filter(o => o.fim));
+  /* HISTÓRICO pela data da ALTA, da mais recente para a mais antiga (antes
+     era pela data da lesão, e não se percebia quem tinha voltado há
+     menos tempo). Na mesma data de alta, primeiro a que teve a última
+     atualização mais recente. */
+  const ultimaAtualizacao = (o) => (Array.isArray(o.evolucao) ? o.evolucao : []).reduce((m, e) => (e && e.data && e.data > m ? e.data : m), '');
+  const fechadas = (clinico || []).filter(o => o.fim).sort((a, b) =>
+    (b.fim || '').localeCompare(a.fim || '')
+    || ultimaAtualizacao(b).localeCompare(ultimaAtualizacao(a))
+    || (b.inicio || '').localeCompare(a.inicio || ''));
+  // Separadores por mês da alta, e "voltou há N dias" nas altas recentes.
+  const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const mesDaAlta = (o) => { const [y, m] = String(o.fim || '').split('-'); return y && m ? `${MESES_PT[Number(m) - 1]} ${y}` : 'Sem data'; };
+  const voltouHa = (o) => {
+    if (!o.fim) return null;
+    const d = Math.round((new Date(`${hoje}T00:00:00`) - new Date(`${o.fim}T00:00:00`)) / 86400000);
+    if (d < 0 || d > 14) return null;
+    return d === 0 ? 'Voltou hoje' : d === 1 ? 'Voltou ontem' : `Voltou há ${d} dias`;
+  };
   const partidas = lesoesPartidas(clinico);
   const recaidas = possiveisRecaidas(clinico);
 
@@ -25337,9 +25358,20 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {fechadas.map(o => (
-              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onAbrir={() => setModal({ tipo: 'ficha', id: o.id })} />
-            ))}
+            {fechadas.map((o, i) => {
+              const mes = mesDaAlta(o);
+              const novoMes = i === 0 || mesDaAlta(fechadas[i - 1]) !== mes;
+              return (
+                <React.Fragment key={o.id}>
+                  {novoMes && (
+                    <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: i === 0 ? '0 0 2px' : '10px 0 2px' }}>
+                      Altas de {mes}
+                    </div>
+                  )}
+                  <LinhaOcorrencia o={o} jogador={jogadorDe(o.playerId)} onAbrir={() => setModal({ tipo: 'ficha', id: o.id })} destaque={voltouHa(o)} />
+                </React.Fragment>
+              );
+            })}
           </div>
         )}
       </Panel>
