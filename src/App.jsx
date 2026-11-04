@@ -30019,12 +30019,16 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
           /* Vermelho direto: quantos jogos de castigo. Quando se lança o
              relatório ainda não se sabe, por isso começa "Por definir" (fica
              indisponível até se escolher). O 2.º amarelo é sempre 1 jogo. */
-          const cartao = r.card === 'red' ? (
+          /* 2.º amarelo: a mesma escolha do castigo, mas começa em 1 jogo
+             (a regra habitual); dá para mudar ou anular. */
+          const ehSegundoAmarelo = r.card === 'yellow2';
+          const valorCastigo = r.castigoJogos == null || r.castigoJogos === '' ? (ehSegundoAmarelo ? '1' : '') : String(r.castigoJogos);
+          const cartao = (r.card === 'red' || ehSegundoAmarelo) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
               {selCartao}
-              <Select value={r.castigoJogos == null ? '' : String(r.castigoJogos)} onChange={e => onReport(p.id, 'castigoJogos', e.target.value === '' ? '' : Number(e.target.value))}
-                title="Jogos de castigo" style={{ padding: '4px 6px', fontSize: 11.5, height: 30, color: (r.castigoJogos == null || r.castigoJogos === '') ? T.warn : T.cream }}>
-                <option value="">Castigo por definir</option>
+              <Select value={valorCastigo} onChange={e => onReport(p.id, 'castigoJogos', e.target.value === '' ? '' : Number(e.target.value))}
+                title="Jogos de castigo" style={{ padding: '4px 6px', fontSize: 11.5, height: 30, color: valorCastigo === '' ? T.warn : T.cream }}>
+                {!ehSegundoAmarelo && <option value="">Castigo por definir</option>}
                 {[1, 2, 3, 4, 5, 6, 8, 10].map(n => <option key={n} value={n}>{n === 1 ? 'Castigo: 1 jogo' : `Castigo: ${n} jogos`}</option>)}
                 <option value="0">Castigo anulado</option>
               </Select>
@@ -31300,7 +31304,7 @@ function CartaoPlanoDoJogo({ jogo }) {
 /* CASTIGOS — quem foi expulso num jogo OFICIAL fica indisponível nos
    jogos oficiais seguintes (aparece em Indisponíveis, como os lesionados,
    e não entra no "Selecionar todos"). Os amigáveis não contam.
-   · 2.º amarelo: 1 jogo.
+   · 2.º amarelo: 1 jogo, ou o número escolhido no relatório (0 = anulado).
    · Vermelho direto: o número de jogos escrito no relatório desse jogo
      ("Castigo"). Enquanto estiver "Por definir", fica indisponível em
      todos os jogos oficiais seguintes, até alguém o definir. 0 = anulado.
@@ -31308,7 +31312,13 @@ function CartaoPlanoDoJogo({ jogo }) {
    marcado) conta como um jogo de castigo cumprido. */
 function jogosDeCastigo(r) {
   if (!r) return 0;
-  if (r.card === 'yellow2') return 1;
+  if (r.card === 'yellow2') {
+    // 1 jogo, salvo se o relatório disser outro número (0 = anulado).
+    const v = r.castigoJogos;
+    if (v === '' || v == null) return 1;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 1;
+  }
   if (r.card !== 'red') return 0;
   const v = r.castigoJogos;
   if (v === '' || v == null) return Infinity; // por definir
