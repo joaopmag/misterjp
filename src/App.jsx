@@ -9493,6 +9493,11 @@ function Panel({ title, children, action }) {
   );
 }
 
+/* Botões pequenos por baixo da ação principal do cabeçalho (Dossier,
+   Portal, Exportar CSV): todos com o mesmo tamanho, em todas as páginas. */
+const ESTILO_BOTAO_PEQUENO = { padding: '0 10px', height: 20, fontSize: 11.5, gap: 5, borderRadius: 5, whiteSpace: 'nowrap', lineHeight: 1 };
+const ICONE_BOTAO_PEQUENO = 12;
+
 function SectionHeader({ title, subtitle, action }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
@@ -11686,8 +11691,8 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
   const estiloBotaoLinha = cabecalhoEstreito
     ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 }
     // Pequenos (cabem nos 22 px entre o cabeçalho e os Momentos).
-    : { padding: '0 9px', height: 18, fontSize: 11, gap: 4, borderRadius: 5, whiteSpace: 'nowrap', lineHeight: 1 };
-  const tamIconeLinha = cabecalhoEstreito ? 15 : 11;
+    : ESTILO_BOTAO_PEQUENO;
+  const tamIconeLinha = cabecalhoEstreito ? 15 : ICONE_BOTAO_PEQUENO;
   const botoesDossierPortal = ideias.length > 0 ? (
     <>
       <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={estiloBotaoLinha}><BookOpen size={tamIconeLinha} /> Dossier</Btn>
@@ -11715,7 +11720,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
                 Ficam "por cima" da página (posição absoluta): o cabeçalho
                 tem a mesma altura do dos Exercícios e nada mexe. */}
             {!cabecalhoEstreito && botoesDossierPortal && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 3px)', right: 0, display: 'flex', gap: 6, zIndex: 1 }}>{botoesDossierPortal}</div>
+              <div style={{ position: 'absolute', top: 'calc(100% + 2px)', right: 0, display: 'flex', gap: 6, zIndex: 1 }}>{botoesDossierPortal}</div>
             )}
           </div>
         )} />
@@ -26882,7 +26887,8 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
               <RefreshCw size={15} /> Sincronizar notas antigas ({jogosPorSincronizar})
             </Btn>
           )}
-          {dayGroups.length > 0 && <Btn variant="ghost" onClick={doExport}><Download size={15} /> Exportar CSV</Btn>}
+          {/* Pequeno, como o "Exportar CSV" do Scouting e o Dossier/Portal. */}
+          {dayGroups.length > 0 && <Btn variant="ghost" onClick={doExport} style={ESTILO_BOTAO_PEQUENO}><Download size={ICONE_BOTAO_PEQUENO} /> Exportar CSV</Btn>}
         </div>} />
 
       {players.length === 0 ? (
@@ -42836,11 +42842,9 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
             <div style={{ position: 'relative' }}>
               <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
               {scouting.length > 0 && (
-                <button type="button" onClick={() => exportScoutingCSV(scouting)} title="Descarregar a lista de jogadores em CSV" style={{
-                  position: 'absolute', top: 'calc(100% + 6px)', right: 0, display: 'inline-flex', alignItems: 'center', gap: 5,
-                  background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, padding: '3px 8px',
-                  color: T.muted, fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
-                }}><Download size={12} /> Exportar CSV</button>
+                <div style={{ position: 'absolute', top: 'calc(100% + 2px)', right: 0, zIndex: 1 }}>
+                  <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)} style={ESTILO_BOTAO_PEQUENO}><Download size={ICONE_BOTAO_PEQUENO} /> Exportar CSV</Btn>
+                </div>
               )}
             </div>
           ) : !viewing && !modal && subTab === 'adversarios' && !editandoAdversario ? (
