@@ -20239,20 +20239,34 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
           ocupam 4 linhas de 2; aqui também: as fases numa linha e as
           seis contagens em três linhas de 2. */}
       <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
-        <Field label="Época" solto>
-          <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', color: T.cream }}>{epoca || '—'}</div>
+        {/* No lugar do Momento de avaliação: o progresso da fase escolhida
+            (a época fica só como referência, à direita, porque não muda). */}
+        <Field label={`Progresso · ${faseLabel}`} solto>
+          <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 12, color: T.cream }}>
+            <span style={{ ...mono, fontSize: 13, whiteSpace: 'nowrap', width: 58, flexShrink: 0 }}>{ativos.length - porAvaliar}/{ativos.length}</span>
+            <div style={{ flex: 1, minWidth: 40, height: 6, borderRadius: 3, background: T.line, overflow: 'hidden' }}>
+              <div style={{ width: `${ativos.length ? Math.round(((ativos.length - porAvaliar) / ativos.length) * 100) : 0}%`, height: '100%', background: porAvaliar ? T.gold : T.good, transition: 'width .2s' }} />
+            </div>
+            <span style={{ fontSize: 12.5, color: porAvaliar ? T.warn : T.good, whiteSpace: 'nowrap', width: isNarrow ? 'auto' : 120, flexShrink: 0 }}>
+              {porAvaliar ? `${porAvaliar} por avaliar` : 'Todos avaliados'}
+            </span>
+            {!isNarrow && <span style={{ fontSize: 12, color: T.mutedDim, whiteSpace: 'nowrap', borderLeft: `1px solid ${T.line}`, paddingLeft: 12 }}>Época {epoca || '—'}</span>}
+          </div>
         </Field>
       </div>
       {(() => {
         const CURTOS = ['Dispensável', 'Reserva', 'Alternativa', 'Pot. Titular', 'Elite'];
-        const contagens = [...STATUS_OPTIONS.map((s0, i) => ({ n: contagem[i], label: CURTOS[i] || s0, titulo: `${i + 1} · ${s0}`, aviso: false })), { n: porAvaliar, label: 'Por avaliar', titulo: 'Por avaliar', aviso: porAvaliar > 0 }];
+        // "Por avaliar" passou para o progresso, em cima.
+        const contagens = STATUS_OPTIONS.map((s0, i) => ({ n: contagem[i], label: CURTOS[i] || s0, titulo: `${i + 1} · ${s0}`, aviso: false }));
         const chip = (c) => (
           <span key={c.titulo} title={`${c.titulo}: ${c.n}`} style={{
             ...btnFase(false), cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: isNarrow ? 'flex-start' : 'center',
             color: c.aviso ? T.warn : T.mutedDim, borderColor: c.aviso ? `${T.warn}66` : T.line, minWidth: 0,
-            ...(isNarrow ? {} : { flex: '0 1 auto' }),
+            // Largura fixa (não depende do número nem do texto): ao mudar de
+            // fase os números mudam e as caixas não se mexem.
+            ...(isNarrow ? {} : { flex: '0 1 134px', width: 134, boxSizing: 'border-box', justifyContent: 'flex-start' }),
           }}>
-            <span style={{ ...mono, color: c.aviso ? T.warn : (c.n ? T.cream : T.mutedDim) }}>{c.n}</span>
+            <span style={{ ...mono, color: c.aviso ? T.warn : (c.n ? T.cream : T.mutedDim), display: 'inline-block', minWidth: '2ch', textAlign: 'right' }}>{c.n}</span>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
           </span>
         );
