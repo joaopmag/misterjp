@@ -38908,6 +38908,10 @@ function PlayerTreinoView({ code, teamId, onBack }) {
                 // ficarem todos à mesma altura (com títulos de 1 ou 2 linhas).
                 style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
               >
+                {/* O texto encosta ao campo: o espaço que sobra num cartão com
+                    título mais curto fica por cima, e campos e textos ficam
+                    todos alinhados entre cartões. */}
+                <div style={{ marginTop: 'auto' }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || 'Exercício'}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                   {x.phase && (
@@ -38920,8 +38924,9 @@ function PlayerTreinoView({ code, teamId, onBack }) {
                 {x.description && (
                   <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.description}</p>
                 )}
+                </div>
                 {/* Com ▶ no canto para ver a animação ali mesmo, no cartão. */}
-                <div style={{ marginTop: 'auto', paddingTop: 4 }}>
+                <div style={{ paddingTop: 4 }}>
                   <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} />
                 </div>
               </div>
