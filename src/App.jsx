@@ -8150,18 +8150,30 @@ async function pintarCorEquipaWord(zip) {
   }
 }
 
-/* LOGÓTIPO E NOME DO CLUBE NOS CABEÇALHOS/RODAPÉS WORD.
-   Os modelos base trazem imagens de exemplo ("LOGÓTIPO E NOME DO
-   CLUBE", "LOGÓTIPOS DO RODAPÉ"). A app desenha no lugar delas uma
-   imagem com o logótipo e o nome do clube (os de Gerir equipa) na cor da
-   equipa, com o mesmo tamanho, por isso ninguém tem de os pôr à mão.
-   · Ao DESCARREGAR um modelo base (`forcar`): todas as imagens do
-     cabeçalho e do rodapé são de exemplo e são trocadas.
-   · Ao GERAR: só se trocam as imagens marcadas pela app (texto
-     alternativo MARCA_CLUBE_DOC) ou as de exemplo dos modelos base. Um
-     cabeçalho desenhado pelo próprio clube fica como está.
-   A imagem marcada volta a ser desenhada em cada documento, por isso um
-   logótipo ou cor novos em Gerir equipa aparecem logo. */
+/* LOGÓTIPO E NOME DO CLUBE NOS DOCUMENTOS (Word e Excel).
+   Os modelos base trazem imagens de exemplo ("LOGÓTIPO E NOME DO CLUBE",
+   "LOGÓTIPOS DO RODAPÉ", escudos "CLUBE"). A app desenha no lugar delas
+   uma imagem com o logótipo e o nome do clube (os de Gerir equipa), com o
+   mesmo tamanho, por isso ninguém tem de os pôr à mão.
+
+   Que imagens se trocam:
+   · as marcadas pela app (texto alternativo começa por MARCA_CLUBE_DOC),
+     que voltam a ser desenhadas em cada documento (logótipo, nome ou cor
+     novos aparecem logo);
+   · as de exemplo: só em tons de cinzento/branco (sem cor nenhuma) ou com
+     os nomes dos modelos base (n-cab.png, n-rod.png);
+   · ao DESCARREGAR um modelo base Word (`forcar`), também todas as do
+     cabeçalho e do rodapé.
+   Imagens com cor (o cabeçalho próprio de um clube, o relvado, fotos a
+   cores) ficam como estão. Corre logo ao abrir o modelo, antes de se
+   meterem as fotos dos jogadores.
+
+   Três desenhos, escolhidos pela imagem de exemplo:
+   · "escudo" (imagem quase quadrada): só o logótipo, fundo transparente;
+   · "simples" (exemplo claro, sobre fundo branco): logótipo e nome na cor
+     da equipa, sem caixa nem faixa;
+   · "faixa" (exemplo a cores ou transparente sobre uma faixa): faixa na
+     cor da equipa com o logótipo e o nome a branco. */
 const MARCA_CLUBE_DOC = 'MisterJP: logótipo e nome do clube';
 const IMAGENS_EXEMPLO_MODELO = /^n-(cab|rod)\.png$/i;
 
@@ -8183,7 +8195,41 @@ async function carregarLogoEquipaParaDoc() {
   }
 }
 
-async function desenharImagemClube({ largura, altura, tipo, logo }) {
+// Como é a imagem de exemplo: tem cor? é transparente? é clara?
+async function analisarImagemModelo(bytes, ext) {
+  if (!/^(png|jpe?g|gif|bmp|webp)$/i.test(ext || '')) return null;
+  try {
+    const tipo = /png/i.test(ext) ? 'image/png' : /gif/i.test(ext) ? 'image/gif' : /bmp/i.test(ext) ? 'image/bmp' : /webp/i.test(ext) ? 'image/webp' : 'image/jpeg';
+    const bmp = await createImageBitmap(new Blob([bytes], { type: tipo }));
+    const L = 64;
+    const cv = document.createElement('canvas'); cv.width = L; cv.height = L;
+    const g = cv.getContext('2d');
+    g.drawImage(bmp, 0, 0, L, L);
+    const d = g.getImageData(0, 0, L, L).data;
+    let opacos = 0, comCor = 0, soma = 0;
+    for (let k = 0; k < d.length; k += 4) {
+      if (d[k + 3] < 40) continue;
+      opacos++;
+      const mx = Math.max(d[k], d[k + 1], d[k + 2]), mn = Math.min(d[k], d[k + 1], d[k + 2]);
+      if (mx - mn > 28) comCor++;
+      soma += (d[k] + d[k + 1] + d[k + 2]) / 3;
+    }
+    const total = L * L;
+    return {
+      cinzenta: opacos > 0 && comCor / opacos < 0.02,
+      transparente: opacos / total < 0.6,
+      clara: opacos > 0 && soma / opacos > 200,
+    };
+  } catch (e) { return null; }
+}
+
+function estiloImagemClube(info, largura, altura) {
+  if (altura >= largura * 0.66) return 'escudo';
+  if (info && info.cinzenta && info.clara && !info.transparente) return 'simples';
+  return 'faixa';
+}
+
+async function desenharImagemClube({ largura, altura, estilo, logo }) {
   const W = largura, H = altura;
   const fazer = (comLogo) => {
     const cv = document.createElement('canvas');
@@ -8194,20 +8240,30 @@ async function desenharImagemClube({ largura, altura, tipo, logo }) {
     const [r, gg, b] = [0, 2, 4].map(i => parseInt(corDoc.fundo.slice(i, i + 2), 16));
     const lum = (0.2126 * r + 0.7152 * gg + 0.0722 * b) / 255;
     const nome = String(T.nomeClube || '').trim();
+    const temLogo = comLogo && logo;
     const raio = (x, y, w, h, rr) => { g.beginPath(); g.moveTo(x + rr, y); g.arcTo(x + w, y, x + w, y + h, rr); g.arcTo(x + w, y + h, x, y + h, rr); g.arcTo(x, y + h, x, y, rr); g.arcTo(x, y, x + w, y, rr); g.closePath(); };
     const desenhaLogo = (x, y, lado) => {
-      if (!comLogo || !logo) return;
       const lw = logo.naturalWidth || logo.width, lh = logo.naturalHeight || logo.height;
       if (!lw || !lh) return;
       const k = Math.min(lado / lw, lado / lh);
       g.drawImage(logo, x + (lado - lw * k) / 2, y + (lado - lh * k) / 2, lw * k, lh * k);
     };
-    const ajustaLetra = (texto, maxW, maxH, peso) => {
+    const ajustaLetra = (texto, maxW, maxH) => {
       let fs = maxH;
-      do { g.font = `${peso} ${Math.round(fs)}px Arial, Helvetica, sans-serif`; if (g.measureText(texto).width <= maxW) break; fs *= 0.94; } while (fs > maxH * 0.35);
+      do { g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`; if (g.measureText(texto).width <= maxW) break; fs *= 0.94; } while (fs > maxH * 0.3);
       return fs;
     };
-    if (tipo === 'cabecalho') {
+    if (estilo === 'escudo') {
+      // Só o logótipo (sem logótipo: a inicial num círculo da cor da equipa).
+      const lado = Math.min(W, H) * 0.96;
+      if (temLogo) desenhaLogo((W - lado) / 2, (H - lado) / 2, lado);
+      else if (nome) {
+        g.fillStyle = base; g.beginPath(); g.arc(W / 2, H / 2, lado / 2, 0, Math.PI * 2); g.fill();
+        g.font = `bold ${Math.round(lado * 0.5)}px Arial, Helvetica, sans-serif`;
+        g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(nome[0].toUpperCase(), W / 2, H / 2 + lado * 0.03);
+      }
+    } else if (estilo === 'faixa') {
       // Faixa na cor da equipa, logótipo numa caixa branca à esquerda e o nome ao centro.
       const grad = g.createLinearGradient(0, 0, W, H);
       grad.addColorStop(0, base);
@@ -8216,7 +8272,7 @@ async function desenharImagemClube({ largura, altura, tipo, logo }) {
       const pad = H * 0.12;
       const lado = H - pad * 2;
       let xTexto = pad;
-      if (comLogo && logo) {
+      if (temLogo) {
         g.fillStyle = '#FFFFFF'; raio(pad, pad, lado, lado, lado * 0.12); g.fill();
         desenhaLogo(pad + lado * 0.08, pad + lado * 0.08, lado * 0.84);
         xTexto = pad * 2 + lado;
@@ -8224,28 +8280,27 @@ async function desenharImagemClube({ largura, altura, tipo, logo }) {
       if (nome) {
         const texto = nome.toUpperCase();
         const larguraTexto = W - xTexto - pad;
-        ajustaLetra(texto, larguraTexto, H * 0.36, 'bold');
+        // Letra moderada: no máximo 22% da altura e 6% da largura da faixa.
+        ajustaLetra(texto, larguraTexto * 0.9, Math.min(H * 0.22, W * 0.06));
         g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF';
         g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText(texto, xTexto + larguraTexto / 2, H / 2);
       }
     } else {
-      // Rodapé: fundo branco, logótipo pequeno e o nome na cor da equipa, ao centro.
-      g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, W, H);
-      const lado = H * 0.7;
-      const texto = nome;
+      // Simples: sem caixa nem faixa, logótipo e nome na cor da equipa, ao centro.
+      const lado = H * 0.8;
       let fs = 0, larguraNome = 0;
-      if (texto) {
-        fs = ajustaLetra(texto, W * 0.8 - (comLogo && logo ? lado * 1.3 : 0), H * 0.32, 'bold');
-        larguraNome = g.measureText(texto).width;
+      if (nome) {
+        fs = ajustaLetra(nome, W * 0.9 - (temLogo ? lado * 1.25 : 0), H * 0.34);
+        larguraNome = g.measureText(nome).width;
       }
-      const total = (comLogo && logo ? lado : 0) + (texto && comLogo && logo ? lado * 0.3 : 0) + larguraNome;
+      const total = (temLogo ? lado : 0) + (nome && temLogo ? lado * 0.25 : 0) + larguraNome;
       let x = (W - total) / 2;
-      if (comLogo && logo) { desenhaLogo(x, (H - lado) / 2, lado); x += lado * 1.3; }
-      if (texto) {
+      if (temLogo) { desenhaLogo(x, (H - lado) / 2, lado); x += lado * 1.25; }
+      if (nome) {
         g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`;
         g.fillStyle = `#${corDoc.texto}`; g.textAlign = 'left'; g.textBaseline = 'middle';
-        g.fillText(texto, x, H / 2);
+        g.fillText(nome, x, H / 2);
       }
     }
     return new Promise((res, rej) => {
@@ -8257,64 +8312,124 @@ async function desenharImagemClube({ largura, altura, tipo, logo }) {
   try { return await fazer(true); } catch (e) { return fazer(false); }
 }
 
-async function aplicarClubeNosModelosWord(zip, { forcar = false } = {}) {
+/* Núcleo comum ao Word e ao Excel. `partes`: [{ caminho, relsPath,
+   pastaMedia, prefixoAlvo, forcar }]. Para cada imagem (pic) decide se é
+   de exemplo, desenha a do clube (uma por tamanho e desenho) e troca a
+   ligação da imagem para ela. */
+async function trocarImagensDoClube(zip, partes, prefixoMedia) {
   if (!T.nomeClube && !T.logoEquipa) return;
-  const partes = Object.keys(zip.files).filter(n => /^word\/(header|footer)\d*\.xml$/.test(n));
-  if (!partes.length) return;
   const parser = new DOMParser();
   const ser = new XMLSerializer();
   const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
   const TIPO_IMG = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+  const analises = new Map(); // ficheiro da imagem → análise
+  const feitas = new Map();   // "LxA:estilo" → nome do png
   let logo; let carregouLogo = false;
-  let usouPng = false;
   let n = 1;
-  for (const caminho of partes) {
-    const doc = parser.parseFromString(await zip.file(caminho).async('string'), 'application/xml');
-    const relsPath = caminho.replace(/^word\//, 'word/_rels/') + '.rels';
-    const relsDoc = parser.parseFromString(zip.file(relsPath) ? await zip.file(relsPath).async('string') : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${REL_NS}"></Relationships>`, 'application/xml');
+  for (const parte of partes) {
+    if (!zip.file(parte.caminho) || !zip.file(parte.relsPath)) continue;
+    const doc = parser.parseFromString(await zip.file(parte.caminho).async('string'), 'application/xml');
+    const relsDoc = parser.parseFromString(await zip.file(parte.relsPath).async('string'), 'application/xml');
     const relsRaiz = relsDoc.documentElement;
-    const ids = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')].map(x => x.getAttribute('Id'));
-    const desenhos = [...doc.getElementsByTagNameNS('*', 'inline'), ...doc.getElementsByTagNameNS('*', 'anchor')];
+    const relsLista = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')];
     let mudou = false;
-    for (const d of desenhos) {
-      const docPr = [...d.childNodes].find(x => x.localName === 'docPr');
-      const ext = [...d.childNodes].find(x => x.localName === 'extent');
-      const blip = d.getElementsByTagNameNS('*', 'blip')[0];
-      const cNvPr = d.getElementsByTagNameNS('*', 'cNvPr')[0];
-      if (!blip || !ext) continue;
-      const marcado = docPr && docPr.getAttribute('descr') === MARCA_CLUBE_DOC;
-      const exemplo = cNvPr && IMAGENS_EXEMPLO_MODELO.test(cNvPr.getAttribute('name') || '');
-      if (!forcar && !marcado && !exemplo) continue;
-      const cx = Number(ext.getAttribute('cx')) || 0, cy = Number(ext.getAttribute('cy')) || 0;
+    for (const pic of [...doc.getElementsByTagNameNS('*', 'pic')]) {
+      const blip = pic.getElementsByTagNameNS('*', 'blip')[0];
+      const cNvPr = pic.getElementsByTagNameNS('*', 'cNvPr')[0];
+      if (!blip) continue;
+      // Tamanho: o da própria imagem (spPr › xfrm › ext) ou o do desenho Word (extent).
+      let cx = 0, cy = 0;
+      const xfrm = pic.getElementsByTagNameNS('*', 'xfrm')[0];
+      const ext = xfrm ? [...xfrm.childNodes].find(x => x.localName === 'ext') : null;
+      if (ext) { cx = Number(ext.getAttribute('cx')) || 0; cy = Number(ext.getAttribute('cy')) || 0; }
+      if (!cx || !cy) {
+        for (let a = pic.parentNode; a; a = a.parentNode) {
+          if (a.localName === 'inline' || a.localName === 'anchor') {
+            const e2 = [...a.childNodes].find(x => x.localName === 'extent');
+            if (e2) { cx = Number(e2.getAttribute('cx')) || 0; cy = Number(e2.getAttribute('cy')) || 0; }
+            break;
+          }
+        }
+      }
       if (!cx || !cy) continue;
-      if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
+      // O texto alternativo: no Word está no docPr do desenho; no Excel no cNvPr.
+      let docPr = null;
+      for (let a = pic.parentNode; a; a = a.parentNode) {
+        if (a.localName === 'inline' || a.localName === 'anchor') { docPr = [...a.childNodes].find(x => x.localName === 'docPr') || null; break; }
+      }
+      const comDescr = docPr || cNvPr;
+      const descr = (comDescr && comDescr.getAttribute('descr')) || '';
+      const marcado = descr.startsWith(MARCA_CLUBE_DOC);
+      const idAntigo = blip.getAttributeNS(R_NS, 'embed') || blip.getAttribute('r:embed');
+      const rel = relsLista().find(x => x.getAttribute('Id') === idAntigo);
+      if (!rel) continue;
+      let estilo = null;
+      if (marcado) {
+        const m = /\((escudo|simples|faixa)\)/.exec(descr);
+        // Marcas antigas (sem o desenho escrito): rodapé e cabeçalho estreito
+        // (o do relatório de ocorrência) ficam sem faixa.
+        estilo = m ? m[1] : (/footer/.test(parte.caminho) || (/header/.test(parte.caminho) && cx < 3000000 && cy < cx * 0.66)) ? 'simples' : estiloImagemClube(null, cx, cy);
+      } else {
+        const alvo = rel.getAttribute('Target') || '';
+        const ficheiro = alvo.startsWith('/') ? alvo.slice(1) : `${prefixoMedia}${alvo.replace(/^(\.\.\/)+/, '').replace(/^media\//, 'media/')}`;
+        const exemploPeloNome = cNvPr && IMAGENS_EXEMPLO_MODELO.test(cNvPr.getAttribute('name') || '');
+        if (!analises.has(ficheiro)) {
+          const f = zip.file(ficheiro);
+          analises.set(ficheiro, f ? await analisarImagemModelo(await f.async('uint8array'), (ficheiro.split('.').pop() || '')) : null);
+        }
+        const info = analises.get(ficheiro);
+        const exemplo = exemploPeloNome || (info && info.cinzenta);
+        if (!exemplo && !parte.forcar) continue;
+        if (!info && !exemploPeloNome && !parte.forcar) continue;
+        estilo = estiloImagemClube(info, cx, cy);
+      }
       const largura = 1600;
       const altura = Math.max(40, Math.round(largura * cy / cx));
-      const tipo = /header/.test(caminho) ? 'cabecalho' : 'rodape';
-      const blob = await desenharImagemClube({ largura, altura, tipo, logo });
-      while (zip.file(`word/media/mjp-clube-${n}.png`)) n++;
-      const nomeMedia = `mjp-clube-${n}.png`; n++;
-      zip.file(`word/media/${nomeMedia}`, await blob.arrayBuffer());
-      let k = 1; while (ids().includes(`rIdMJPc${k}`)) k++;
-      const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
-      rel.setAttribute('Id', `rIdMJPc${k}`); rel.setAttribute('Type', TIPO_IMG); rel.setAttribute('Target', `media/${nomeMedia}`);
-      relsRaiz.appendChild(rel);
+      const chave = `${largura}x${altura}:${estilo}`;
+      if (!feitas.has(chave)) {
+        if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
+        const blob = await desenharImagemClube({ largura, altura, estilo, logo });
+        while (zip.file(`${prefixoMedia}media/mjp-clube-${n}.png`)) n++;
+        const nome = `mjp-clube-${n}.png`; n++;
+        zip.file(`${prefixoMedia}media/${nome}`, await blob.arrayBuffer());
+        feitas.set(chave, nome);
+      }
+      let k = 1; while (relsLista().some(x => x.getAttribute('Id') === `rIdMJPc${k}`)) k++;
+      const novo = relsDoc.createElementNS(REL_NS, 'Relationship');
+      novo.setAttribute('Id', `rIdMJPc${k}`); novo.setAttribute('Type', TIPO_IMG); novo.setAttribute('Target', `${parte.prefixoAlvo}${feitas.get(chave)}`);
+      relsRaiz.appendChild(novo);
       blip.setAttributeNS(R_NS, 'r:embed', `rIdMJPc${k}`);
-      if (docPr) docPr.setAttribute('descr', MARCA_CLUBE_DOC);
-      usouPng = true; mudou = true;
+      // Um recorte da imagem de exemplo cortaria a nova.
+      const blipFill = blip.parentNode;
+      [...blipFill.childNodes].filter(x => x.localName === 'srcRect').forEach(x => blipFill.removeChild(x));
+      if (comDescr) comDescr.setAttribute('descr', `${MARCA_CLUBE_DOC} (${estilo})`);
+      mudou = true;
     }
     if (mudou) {
-      zip.file(caminho, ser.serializeToString(doc));
-      zip.file(relsPath, ser.serializeToString(relsDoc));
+      zip.file(parte.caminho, ser.serializeToString(doc));
+      zip.file(parte.relsPath, ser.serializeToString(relsDoc));
     }
   }
-  if (usouPng) {
+  if (feitas.size) {
     const ctPath = '[Content_Types].xml';
     let ct = await zip.file(ctPath).async('string');
     if (!/<Default\b[^>]*Extension="png"/i.test(ct)) ct = ct.replace(/(<Types\b[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
     zip.file(ctPath, ct);
   }
+}
+
+async function aplicarClubeNosModelosWord(zip, { forcar = false } = {}) {
+  const partes = Object.keys(zip.files)
+    .filter(n => /^word\/(document|header\d*|footer\d*)\.xml$/.test(n))
+    .map(caminho => ({
+      caminho,
+      relsPath: caminho.replace(/^word\//, 'word/_rels/') + '.rels',
+      prefixoAlvo: 'media/',
+      // Ao descarregar: tudo o que está no cabeçalho e no rodapé é de exemplo.
+      forcar: forcar && /header|footer/.test(caminho),
+    }));
+  await trocarImagensDoClube(zip, partes, 'word/');
 }
 
 /* EXCEL: CABEÇALHOS NA COR DA EQUIPA E COM O CLUBE.
@@ -8323,9 +8438,8 @@ async function aplicarClubeNosModelosWord(zip, { forcar = false } = {}) {
    · na formatação condicional (<dxfs>), que é onde estão as cores das
      faltas, presenças, lesões…;
    · nos gráficos (xl/charts) nem nos temas.
-   As imagens do topo das folhas (logótipos de exemplo) passam a ser a
-   imagem do clube, como no Word: ao descarregar o modelo base, as que
-   começam nas primeiras 6 linhas; ao gerar, só as marcadas pela app. */
+   As imagens de exemplo (escudos "CLUBE" cinzentos…) passam a ser a
+   imagem do clube, como no Word (ver `trocarImagensDoClube`). */
 async function pintarCorEquipaExcel(zip) {
   const cor = corEquipaParaDocumentos();
   const f = zip.file('xl/styles.xml');
@@ -8338,71 +8452,11 @@ async function pintarCorEquipaExcel(zip) {
   if (xml !== xml0) zip.file('xl/styles.xml', xml);
 }
 
-async function aplicarClubeNosModelosExcel(zip, { forcar = false } = {}) {
-  if (!T.nomeClube && !T.logoEquipa) return;
-  const desenhosXml = Object.keys(zip.files).filter(n => /^xl\/drawings\/drawing\d+\.xml$/.test(n));
-  if (!desenhosXml.length) return;
-  const parser = new DOMParser();
-  const ser = new XMLSerializer();
-  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-  const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
-  const TIPO_IMG = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
-  let logo; let carregouLogo = false;
-  const imagens = new Map(); // "largura x altura" → caminho do png (uma só imagem por tamanho)
-  let n = 1;
-  for (const caminho of desenhosXml) {
-    const doc = parser.parseFromString(await zip.file(caminho).async('string'), 'application/xml');
-    const relsPath = caminho.replace(/^xl\/drawings\//, 'xl/drawings/_rels/') + '.rels';
-    if (!zip.file(relsPath)) continue;
-    const relsDoc = parser.parseFromString(await zip.file(relsPath).async('string'), 'application/xml');
-    const relsRaiz = relsDoc.documentElement;
-    const ids = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')].map(x => x.getAttribute('Id'));
-    let mudou = false;
-    for (const pic of [...doc.getElementsByTagNameNS('*', 'pic')]) {
-      const ancora = pic.parentNode;
-      const cNvPr = pic.getElementsByTagNameNS('*', 'cNvPr')[0];
-      const blip = pic.getElementsByTagNameNS('*', 'blip')[0];
-      const xfrm = pic.getElementsByTagNameNS('*', 'xfrm')[0];
-      const ext = xfrm ? [...xfrm.childNodes].find(x => x.localName === 'ext') : null;
-      if (!blip || !ext) continue;
-      const marcado = cNvPr && cNvPr.getAttribute('descr') === MARCA_CLUBE_DOC;
-      const de = ancora ? [...ancora.childNodes].find(x => x.localName === 'from') : null;
-      const linhaEl = de ? [...de.childNodes].find(x => x.localName === 'row') : null;
-      const noTopo = linhaEl ? Number(linhaEl.textContent) <= 5 : false;
-      if (!marcado && !(forcar && noTopo)) continue;
-      const cx = Number(ext.getAttribute('cx')) || 0, cy = Number(ext.getAttribute('cy')) || 0;
-      if (!cx || !cy) continue;
-      const largura = 1600;
-      const altura = Math.max(40, Math.round(largura * cy / cx));
-      const chave = `${largura}x${altura}`;
-      if (!imagens.has(chave)) {
-        if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
-        // Imagem estreita e alta (só o símbolo): fica o logótipo sozinho.
-        const blob = await desenharImagemClube({ largura, altura, tipo: altura >= largura * 0.6 ? 'rodape' : 'cabecalho', logo });
-        while (zip.file(`xl/media/mjp-clube-${n}.png`)) n++;
-        const nome = `mjp-clube-${n}.png`; n++;
-        zip.file(`xl/media/${nome}`, await blob.arrayBuffer());
-        imagens.set(chave, nome);
-      }
-      let k = 1; while (ids().includes(`rIdMJPc${k}`)) k++;
-      const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
-      rel.setAttribute('Id', `rIdMJPc${k}`); rel.setAttribute('Type', TIPO_IMG); rel.setAttribute('Target', `../media/${imagens.get(chave)}`);
-      relsRaiz.appendChild(rel);
-      blip.setAttributeNS(R_NS, 'r:embed', `rIdMJPc${k}`);
-      if (cNvPr) cNvPr.setAttribute('descr', MARCA_CLUBE_DOC);
-      mudou = true;
-    }
-    if (mudou) {
-      zip.file(caminho, ser.serializeToString(doc));
-      zip.file(relsPath, ser.serializeToString(relsDoc));
-    }
-  }
-  if (imagens.size) {
-    const ctPath = '[Content_Types].xml';
-    let ct = await zip.file(ctPath).async('string');
-    if (!/<Default\b[^>]*Extension="png"/i.test(ct)) ct = ct.replace(/(<Types\b[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
-    zip.file(ctPath, ct);
-  }
+async function aplicarClubeNosModelosExcel(zip) {
+  const partes = Object.keys(zip.files)
+    .filter(n => /^xl\/drawings\/drawing\d+\.xml$/.test(n))
+    .map(caminho => ({ caminho, relsPath: caminho.replace(/^xl\/drawings\//, 'xl/drawings/_rels/') + '.rels', prefixoAlvo: '../media/', forcar: false }));
+  await trocarImagensDoClube(zip, partes, 'xl/');
 }
 
 /* Descarregar um modelo base já com a imagem do clube: cor da equipa e
@@ -8420,7 +8474,7 @@ async function descarregarModeloBase(x) {
   } else if (x.tipo === 'Excel') {
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     await pintarCorEquipaExcel(zip);
-    await aplicarClubeNosModelosExcel(zip, { forcar: true });
+    await aplicarClubeNosModelosExcel(zip);
     blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   }
   const url = URL.createObjectURL(blob);
@@ -8771,6 +8825,9 @@ async function ajustarGraficosDosJogadores(zip, jogadores) {
 
 async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos, anoInicioEpoca, relatorios) {
   const zip = await JSZip.loadAsync(arrayBuffer);
+  // Logótipo e nome do clube no lugar das imagens de exemplo (antes de
+  // se meter o resto: fotos dos jogadores, escudos do campo…).
+  await aplicarClubeNosModelosExcel(zip);
 
   const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
   const assidPath = await resolverCaminhoDaFolha(zip, 'Ficha Assiduidade');
@@ -8874,7 +8931,6 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   // `forcarRecalculoAoAbrir`.
   await forcarRecalculoAoAbrir(zip);
   await pintarCorEquipaExcel(zip);
-  await aplicarClubeNosModelosExcel(zip);
   await carimbarMarcaExcel(zip);
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
@@ -8985,6 +9041,9 @@ async function fotoParaWord(src) {
 }
 async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   const zip = await JSZip.loadAsync(arrayBuffer);
+  // Logótipo e nome do clube no lugar das imagens de exemplo (antes de
+  // se meter o resto: fotos dos jogadores, escudos do campo…).
+  await aplicarClubeNosModelosWord(zip);
   const docFile = zip.file('word/document.xml');
   if (!docFile) throw new Error('Este ficheiro não é um Word (.docx) válido.');
   const xml = await docFile.async('string');
@@ -9260,7 +9319,6 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   zip.file('[Content_Types].xml', tipos);
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
-  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9302,6 +9360,9 @@ function estruturasMaisUsadas(matches) {
      (ver o passo 2, mais abaixo). */
 async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) {
   const zip = await JSZip.loadAsync(arrayBuffer);
+  // Logótipo e nome do clube no lugar das imagens de exemplo (antes de
+  // se meter o resto: fotos dos jogadores, escudos do campo…).
+  await aplicarClubeNosModelosWord(zip);
   const docFile = zip.file('word/document.xml');
   if (!docFile) throw new Error('Este ficheiro não é um Word (.docx) válido.');
   const modelo = new DOMParser().parseFromString(await docFile.async('string'), 'application/xml');
@@ -9626,7 +9687,6 @@ async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) 
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
-  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9796,6 +9856,9 @@ function textosDaOcorrencia(o0, { matches, sessions, convocatorias }) {
 
 async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escalao, textos }) {
   const zip = await JSZip.loadAsync(arrayBuffer);
+  // Logótipo e nome do clube no lugar das imagens de exemplo (antes de
+  // se meter o resto: fotos dos jogadores, escudos do campo…).
+  await aplicarClubeNosModelosWord(zip);
   const xml = await zip.file('word/document.xml').async('string');
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const W = W_NS;
@@ -9876,7 +9939,6 @@ async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escal
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
-  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
