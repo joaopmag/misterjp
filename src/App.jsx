@@ -8525,33 +8525,34 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
           }
         });
         /* TUDO AO CENTRO DA BARRA. A barra é a linha da tabela onde estão as
-           caixas. O título fica centrado na vertical da célula; as caixas
-           ficam centradas na altura da linha. Para isso a tabela tem de ser
-           o primeiro elemento da folha e a linha ter altura definida: assim
-           sabe-se onde começa a barra (margem de cima + linhas anteriores). */
+           caixas. O título fica centrado na vertical da célula e as caixas
+           passam para o parágrafo do título, centradas na altura da linha
+           dele: assim acompanham-no, esteja a tabela onde estiver na folha. */
         const acima = (no, nome) => { for (let x = no.parentNode; x; x = x.parentNode) if (x.localName === nome) return x; return null; };
         const tr = acima(esq.desenhoWord, 'tr');
-        const tbl = tr ? acima(tr, 'tbl') : null;
-        const corpo = tbl ? tbl.parentNode : null;
-        const primeiro = corpo ? [...corpo.childNodes].find(x => x.nodeType === 1 && x.localName !== 'bookmarkStart') : null;
-        const alturaLinha = (linha) => {
-          const trPr = filhoDe(linha, 'trPr');
-          const h = trPr ? filhoDe(trPr, 'trHeight') : null;
-          return h ? (Number(h.getAttribute('w:val')) || 0) * 635 : 0;
-        };
-        if (tr && tbl && corpo && corpo.localName === 'body' && primeiro === tbl && acima(dir.desenhoWord, 'tr') === tr && alturaLinha(tr)) {
-          const linhas = [...tbl.childNodes].filter(x => x.localName === 'tr');
-          const antes = linhas.slice(0, linhas.indexOf(tr));
-          if (antes.every(alturaLinha)) {
-            const topo = (pgMar ? (Number(pgMar.getAttribute('w:top')) || 0) * 635 : 0) + antes.reduce((t, l) => t + alturaLinha(l), 0);
-            const y = topo + Math.round((alturaLinha(tr) - cyS) / 2);
+        const titulo = tr ? [...tr.getElementsByTagNameNS(W_NS, 'p')].find(pp => textoDoNo(pp).trim()) : null;
+        if (tr && titulo && acima(dir.desenhoWord, 'tr') === tr) {
+          {
+            // Altura da linha do título: o tamanho da letra (w:sz em meios
+            // pontos) × 1,15, em EMU (1 pt = 12700).
+            const runTexto = [...titulo.getElementsByTagNameNS(W_NS, 'r')].find(r => textoDoNo(r).trim());
+            const szEl = (runTexto && runTexto.getElementsByTagNameNS(W_NS, 'sz')[0]) || titulo.getElementsByTagNameNS(W_NS, 'sz')[0];
+            const pt = szEl ? (Number(szEl.getAttribute('w:val')) || 28) / 2 : 14;
+            const alturaTitulo = Math.round(pt * 1.15 * 12700);
+            const y = Math.round((alturaTitulo - cyS) / 2);
             [esq, dir].forEach(it => {
+              const run = acima(it.desenhoWord, 'r');
+              if (run && acima(run, 'p') !== titulo) {
+                run.parentNode.removeChild(run);
+                const pPr = filhoDe(titulo, 'pPr');
+                titulo.insertBefore(run, pPr ? pPr.nextSibling : titulo.firstChild);
+              }
               const pv = filhoDe(it.desenhoWord, 'positionV');
               if (!pv) return;
               [...pv.childNodes].forEach(n2 => pv.removeChild(n2));
-              pv.setAttribute('relativeFrom', 'page');
+              pv.setAttribute('relativeFrom', 'paragraph');
               const off = doc.createElementNS(pv.namespaceURI, `${pv.prefix ? pv.prefix + ':' : ''}posOffset`);
-              off.textContent = String(Math.max(0, y));
+              off.textContent = String(y);
               pv.appendChild(off);
             });
             // Título (e o resto da barra) centrado na vertical das células.
