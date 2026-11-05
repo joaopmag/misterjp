@@ -33844,19 +33844,23 @@ function gpsGerarDemo({ players, sessions, matches, clinico }) {
 }
 
 /* ---------- Entrada do separador: confirma que a tabela existe ---------- */
+// Equipas em que já se confirmou que a tabela do GPS existe (não se volta
+// a perguntar ao servidor de cada vez que se abre o separador).
+const gpsTabelaConfirmada = new Set();
 function MonitorizacaoGps({ players, sessions, matches, monitoring, clinico = [], teamId }) {
-  const [estado, setEstado] = useState('a-verificar'); // a-verificar | ok | sem-tabela | erro
+  const [estado, setEstado] = useState(() => (gpsTabelaConfirmada.has(teamId) ? 'ok' : 'a-verificar')); // a-verificar | ok | sem-tabela | erro
   const [tentativa, setTentativa] = useState(0);
   useEffect(() => {
     let cancelado = false;
     if (!teamId) return undefined;
+    if (gpsTabelaConfirmada.has(teamId) && tentativa === 0) { setEstado('ok'); return undefined; }
     setEstado('a-verificar');
     (async () => {
       try {
         await ensureSession();
         const { error } = await supabase.from(GPS_TABELA).select('id').limit(1);
         if (cancelado) return;
-        if (!error) { setEstado('ok'); return; }
+        if (!error) { gpsTabelaConfirmada.add(teamId); setEstado('ok'); return; }
         const msg = `${error.code || ''} ${error.message || ''}`;
         setEstado(/42P01|PGRST205|does not exist|Could not find the table/i.test(msg) ? 'sem-tabela' : 'erro');
       } catch (e) {
@@ -34495,6 +34499,10 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   // questionários) e Composição Corporal (pesagens). Um separador simples
   // em vez de duas rotas — é a mesma área, só muda o que se está a olhar.
   const [subTab, setSubTab] = useState('wellness');
+  // O GPS começa a carregar por trás meio segundo depois de abrir a
+  // Monitorização (para não atrasar o que se vê primeiro).
+  const [gpsMontado, setGpsMontado] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setGpsMontado(true), 500); return () => clearTimeout(t); }, []);
   const openBoard = (type) => { setModalType(type); setModal(true); };
   /* FILA DE LEMBRETES — uma conversa de cada vez, sempre.
 
@@ -34603,9 +34611,17 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         <ToggleBtn active={subTab === 'gps'} onClick={() => setSubTab('gps')}>GPS / Carga</ToggleBtn>
       </div>
 
-      {subTab === 'gps' ? (
-        <MonitorizacaoGps players={players} sessions={sessions} matches={matches} monitoring={monitoring} clinico={clinico} teamId={teamId} />
-      ) : subTab === 'composicao' ? (
+      {/* GPS SEM ESPERA. Carrega por trás logo que se entra na Monitorização
+          e fica montado (escondido) nos outros separadores: ao carregar em
+          "GPS / Carga" os dados já lá estão, em vez de "A preparar…" e
+          "A carregar os dados de GPS…" de cada vez. Não tem nada que meça
+          larguras, por isso pode estar escondido sem estragar o desenho. */}
+      {(gpsMontado || subTab === 'gps') && (
+        <div style={{ display: subTab === 'gps' ? 'block' : 'none' }}>
+          <MonitorizacaoGps players={players} sessions={sessions} matches={matches} monitoring={monitoring} clinico={clinico} teamId={teamId} />
+        </div>
+      )}
+      {subTab === 'gps' ? null : subTab === 'composicao' ? (
         <ComposicaoCorporal players={players} monitoring={monitoring} setMonitoring={setMonitoring} onNovaPesagem={() => openBoard('composicao')} />
       ) : (
       <>
