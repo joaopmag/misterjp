@@ -50751,11 +50751,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         }}
         alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }}
       />
-    ) : (
-      <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Play size={22} color={T.mutedDim} />
-      </div>
-    );
+    ) : (() => {
+      /* Sem vídeo do YouTube (ex.: só cortes vindos da Análise de Vídeo,
+         que são MP4 guardados na app): usa a miniatura de um desses cortes. */
+      const comThumb = g.itens.find(x => !ehClipe(x) && x.thumbUrl) || g.itens.find(x => x.thumbUrl);
+      // Nem miniatura: o primeiro fotograma do próprio MP4 (só os metadados são lidos).
+      const comMp4 = !comThumb && g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId);
+      return comThumb ? (
+        <img src={comThumb.thumbUrl} alt="" loading="lazy"
+          style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
+      ) : comMp4 ? (
+        <video src={`${comMp4.dataUrl}#t=0.5`} muted playsInline preload="metadata"
+          style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000', pointerEvents: 'none' }} />
+      ) : (
+        <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Play size={22} color={T.mutedDim} />
+        </div>
+      );
+    })();
   };
 
   const renderCartoesCanal = () => {
