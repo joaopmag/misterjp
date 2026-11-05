@@ -46762,7 +46762,9 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
     }}>
       <div ref={areaRef} onWheel={emEcraInteiro ? lupaV.aoRodar : undefined} style={{
         position: 'relative', overflow: 'hidden', ...(emEcraInteiro ? { flex: 1, minHeight: 0 } : {}),
-        ...(poster ? { backgroundImage: `url("${poster}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundColor: '#000' } : {}),
+        // A miniatura com o mesmo enquadramento do vídeo (contain), para a
+        // imagem não saltar quando o vídeo aparece por cima.
+        ...(poster ? { backgroundImage: `url("${poster}")`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundColor: '#000' } : {}),
       }}>
       <video
         ref={videoRef} src={src} playsInline preload={preload} autoPlay={autoPlay}
@@ -53003,7 +53005,7 @@ function PdfCanvasViewer({ dataUrl }) {
    que nos MP4 do Storage chega a demorar 1 a 3 segundos.
    Os dois leitores vivem na mesma lista, pela chave do vídeo: o que estava
    a carregar passa a ser o mostrado sem ser montado de novo (não recarrega). */
-function VideoSemPiscar({ item }) {
+function VideoSemPiscar({ item, proporcao }) {
   const [mostradoId, setMostradoId] = useState(item.id);
   const [itens, setItens] = useState(() => ({ [item.id]: item }));
   const alvoId = item.id;
@@ -53031,11 +53033,12 @@ function VideoSemPiscar({ item }) {
         const visivel = id === mostradoId;
         return (
           <div key={id} style={visivel
-            ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
+            ? (proporcao ? { display: 'flex', flexDirection: 'column' } : { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' })
             : { position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
             <VideoComBarra
               src={it.dataUrl} poster={visivel && id === mostradoId && ids.length === 1 ? (it.thumbUrl || undefined) : undefined}
-              preload={visivel ? undefined : 'auto'} semEcraInteiro style={{ flex: 1, minHeight: 0 }}
+              preload={visivel ? undefined : 'auto'} semEcraInteiro style={proporcao ? undefined : { flex: 1, minHeight: 0 }}
+              videoStyle={proporcao ? { aspectRatio: '16 / 9', height: 'auto' } : undefined}
               pausado={!visivel || id !== alvoId}
               onPronto={id === alvoId && id !== mostradoId ? () => setMostradoId(id) : undefined}
             />
@@ -53178,10 +53181,18 @@ function AttachmentPreview({ item, tall }) {
     );
   }
   if (item.kind === 'video') {
+    /* MESMO TAMANHO DO LEITOR DO YOUTUBE: a imagem num quadro 16:9 da
+       largura toda, a barra de reprodução e a do ecrã inteiro por baixo.
+       Antes a caixa tinha 300 px de altura fixa e a imagem ficava mais
+       pequena; e enquanto o vídeo carregava, o quadro começava baixo e
+       crescia, o que fazia o cartão piscar. Com o 16:9 desde o início, a
+       altura não muda ao carregar. Em ecrã inteiro ocupa tudo, como antes. */
     return (
-      <div ref={boxRef} style={wrapStyle}>
-        <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          <VideoSemPiscar item={item} />
+      <div ref={boxRef} style={isFullscreen ? wrapStyle : { ...wrapStyle, height: 'auto' }}>
+        <div style={isFullscreen
+          ? { flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column', position: 'relative' }
+          : { background: '#000', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <VideoSemPiscar item={item} proporcao={!isFullscreen} />
         </div>
         {FsBar}
       </div>
