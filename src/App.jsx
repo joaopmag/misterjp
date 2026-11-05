@@ -8388,6 +8388,47 @@ async function preencherRelatoriosJornadas(zip, { players, matches, sessions, cl
   return plano;
 }
 
+/* GRÁFICOS DA FOLHA "graficos": OS NOMES SAÍAM FORA DO SÍTIO.
+
+   Com 30 atletas no eixo, os nomes inclinados (a 64° a 76°, cada gráfico
+   com o seu ângulo) e em letra 10 sobrepunham-se, e o Excel/WPS passava a
+   desenhá-los em duas filas desencontradas, longe da barra de cada um.
+   Aqui os nomes do eixo ficam na vertical (90°), em letra 8 e sempre
+   todos (um por barra), o que cabe sem se sobrepor.
+
+   Mais duas correções: os gráficos de Golos e Assistências começavam no
+   4.º atleta (linha 9), por isso os três primeiros da lista nunca
+   apareciam; passam a mostrar os 30. E a memória de nomes guardada dentro
+   de cada gráfico ("Atleta 1"…) passa a ter os nomes reais, para quem
+   abrir o ficheiro num visualizador que não recalcula. */
+async function ajustarGraficosDosJogadores(zip, jogadores) {
+  const nomes = Array.from({ length: 30 }, (_, i) => (jogadores[i] ? jogadores[i].name : ''));
+  const graficos = Object.keys(zip.files).filter(n => /^xl\/charts\/chart\d+\.xml$/.test(n));
+  for (const caminho of graficos) {
+    let x = await zip.file(caminho).async('string');
+    if (!/ESTAT[ÍI]STICA TOTAL'?!\$?B\$?\d+/.test(x)) continue;
+    // Séries que começavam na linha 9 passam a começar na 6 (nomes e valores).
+    x = x.replace(/(<c:f>'?ESTAT[ÍI]STICA TOTAL'?!\$?[A-Z]+\$?)9(:\$?[A-Z]+\$?35<\/c:f>)/g, '$16$2');
+    // Memória dos nomes do eixo.
+    x = x.replace(/(<c:cat>\s*<c:strRef>\s*<c:f>[^<]*<\/c:f>)\s*<c:strCache>[\s\S]*?<\/c:strCache>/g, (all, ini) =>
+      `${ini}<c:strCache><c:ptCount val="30"/>${nomes.map((n, i) => `<c:pt idx="${i}"><c:v>${escaparXml(n)}</c:v></c:pt>`).join('')}</c:strCache>`);
+    // A memória dos valores deixa de corresponder ao intervalo novo: fica
+    // vazia com o tamanho certo e o Excel volta a preenchê-la ao abrir.
+    x = x.replace(/(<c:val>\s*<c:numRef>\s*<c:f>[^<]*<\/c:f>\s*<c:numCache>\s*(?:<c:formatCode>[^<]*<\/c:formatCode>)?)\s*<c:ptCount val="\d+"\/>[\s\S]*?(<\/c:numCache>)/g, '$1<c:ptCount val="30"/>$2');
+    // Eixo das categorias: nomes na vertical, letra 8, todos.
+    x = x.replace(/<c:catAx>[\s\S]*?<\/c:catAx>/g, eixo => {
+      let e = eixo.replace(/(<c:txPr>\s*<a:bodyPr\b[^>]*?)\srot="-?\d+"/, '$1').replace(/(<c:txPr>\s*<a:bodyPr)\b/, '$1 rot="-5400000"');
+      e = e.replace(/(<c:txPr>[\s\S]*?<a:defRPr\b[^>]*?)\ssz="\d+"/, '$1').replace(/(<c:txPr>[\s\S]*?<a:defRPr)\b/, '$1 sz="800"');
+      e = e.replace(/<c:tickLblSkip val="\d+"\/>/, '').replace(/<c:tickMarkSkip val="\d+"\/>/, '');
+      e = /<c:lblOffset\b[^>]*\/>/.test(e)
+        ? e.replace(/(<c:lblOffset\b[^>]*\/>)/, '$1<c:tickLblSkip val="1"/><c:tickMarkSkip val="1"/>')
+        : e.replace(/(<c:noMultiLvlLbl\b[^>]*\/>|<\/c:catAx>)/, '<c:tickLblSkip val="1"/><c:tickMarkSkip val="1"/>$1');
+      return e;
+    });
+    zip.file(caminho, x);
+  }
+}
+
 async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos, anoInicioEpoca, relatorios) {
   const zip = await JSZip.loadAsync(arrayBuffer);
 
@@ -8485,6 +8526,8 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   // modelo os tiver). O resultado (jogos preenchidos e ignorados) volta
   // em `relatorios.resumo` para o formulário o mostrar.
   if (relatorios) relatorios.resumo = await preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, ...relatorios });
+
+  await ajustarGraficosDosJogadores(zip, jogadores);
 
   // Sem isto, a coluna do total (AH) abre com o valor antigo (0) até
   // alguém forçar o Excel a recalcular — ver o comentário grande em
