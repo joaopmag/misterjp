@@ -1680,8 +1680,8 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
                 {!(d.fichas || []).length && <span style={{ fontSize: 11.5, color: T.warn }}>Ainda não há fichas de adversários. Cria a ficha em Scouting › Adversários.</span>}
               </label>
             )}
-            {(clip.enviadoSala || []).length > 0 && (
-              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Já enviado para: {clip.enviadoSala.map(e => e.rotulo).join('; ')}</div>
+            {clipeNaSala(clip) && textoNaSala(clip) && (
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Já enviado para: {textoNaSala(clip)}</div>
             )}
             {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -1988,7 +1988,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               gravacaoClipe ? 'Parar' : 'Vídeo c/ desenhos', gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos,
               { ativo: !!gravacaoClipe, title: 'Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)' })}
             {onDesenhar && botaoAcao(<ArrowUpRight size={15} />, `Desenhar${(clip.shapes || []).length ? ` (${clip.shapes.length})` : ''}`, onDesenhar)}
-            {onEnviarSala && botaoAcao((clip.enviadoSala || []).length ? <Check size={15} color={TV.good} /> : <Film size={15} />, 'Sala de Vídeo', onEnviarSala, { title: 'Enviar para a Sala de Vídeo' })}
+            {onEnviarSala && botaoAcao(clipeNaSala(clip) ? <Check size={15} color={TV.good} /> : <Film size={15} />, 'Sala de Vídeo', onEnviarSala, { title: clipeNaSala(clip) ? `Na Sala de Vídeo: ${textoNaSala(clip)}` : 'Enviar para a Sala de Vídeo' })}
             {botaoAcao(<Pencil size={15} />, aEditar ? 'Fechar edição' : 'Editar', aEditar ? () => setAEditar(false) : abrirEdicao, { ativo: aEditar, title: 'Editar texto e tempos' })}
             {botaoAcao(<Trash2 size={15} />, 'Apagar', onRemove, { perigo: true })}
           </div>
@@ -2108,6 +2108,11 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
    entram na lista de clipes do staff: têm o separador próprio
    "Análise individual em clipes", com um cartão por jogador. */
 const ehClipeAtleta = (c) => !!c && c.origem === 'atleta';
+/* Já está na Sala de Vídeo? Por um envio a Jogos (enviadoSala) ou por
+   ter uma equipa, que o põe na ficha desse adversário (e no Canal ›
+   Adversários). */
+const clipeNaSala = (c) => !!c && (((c.enviadoSala || []).length > 0) || !!c.equipa);
+const textoNaSala = (c) => [c && c.equipa ? `Adversários › ${c.equipa}` : null, ...((c && c.enviadoSala) || []).filter(e => e && e.destino !== 'adversario').map(e => e.rotulo)].filter(Boolean).join('; ');
 
 /* JOGO DE UM CLIPE DE ATLETA — para catalogar os clipes por jogo. O
    clipe guarda o título do vídeo onde foi feito (`originalTitulo`, ex.:
@@ -3560,7 +3565,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   // Usado na Sala de Vídeo (Canal ou ficha de adversário)?
-  const clipeUsadoNaSala = (clip) => !!clip && ((clipesUsadosNaSala && clipesUsadosNaSala.has(clip.id)) || (clip.enviadoSala || []).length > 0);
+  // Envios antigos para Adversários já não contam aqui: passaram a seguir o
+  // clipe (saem da ficha quando ele é apagado). Um vídeo que ainda esteja
+  // na Sala por outro envio aparece em `clipesUsadosNaSala`.
+  const clipeUsadoNaSala = (clip) => !!clip && ((clipesUsadosNaSala && clipesUsadosNaSala.has(clip.id)) || (clip.enviadoSala || []).some(e => e && e.destino !== 'adversario'));
   // Apaga o vídeo do clipe E a miniatura (o mesmo nome, em .jpg).
   const apagarFicheirosClipe = async (storagePath) => {
     const ficheiros = [storagePath];
@@ -5336,12 +5344,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   {enviarParaSala && (
                     <button
                       onClick={() => setClipeParaSala(clip)}
-                      title="Enviar para a Sala de Vídeo" aria-label="Enviar para a Sala de Vídeo"
+                      title={clipeNaSala(clip) ? `Na Sala de Vídeo: ${textoNaSala(clip)}` : 'Enviar para a Sala de Vídeo'} aria-label="Enviar para a Sala de Vídeo"
                       style={{
                         position: 'absolute', top: 7, left: 102, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                        background: (clip.enviadoSala || []).length ? 'rgba(46,125,80,0.85)' : 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                        background: clipeNaSala(clip) ? 'rgba(46,125,80,0.85)' : 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                       }}>
-                      {(clip.enviadoSala || []).length ? <Check size={13} color="#fff" /> : <Film size={13} color="#fff" />}
+                      {clipeNaSala(clip) ? <Check size={13} color="#fff" /> : <Film size={13} color="#fff" />}
                     </button>
                   )}
                   </div>
