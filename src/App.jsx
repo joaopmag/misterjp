@@ -53036,7 +53036,11 @@ function VideoSemPiscar({ item, proporcao }) {
             ? (proporcao ? { display: 'flex', flexDirection: 'column' } : { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' })
             : { position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
             <VideoComBarra
-              src={it.dataUrl} poster={visivel && id === mostradoId && ids.length === 1 ? (it.thumbUrl || undefined) : undefined}
+              /* Sem miniatura por trás: a miniatura dos cortes é tirada de outro
+                 instante do vídeo, e ao começar a imagem trocava por outra
+                 (parecia que a câmara se mexia). Fica o quadro preto, do
+                 tamanho final, até à primeira imagem — como no YouTube. */
+              src={it.dataUrl} poster={undefined}
               preload={visivel ? undefined : 'auto'} semEcraInteiro style={proporcao ? undefined : { flex: 1, minHeight: 0 }}
               videoStyle={proporcao ? { aspectRatio: '16 / 9', height: 'auto' } : undefined}
               pausado={!visivel || id !== alvoId}
