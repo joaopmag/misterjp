@@ -261,6 +261,18 @@ const PHASES = ['Organização Defensiva', 'Transição Ofensiva', 'Organizaçã
 // Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
 // de sessão (dia de folga), não faz sentido classificar um exercício assim.
 const EXERCISE_PHASES = PHASES.filter(p => p !== 'Descanso');
+/* DOIS MOMENTOS num exercício ou ideia: `phase` é o dominante (o de
+   sempre — conta para agrupar, contar e para o tamanho dos ícones do
+   esquema) e `phase2` o segundo, opcional. Mostra-se "A + B" e a pesquisa
+   por momento encontra-o nos dois. */
+const momentosDe = (x) => [x && x.phase, x && x.phase2].filter((p, i, a) => p && a.indexOf(p) === i);
+const momentoTexto = (x) => momentosDe(x).join(' + ');
+const temMomento = (x, fase) => momentosDe(x).includes(fase);
+// Sugestão para o 2.º momento: a transição a seguir ao momento dominante.
+const SEGUNDO_MOMENTO_SUGERIDO = {
+  'Organização Ofensiva': 'Transição Defensiva', 'Transição Defensiva': 'Organização Defensiva',
+  'Organização Defensiva': 'Transição Ofensiva', 'Transição Ofensiva': 'Organização Ofensiva',
+};
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
   { value: 'media', label: 'Média' },
@@ -13324,7 +13336,7 @@ function Exercicios({ exercises, setExercises, meta }) {
     imprimirComNome(x.name);
   };
   const doShare = (x) => {
-    const meta = [x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.material && `🎒 ${x.material}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean);
+    const meta = [momentoTexto(x), x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.material && `🎒 ${x.material}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean);
     const block = buildDiagramBlockHtml(x.diagram, x.space, 'ex', x.phase);
     const html = buildShareableHtmlDoc({ title: x.name || 'Exercício', metaLines: meta, description: x.description, blocks: [block] });
     shareOrDownloadHtml(`${(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.html`, html, x.name || 'Exercício');
@@ -13335,7 +13347,7 @@ function Exercicios({ exercises, setExercises, meta }) {
   // As versões arquivadas (antigas, guardadas só para as sessões
   // passadas, ver "GRAVAR POR CIMA" na sessão) não aparecem na biblioteca.
   const ativos = exercises.filter(x => x && !x.arquivado);
-  const visible = (filter === 'Todas' ? ativos : ativos.filter(x => x.phase === filter)).slice().reverse();
+  const visible = (filter === 'Todas' ? ativos : ativos.filter(x => temMomento(x, filter))).slice().reverse();
 
   return (
     <div>
@@ -13398,7 +13410,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                   dos ícones (a pedido) — o campo sobe para logo a seguir
                   ao título. */}
               <div style={{ display: 'flex', gap: 16, marginTop: 10, alignItems: 'center' }}>
-                <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{x.phase}</span>
+                <RotulosMomento x={x} />
                 <span style={{ flex: 1 }} />
                 <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
@@ -13437,7 +13449,7 @@ function Exercicios({ exercises, setExercises, meta }) {
             display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
             margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
           }}>
-            {printExercise.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {printExercise.phase}</div>}
+            {printExercise.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {momentoTexto(printExercise)}</div>}
             {printExercise.defaultDuration && <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração:</strong> {printExercise.defaultDuration} min</div>}
             {printExercise.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {printExercise.space}</div>}
             {printExercise.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {printExercise.playersCount}</div>}
@@ -14346,12 +14358,12 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
 
   const doPrint = (x) => {
     setPrintIdeia(x);
-    imprimirComNome([labelOf(x), x.phase].filter(Boolean).join(' · '));
+    imprimirComNome([labelOf(x), momentoTexto(x)].filter(Boolean).join(' · '));
   };
   const doShare = (x) => {
     const block = buildDiagramBlockHtml(x.diagram, '', 'ideia');
     const title = (x.name && x.name.trim()) || x.phase || 'Ideia de jogo';
-    const html = buildShareableHtmlDoc({ title, metaLines: [x.phase].filter(Boolean), blocks: [block] });
+    const html = buildShareableHtmlDoc({ title, metaLines: [momentoTexto(x)].filter(Boolean), blocks: [block] });
     shareOrDownloadHtml(`ideia_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
   };
 
@@ -14362,7 +14374,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
     : `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
   /* Mais recentes primeiro (como nos Exercícios): a lista chega por ordem
      de criação e as novas entram no fim, por isso basta inverter. */
-  const visible = (filter === 'Todas' ? gerais : gerais.filter(x => x.phase === filter))
+  const visible = (filter === 'Todas' ? gerais : gerais.filter(x => temMomento(x, filter)))
     .slice()
     .reverse();
 
@@ -14451,7 +14463,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
                     linha dos ícones. A visibilidade no Portal vê-se só no
                     olho (verde = visível), sem etiqueta extra. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, alignItems: 'center' }}>
-                  <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{x.phase}</span>
+                  <RotulosMomento x={x} />
                   <span style={{ flex: 1 }} />
                   <button
                     onClick={(e) => { e.stopPropagation(); setIdeias(prev => prev.map(y => (y.id === x.id ? { ...y, visivelAtletas: !y.visivelAtletas } : y))); }}
@@ -14589,7 +14601,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{labelOf(printIdeia)}</h2>
           <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
-            <strong>Fase de jogo:</strong> {printIdeia.phase}
+            <strong>Fase de jogo:</strong> {momentoTexto(printIdeia)}
           </div>
           <svg viewBox={viewBoxDaVista(printIdeia.diagram && printIdeia.diagram.vista)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <VistaCampo vista={printIdeia.diagram && printIdeia.diagram.vista}>
@@ -14901,7 +14913,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
           </div>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ color: T.cream, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{nomeDe(atual)}</div>
-            <div style={{ color: T.mutedDim, fontSize: 12 }}>{[atual.phase, editadoHa(atual)].filter(Boolean).join(' · ')}</div>
+            <div style={{ color: T.mutedDim, fontSize: 12 }}>{[momentoTexto(atual), editadoHa(atual)].filter(Boolean).join(' · ')}</div>
             {det.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {det.map(d => <span key={d} style={{ fontSize: 11.5, color: T.cream, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 10, padding: '2px 8px' }}>{d}</span>)}
@@ -15187,7 +15199,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
   const [importNotice, setImportNotice] = useState('');
 
   // Só as da mesma fase de jogo que está escolhida aqui.
-  const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram && x.phase === f.phase);
+  const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram && temMomento(x, f.phase));
   const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
   const botaoCopiarRef = useRef(null);
   const alternarCopiar = () => {
@@ -15225,6 +15237,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
       // aviso um título que já tenhas escrito.
       name: (prev.name && prev.name.trim()) ? prev.name : `${label} (cópia)`,
       phase: src.phase || prev.phase,
+      phase2: src.phase2 || '',
       diagram: remapped,
     }));
     setImportOpen(false);
@@ -15238,11 +15251,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
       </div>
       <div style={{ marginBottom: 16 }}>
-        <Field label="Fase de jogo">
-          <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
-            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-        </Field>
+        <CamposMomento f={f} setF={setF} rotulo="Fase de jogo" />
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -15250,7 +15259,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
           <DiagramEditor
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
-            exerciseInfo={{ name: f.name, phase: f.phase }}
+            exerciseInfo={{ name: f.name, phase: f.phase, phase2: f.phase2 }}
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
             jogoId={f.jogoId || null}
@@ -20484,7 +20493,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
             margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
           }}>
-            {exerciseInfo?.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {exerciseInfo.phase}</div>}
+            {exerciseInfo?.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {momentoTexto(exerciseInfo)}</div>}
             {exerciseInfo?.defaultDuration && <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração:</strong> {exerciseInfo.defaultDuration} min</div>}
             {exerciseInfo?.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {exerciseInfo.space}</div>}
             {exerciseInfo?.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
@@ -20678,6 +20687,66 @@ function TempoInput({ value, onChange, placeholder }) {
   );
 }
 
+/* Rótulos do momento nos cartões: o dominante como sempre e, se houver,
+   o 2.º ao lado, um pouco mais discreto. Cortam com "…" se não couberem. */
+function RotulosMomento({ x }) {
+  const ms = momentosDe(x);
+  const base = { display: 'inline-block', fontSize: 11, padding: '3px 9px', borderRadius: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+  return (
+    <span style={{ display: 'flex', gap: 6, minWidth: 0, overflow: 'hidden' }} title={ms.join(' + ')}>
+      {ms.map((m, i) => (
+        <span key={m} style={{ ...base, flexShrink: i === 0 ? 0.5 : 1, color: T.warn, background: i === 0 ? `${T.crimson}55` : 'transparent', border: i === 0 ? '1px solid transparent' : `1px solid ${T.crimson}88` }}>{m}</span>
+      ))}
+    </span>
+  );
+}
+
+/* Campo "Momento" com "+ Momento" para juntar um 2.º (o 1.º é o
+   dominante). `celula`: estilo de cada célula quando o campo vive numa
+   grelha (exercício); sem ele, os dois ficam lado a lado (ideia). */
+function CamposMomento({ f, setF, rotulo = 'Momento', celula = null }) {
+  const temSegundo = !!(f.phase2 && f.phase2 !== f.phase);
+  const botao = { display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.muted, padding: '0 12px', fontSize: 12.5, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
+  const primeiro = (
+    <Field label={rotulo}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Select value={f.phase} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase: v, phase2: prev.phase2 === v ? '' : (prev.phase2 || '') })); }}>
+            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </div>
+        {!temSegundo && (
+          <button type="button" title="Juntar um 2.º momento a este" style={botao}
+            onClick={() => setF(prev => ({ ...prev, phase2: (SEGUNDO_MOMENTO_SUGERIDO[prev.phase] && SEGUNDO_MOMENTO_SUGERIDO[prev.phase] !== prev.phase) ? SEGUNDO_MOMENTO_SUGERIDO[prev.phase] : EXERCISE_PHASES.find(p => p !== prev.phase) }))}>
+            <Plus size={14} /> Momento
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+  const segundo = temSegundo ? (
+    <Field label="2.º momento">
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Select value={f.phase2} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase2: v })); }}>
+            {EXERCISE_PHASES.filter(p => p !== f.phase).map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </div>
+        <button type="button" title="Tirar o 2.º momento" style={{ ...botao, padding: '0 10px' }} onClick={() => setF(prev => ({ ...prev, phase2: '' }))}>
+          <X size={14} />
+        </button>
+      </div>
+    </Field>
+  ) : null;
+  if (celula) return <>{<div style={celula}>{primeiro}</div>}{segundo && <div style={celula}>{segundo}</div>}</>;
+  return (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 260px', minWidth: 0 }}>{primeiro}</div>
+      {segundo && <div style={{ flex: '1 1 260px', minWidth: 0 }}>{segundo}</div>}
+    </div>
+  );
+}
+
 function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_exercicio_${exercise?.id || 'novo'}`, f, setF);
@@ -20692,7 +20761,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
 
   // Só faz sentido copiar de outros exercícios — nunca do próprio.
   // ... e só os da mesma fase de jogo que está escolhida aqui.
-  const importable = allExercises.filter(x => x && !x.arquivado && x.id !== (exercise && exercise.id) && x.name && x.phase === f.phase);
+  const importable = allExercises.filter(x => x && !x.arquivado && x.id !== (exercise && exercise.id) && x.name && temMomento(x, f.phase));
   const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
   const botaoCopiarRef = useRef(null);
   const alternarCopiar = () => {
@@ -20735,6 +20804,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
       // aviso um título que já tenhas escrito.
       name: prev.name && prev.name.trim() ? prev.name : `${src.name} (cópia)`,
       phase: src.phase || prev.phase,
+      phase2: src.phase2 || '',
       description: src.description || '',
       space: src.space || '',
       playersCount: src.playersCount || '',
@@ -20857,13 +20927,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
         </div>
         {/* "Momento" (era "Fase de jogo") e com duas colunas de largura:
             "Organização Defensiva" ficava cortado na caixa. */}
-        <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
-        <Field label="Momento">
-          <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
-            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-        </Field>
-        </div>
+        <CamposMomento f={f} setF={setF} celula={{ gridColumn: 'span 2', minWidth: 0 }} />
         <Field label="Tempo (min)"><TempoInput value={f.defaultDuration} onChange={v => setF({ ...f, defaultDuration: v })} placeholder="Ex: 15 ou 7+7" /></Field>
         <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
@@ -20880,7 +20944,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
             spaceMeters={parseSpace(f.space)}
-            exerciseInfo={{ name: f.name, phase: f.phase, space: f.space, material: f.material, description: f.description, playersCount: f.playersCount, defaultDuration: f.defaultDuration }}
+            exerciseInfo={{ name: f.name, phase: f.phase, phase2: f.phase2, space: f.space, material: f.material, description: f.description, playersCount: f.playersCount, defaultDuration: f.defaultDuration }}
             onClearAll={handleClearAll}
             onSpaceZonesChange={handleSpaceZonesChange}
             activeColor={diagramColor}
@@ -21270,7 +21334,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   return (
     <Modal title={exercise.name} onClose={onClose} wide xwide fullPage>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 9px', borderRadius: 12 }}>{exercise.phase}</span>
+        <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 9px', borderRadius: 12 }}>{momentoTexto(exercise)}</span>
         {exercise.space && <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>📐 {exercise.space}</span>}
         {exercise.playersCount && <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>👥 {exercise.playersCount}</span>}
         {exercise.material && <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>🎒 {exercise.material}</span>}
@@ -24935,8 +24999,8 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
   const exerciciosDoDia = itensDoDia.map(v => exercises.find(x => x.id === v.exId)).filter(Boolean);
   const exerciciosVisiveis = filtroFase === 'Todas'
     ? exerciciosDoDia
-    : exerciciosDoDia.filter(x => x.phase === filtroFase);
-  const fases = ['Todas', ...Array.from(new Set(exerciciosDoDia.map(x => x.phase).filter(Boolean)))];
+    : exerciciosDoDia.filter(x => temMomento(x, filtroFase));
+  const fases = ['Todas', ...Array.from(new Set(exerciciosDoDia.flatMap(momentosDe)))];
 
   /* Traz sozinho para o Simulador quem já foi marcado como "à
      experiência" a sério, na sessão desse dia (em Planeamento/Presenças
@@ -25281,7 +25345,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
                   }}>
                     <div style={{ fontSize: 12.5, color: on ? T.cream : T.muted }}>{x.name}</div>
                     <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 2 }}>
-                      {[x.phase, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean).join(' · ')}
+                      {[momentoTexto(x), x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean).join(' · ')}
                     </div>
                   </button>
                 );
@@ -26096,7 +26160,7 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
       const ex = exercises.find(x => x.id === e.exId);
       if (!ex) return null;
       const block = buildDiagramBlockHtml(ex.diagram, ex.space, `ex${i}`, ex.phase);
-      const exMeta = [ex.phase, `Duração na sessão: ${e.duration} min`, ex.space, ex.playersCount && `👥 ${ex.playersCount}`, ex.material && `🎒 ${ex.material}`].filter(Boolean);
+      const exMeta = [momentoTexto(ex), `Duração na sessão: ${e.duration} min`, ex.space, ex.playersCount && `👥 ${ex.playersCount}`, ex.material && `🎒 ${ex.material}`].filter(Boolean);
       return {
         ...block,
         heading: `${i + 1}. ${ex.name}`,
@@ -27478,7 +27542,7 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
         display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
         margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
       }}>
-        {ex.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {ex.phase}</div>}
+        {ex.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {momentoTexto(ex)}</div>}
         <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração na sessão:</strong> {e.duration} min</div>
         {ex.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {ex.space}</div>}
         {ex.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
@@ -28783,7 +28847,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
   };
   const exerciciosVisiveis = verTodasAsFases
     ? exercises.filter(x => !x.arquivado || f.exerciseIds.some(e => e.exId === x.id))
-    : exercises.filter(x => (x.phase === f.phase && !x.arquivado) || f.exerciseIds.some(e => e.exId === x.id));
+    : exercises.filter(x => (temMomento(x, f.phase) && !x.arquivado) || f.exerciseIds.some(e => e.exId === x.id));
 
   return (
     <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide xwide fullPage>
@@ -29103,7 +29167,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                       <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{e.duration} min</span>
                     </div>
                     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim, marginBottom: 8, ...mono }}>
-                      {ex.phase && <span>{ex.phase}</span>}
+                      {ex.phase && <span>{momentoTexto(ex)}</span>}
                       {ex.space && <span>📐 {ex.space}</span>}
                       {ex.playersCount && <span>👥 {ex.playersCount}</span>}
                       {ex.material && <span>🎒 {ex.material}</span>}
@@ -38839,7 +38903,7 @@ function PlayerTreinoView({ code, teamId, onBack }) {
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || 'Exercício'}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                   {x.phase && (
-                    <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                    <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{momentoTexto(x)}</span>
                   )}
                   {x.duration && (
                     <span style={{ display: 'inline-block', fontSize: 11, color: T.mutedDim, background: T.surfaceRaise, padding: '3px 9px', borderRadius: 12 }}>{x.duration} min</span>
