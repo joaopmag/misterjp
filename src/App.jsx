@@ -8173,8 +8173,9 @@ async function pintarCorEquipaWord(zip) {
    · "simples" (exemplo cinzento sobre branco): logótipo e nome na cor da
      equipa, sem caixa nem faixa;
    · "sobre" (exemplo com riscos claros, por cima de uma faixa de cor):
-     logótipo e nome a branco, sem fundo; a 2.ª destas na mesma página
-     ("OUTROS LOGÓTIPOS") leva só o logótipo ("sobreLogo");
+     logótipo e nome a branco, sem fundo. As caixas "sobre" da mesma
+     página (logótipo à esquerda e "OUTROS LOGÓTIPOS" à direita) ficam
+     iguais e do mesmo tamanho: o da mais baixa, para caberem na faixa;
    · "faixa" (exemplo a cores, ex.: a faixa da ficha): faixa na cor da
      equipa com o logótipo numa caixa branca e o nome a branco ao centro. */
 const MARCA_CLUBE_DOC = 'MisterJP: logótipo e nome do clube';
@@ -8265,18 +8266,40 @@ async function desenharImagemClube({ largura, altura, estilo, logo }) {
     if (estilo === 'sobre' || estilo === 'sobreLogo') {
       // Por cima de uma faixa de cor: sem fundo, logótipo à medida da
       // altura e o nome a branco, separado dele; tudo ao centro.
-      const lado = H * 0.86;
+      const lado = H * 0.9;
       if (estilo === 'sobreLogo' || !nome) {
         if (temLogo) desenhaLogo((W - lado) / 2, (H - lado) / 2, lado);
       } else {
-        const espaco = temLogo ? lado * 0.35 : 0;
-        const fs = ajustaLetra(nome.toUpperCase(), W * 0.92 - (temLogo ? lado + espaco : 0), H * 0.3);
-        const larguraNome = g.measureText(nome.toUpperCase()).width;
+        // Logótipo à medida da altura e o nome ao lado, numa ou duas linhas
+        // (a que deixar a letra maior).
+        const texto = nome.toUpperCase();
+        const espaco = temLogo ? lado * 0.18 : 0;
+        const maxW = W * 0.96 - (temLogo ? lado + espaco : 0);
+        const letra = (fs) => { g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`; };
+        const caber = (linhas, maxFs) => {
+          let fs = maxFs;
+          for (; fs > H * 0.08; fs *= 0.95) { letra(fs); if (linhas.every(l => g.measureText(l).width <= maxW)) break; }
+          return fs;
+        };
+        let linhas = [texto];
+        let fs = caber(linhas, H * 0.32);
+        const palavras = texto.split(/\s+/);
+        if (palavras.length > 1) {
+          let melhor = null;
+          for (let k = 1; k < palavras.length; k++) {
+            const ls = [palavras.slice(0, k).join(' '), palavras.slice(k).join(' ')];
+            const f2 = caber(ls, H * 0.3);
+            if (!melhor || f2 > melhor.f) melhor = { f: f2, ls };
+          }
+          if (melhor && melhor.f > fs * 1.15) { linhas = melhor.ls; fs = melhor.f; }
+        }
+        letra(fs);
+        const larguraNome = Math.max(...linhas.map(l => g.measureText(l).width));
         let x = (W - ((temLogo ? lado + espaco : 0) + larguraNome)) / 2;
         if (temLogo) { desenhaLogo(x, (H - lado) / 2, lado); x += lado + espaco; }
-        g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`;
         g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF'; g.textAlign = 'left'; g.textBaseline = 'middle';
-        g.fillText(nome.toUpperCase(), x, H / 2);
+        const passo = fs * 1.1;
+        linhas.forEach((l, k) => g.fillText(l, x, H / 2 + (k - (linhas.length - 1) / 2) * passo));
       }
     } else if (estilo === 'escudo') {
       // Só o logótipo (sem logótipo: a inicial num círculo da cor da equipa).
@@ -8363,7 +8386,7 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
     const relsRaiz = relsDoc.documentElement;
     const relsLista = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')];
     let mudou = false;
-    let sobreNaParte = 0;
+    const itens = [];
     for (const pic of [...doc.getElementsByTagNameNS('*', 'pic')]) {
       const blip = pic.getElementsByTagNameNS('*', 'blip')[0];
       const cNvPr = pic.getElementsByTagNameNS('*', 'cNvPr')[0];
@@ -8384,9 +8407,9 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
       }
       if (!cx || !cy) continue;
       // O texto alternativo: no Word está no docPr do desenho; no Excel no cNvPr.
-      let docPr = null;
+      let docPr = null, desenhoWord = null;
       for (let a = pic.parentNode; a; a = a.parentNode) {
-        if (a.localName === 'inline' || a.localName === 'anchor') { docPr = [...a.childNodes].find(x => x.localName === 'docPr') || null; break; }
+        if (a.localName === 'inline' || a.localName === 'anchor') { desenhoWord = a; docPr = [...a.childNodes].find(x => x.localName === 'docPr') || null; break; }
       }
       const comDescr = docPr || cNvPr;
       const descr = (comDescr && comDescr.getAttribute('descr')) || '';
@@ -8421,10 +8444,31 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
         if (!info && !exemploPeloNome && !parte.forcar) continue;
         estilo = estiloImagemClube(info, cx, cy);
       }
+      itens.push({ pic, blip, comDescr, desenhoWord, ext, cx, cy, estilo });
+    }
+    // Caixas "sobre" da mesma parte: todas com o tamanho da mais baixa
+    // (essa cabe na faixa). Mantém-se o topo e o centro na horizontal.
+    const sobres = itens.filter(it => it.estilo === 'sobre');
+    if (sobres.length > 1) {
+      const alvo = sobres.reduce((a, b) => (b.cy < a.cy ? b : a));
+      sobres.forEach(it => {
+        if (it === alvo || (it.cx === alvo.cx && it.cy === alvo.cy)) return;
+        const dx = Math.round((it.cx - alvo.cx) / 2);
+        if (it.ext) { it.ext.setAttribute('cx', String(alvo.cx)); it.ext.setAttribute('cy', String(alvo.cy)); }
+        if (it.desenhoWord) {
+          const e2 = [...it.desenhoWord.childNodes].find(x => x.localName === 'extent');
+          if (e2) { e2.setAttribute('cx', String(alvo.cx)); e2.setAttribute('cy', String(alvo.cy)); }
+          const posH = [...it.desenhoWord.childNodes].find(x => x.localName === 'positionH');
+          const off = posH ? [...posH.childNodes].find(x => x.localName === 'posOffset') : null;
+          if (off) off.textContent = String((Number(off.textContent) || 0) + dx);
+        }
+        it.cx = alvo.cx; it.cy = alvo.cy;
+      });
+    }
+    for (const { blip, comDescr, cx, cy, estilo } of itens) {
       const largura = 1600;
       const altura = Math.max(40, Math.round(largura * cy / cx));
-      // A 2.ª caixa "sobre" da mesma parte ("OUTROS LOGÓTIPOS") leva só o logótipo.
-      const desenho = estilo === 'sobre' && (sobreNaParte++ > 0) ? 'sobreLogo' : estilo;
+      const desenho = estilo;
       const chave = `${largura}x${altura}:${desenho}`;
       if (!feitas.has(chave)) {
         if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
