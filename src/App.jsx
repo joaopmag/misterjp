@@ -18473,28 +18473,62 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     }
     return melhor;
   };
-  // Apaga tudo o que a borracha "tocar" num dado ponto — usado tanto no
-  // toque inicial como continuamente enquanto se arrasta, para que os
-  // itens desapareçam logo ao serem roçados em vez de só no final do gesto.
-  const eraseAt = (p) => {
-    const hitEl = elements.some(el => Math.hypot(el.x - p.x, el.y - p.y) < 2.6);
-    const hitArrow = arrows.some(a => distToArrow(p.x, p.y, a) < 1.6);
-    if (!hitEl && !hitArrow) return;
-    const remainingIds = new Set(elements.filter(el => Math.hypot(el.x - p.x, el.y - p.y) >= 2.6).map(el => el.id));
-    const remainingArrowIds = new Set(arrows.filter(a => distToArrow(p.x, p.y, a) >= 1.6).map(a => a.id));
-    if (selectedId && !remainingIds.has(selectedId)) setSelectedId(null);
-    if (selectedArrowId && !remainingArrowIds.has(selectedArrowId)) setSelectedArrowId(null);
-    const apagados = new Set(elements.filter(el => !remainingIds.has(el.id)).map(el => el.id));
-    commit({
-      ...value,
-      elements: elements.filter(el => remainingIds.has(el.id)),
-      arrows: arrows.filter(a => remainingArrowIds.has(a.id)),
+  /* BORRACHA EXATA. Cada toque apaga UM só item: aquele em que se tocou
+     (quando o toque cai em cima dele) ou, num toque no relvado, o mais
+     perto — e só se estiver mesmo por baixo do dedo/rato (raio do tamanho
+     do ícone, que é mais pequeno na Bola Parada e no meio-campo). Antes
+     apagava tudo o que estivesse num raio fixo de 2,6 m (num grupo de
+     jogadores e bolas ia mais do que um) e, se o "largar" do rato se
+     perdia, continuava a apagar só de passar o rato por cima. Agora só
+     apaga com o botão carregado (ver `apagarAoMover`).
+     Arrastar com o botão carregado continua a apagar o que se for tocando,
+     um de cada vez. Lê sempre o desenho mais recente (valueRef), para um
+     movimento rápido não "ressuscitar" o que acabou de apagar. */
+  const raioBorracha = 2.0 * (iconEscala / ICON_SCALE_BASE);
+  const raioBorrachaSeta = 1.2 * (iconEscala / ICON_SCALE_BASE);
+  const eraseAt = (p, alvo = null) => {
+    const v = valueRef.current || value;
+    const els = v.elements || [];
+    const sets = v.arrows || [];
+    /* ONDE OS ITENS SE VEEM. A ver um passo anterior da animação ("A ver
+       o início do Animar 1…"), o campo mostra as posições DESSE passo, mas
+       a borracha media a distância às posições de agora (o fim da
+       animação): apagava itens longe do cursor, no caminho por onde se
+       mexem na animação. Mede-se agora no sítio onde cada um está
+       desenhado; apaga-se pelo id. */
+    let vistos = els;
+    if (desdeValido != null && desdeValido < (v.sequence || []).length - 1) {
+      try { vistos = stepElements(v.sequence[desdeValido], v) || els; } catch (err) { vistos = els; }
+    }
+    const idsAtuais = new Set(els.map(el => el.id));
+    let apagarEl = null, apagarSeta = null;
+    if (alvo && alvo.tipo === 'el') apagarEl = els.find(el => el.id === alvo.id) || null;
+    else if (alvo && alvo.tipo === 'seta') apagarSeta = sets.find(a => a.id === alvo.id) || null;
+    else {
+      let melhorEl = null, dEl = Infinity;
+      vistos.filter(el => idsAtuais.has(el.id)).forEach(el => { const d = Math.hypot(el.x - p.x, el.y - p.y); if (d < raioBorracha && d < dEl) { dEl = d; melhorEl = el; } });
+      let melhorSeta = null, dSeta = Infinity;
+      sets.forEach(a => { const d = distToArrow(p.x, p.y, a); if (d < raioBorrachaSeta && d < dSeta) { dSeta = d; melhorSeta = a; } });
+      // O mais perto dos dois (a seta conta pela sua distância à linha).
+      if (melhorEl && (!melhorSeta || dEl / raioBorracha <= dSeta / raioBorrachaSeta)) apagarEl = melhorEl;
+      else if (melhorSeta) apagarSeta = melhorSeta;
+    }
+    if (!apagarEl && !apagarSeta) return;
+    if (apagarEl && selectedId === apagarEl.id) setSelectedId(null);
+    if (apagarSeta && selectedArrowId === apagarSeta.id) setSelectedArrowId(null);
+    const novo = {
+      ...v,
+      elements: apagarEl ? els.filter(el => el.id !== apagarEl.id) : els,
+      arrows: apagarSeta ? sets.filter(a => a.id !== apagarSeta.id) : sets,
       // Sai também de todos os passos gravados (ver limparDosPassos) — ou,
-      // com "desde" escolhido, só a partir desse passo (mantém-se nos
-      // anteriores, tal como um elemento inserido a meio da coreografia).
-      sequence: limparDosPassos(value.sequence, apagados, desdeValido),
-    });
+      // com "desde" escolhido, só a partir desse passo.
+      sequence: apagarEl ? limparDosPassos(v.sequence, new Set([apagarEl.id]), desdeValido) : v.sequence,
+    };
+    valueRef.current = novo;
+    commit(novo);
   };
+  // Só se apaga ao mover com o botão do rato carregado (ou o dedo no ecrã).
+  const apagarAoMover = (e) => !(e.pointerType === 'mouse' && !(e.buttons & 1));
 
   // ---- Undo / Redo -------------------------------------------------
   // 'past'/'future' guardam snapshots de 'value'. Ações discretas
@@ -19195,7 +19229,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       return;
     }
     if (erasing) {
-      eraseAt(toPoint(e));
+      // Rato sem botão carregado = o "largar" perdeu-se: pára de apagar.
+      if (!apagarAoMover(e)) setErasing(false);
+      else eraseAt(toPoint(e));
     } else if (drawing) {
       const p = toPoint(e);
       setDrawing({ ...drawing, x2: p.x, y2: p.y });
@@ -19362,7 +19398,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       arrastoGrupoRef.current = null;
       setAArrastarGrupo(false);
     }
-    if (erasing) setErasing(false);
+    // Sempre, sem depender do estado lido neste render (um toque rápido
+    // podia acabar antes de `erasing` ficar verdadeiro aqui).
+    setErasing(false);
     if (drawing) {
       if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 0.8) {
         const novoId = uid();
@@ -19416,7 +19454,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (tool === 'eraser') {
       try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       setErasing(true);
-      eraseAt(toPoint(e));
+      // Tocou em cima deste: apaga exatamente este, e só este.
+      eraseAt(toPoint(e), { tipo: 'el', id });
       return;
     }
     beginGesture();
@@ -19439,7 +19478,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (tool === 'eraser') {
       try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       setErasing(true);
-      eraseAt(toPoint(e));
+      eraseAt(toPoint(e), { tipo: 'seta', id });
       return;
     }
     beginGesture();
@@ -20207,6 +20246,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           onPointerMove={handleBgPointerMove}
           onPointerUp={finishInteraction}
           onPointerCancel={finishInteraction}
+          onLostPointerCapture={() => setErasing(false)}
         >
           <VistaCampo vista={vistaCampo} gRef={gVistaRef}>
           <PitchMarkings semBancos={editorCompacto} />
