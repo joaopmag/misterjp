@@ -13845,7 +13845,15 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110, fill = false
             /* No cantinho do campo, encostado às linhas sem lhes tocar: a
                linha lateral e a de fundo ficam a ~4 % da borda do desenho (e
                o desenho tem 8 px de margem por baixo). */
-            position: 'absolute', right: 'calc(4% + 2px)', bottom: 'calc(8px + 3.8% + 2px)', width: 24, height: 24, borderRadius: '50%',
+            position: 'absolute',
+            // Mesmo sítio em relação às linhas do campo: no campo inteiro, 1% para
+            // dentro da linha de baliza e 1,6% acima da lateral; no meio-campo
+            // (linhas laterais e do meio-campo mais junto às bordas do cartão),
+            // a mesma distância às linhas.
+            ...(diagram && diagram.vista === 'meio'
+              ? { right: 'calc(4.8% + 2px)', bottom: 'calc(8px + 2.7% + 2px)' }
+              : { right: 'calc(4% + 2px)', bottom: 'calc(8px + 3.8% + 2px)' }),
+            width: 24, height: 24, borderRadius: '50%',
             background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
           }}>
