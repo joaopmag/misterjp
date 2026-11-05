@@ -16069,6 +16069,8 @@ const PITCH_TARGET_VH = 86;
 // Altura (px) do que rodeia o campo na janela da apresentação: cabeçalho
 // da janela, etiquetas, descrição e a linha dos controlos por baixo.
 const CHROME_APRESENTACAO_PX = 215;
+const APRESENTACAO_BOX_MEIO = { x: -2.5, y: -2.5, w: 75, h: 59.5 };
+const APRESENTACAO_VIEWBOX_MEIO = `${APRESENTACAO_BOX_MEIO.x} ${APRESENTACAO_BOX_MEIO.y} ${APRESENTACAO_BOX_MEIO.w} ${APRESENTACAO_BOX_MEIO.h}`;
 // Altura de tudo o que rodeia o campo no editor (computador): cores,
 // ferramentas, dica, linha das animações, painel do selecionado e marca.
 // O campo fica com o resto do ecrã: tudo à vista sem scroll.
@@ -21332,7 +21334,11 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
 
   // Enquadramento da apresentação: o do editor (sem bancos), nas duas vistas.
   const vistaMeio = !!(exercise.diagram && exercise.diagram.vista === 'meio');
-  const vbApresentacao = vistaMeio ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX;
+  /* Meio-campo: a moldura passa a ter a forma do meio-campo, com a mesma
+     margem de 3,5 m à volta toda (linhas laterais u 1–69; linha de baliza
+     v 1 e linha do meio-campo v 53,5), para o campo crescer para os lados. */
+  const vbApresentacao = vistaMeio ? APRESENTACAO_VIEWBOX_MEIO : EDITOR_VIEWBOX;
+  const caixaApres = vistaMeio ? APRESENTACAO_BOX_MEIO : EDITOR_BOX;
   const vbNums = vbApresentacao.split(' ').map(Number);
   return (
     <Modal title={exercise.name} onClose={onClose} wide xwide fullPage>
@@ -21375,7 +21381,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
              relvado à volta toda). A largura sai da altura do ecrã menos o
              que está à volta (título, etiquetas, descrição e controlos),
              para o campo e os botões de reproduzir/fechar caberem todos. */
-          : { position: 'relative', ...PITCH_FIT, aspectRatio: `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`, maxWidth: `min(100%, calc((100vh - ${CHROME_APRESENTACAO_PX}px) * ${EDITOR_BOX.w} / ${EDITOR_BOX.h}))` }
+          : { position: 'relative', ...PITCH_FIT, aspectRatio: `${caixaApres.w} / ${caixaApres.h}`, maxWidth: `min(100%, calc((100vh - ${CHROME_APRESENTACAO_PX}px) * ${caixaApres.w} / ${caixaApres.h}))` }
       }>
         <svg viewBox={vbApresentacao} preserveAspectRatio="xMidYMid meet" style={
           isFull
@@ -21392,13 +21398,12 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           </VistaCampo>
           {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
               inteiro e aparece também quando se guarda a imagem. */}
-          {/* Fora das quatro linhas: no campo inteiro, na margem por baixo
-              da linha lateral (antes da bandeirola); no meio-campo, ao
-              alto, na margem do lado direito. */}
+          {/* Fora das quatro linhas, na margem de baixo, à direita (antes
+              do canto): por baixo da linha lateral no campo inteiro e da
+              linha do meio-campo no meio-campo. */}
           <text
-            {...(vistaMeio
-              ? { x: vbNums[0] + vbNums[2] - 1.4, y: vbNums[1] + vbNums[3] - 1, transform: `rotate(-90 ${vbNums[0] + vbNums[2] - 1.4} ${vbNums[1] + vbNums[3] - 1})`, textAnchor: 'start', fontSize: 1.9 }
-              : { x: 103, y: vbNums[1] + vbNums[3] - 0.9, textAnchor: 'end', fontSize: 2 })}
+            x={vistaMeio ? 66 : 103} y={vbNums[1] + vbNums[3] - 0.9}
+            textAnchor="end" fontSize={2}
             fill="#ffffff55"
             style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.08em', pointerEvents: 'none' }}
           >™ Mister JP</text>
