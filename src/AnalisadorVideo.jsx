@@ -1642,7 +1642,8 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
           <>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
               Título no Canal
-              <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
+              {/* Na ficha do adversário o nome é o do corte (a nota ou a etiqueta). */}
+              <input value={destino === 'adversario' ? ((clip.note || '').trim() || (tag && tag.label) || 'Clipe') : titulo} disabled={destino === 'adversario'} onChange={e => setTitulo(e.target.value)} maxLength={120} style={{ ...campo, opacity: destino === 'adversario' ? 0.6 : 1 }} />
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
               {opcao('adversario', 'Adversários')}
@@ -2857,6 +2858,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Clipe a enviar para a Sala de Vídeo (janela de escolha do destino).
   const [clipeParaSala, setClipeParaSala] = useState(null);
   const enviarClipeSala = (clip, dados) => {
+    /* ADVERSÁRIOS: um só caminho. Escolher a ficha aqui é o mesmo que
+       escolher a equipa da ação: o clipe fica com essa equipa e a
+       sincronização põe-no (uma vez) na ficha. Antes criava-se um segundo
+       vídeo na ficha, e o mesmo corte aparecia duas vezes. */
+    if (dados.destino === 'adversario') {
+      const f = ((destinosSala && destinosSala.fichas) || []).find(x => x.id === dados.fichaId);
+      if (!f) throw new Error('Escolhe a equipa.');
+      const equipa = f.rotulo;
+      setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, equipa, envioFicha: null } : c)));
+      setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, equipa, envioFicha: null } : prev));
+      setClipeParaSala(prev => (prev && prev.id === clip.id ? { ...prev, equipa, envioFicha: null } : prev));
+      return;
+    }
     const item = enviarParaSala({ clip, ...dados });
     const rotulo = dados.rotulo || (dados.destino === 'jogo' ? 'Jogos' : dados.destino === 'adversario' ? 'Adversários' : `Temas › ${dados.pasta}`);
     const marca = { destino: dados.destino, rotulo, itemId: item && item.id, em: new Date().toISOString() };

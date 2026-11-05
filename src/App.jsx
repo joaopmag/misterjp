@@ -3106,15 +3106,43 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
   const remover = new Set();
   autos.forEach(v => { if (autoPorClipe.has(v.origemAnalise.clipeId)) remover.add(v.id); else autoPorClipe.set(v.origemAnalise.clipeId, v); });
   const clipesPorId = new Map((clipes || []).filter(Boolean).map(c => [c.id, c]));
+  /* Envios À MÃO para a ficha (o botão "Sala de Vídeo › Adversários", de
+     antes de os cortes irem sozinhos): passam a ser o mesmo envio. O clipe
+     herda a equipa dessa ficha, o vídeo passa a acompanhar o clipe, e se
+     já houver os dois na mesma ficha fica só um. */
+  const manuaisPorClipe = new Map();
+  (videos || []).forEach(v => {
+    if (!v || !v.adversarioId || !v.origemAnalise || v.origemAnalise.auto || !v.origemAnalise.clipeId) return;
+    const k = v.origemAnalise.clipeId;
+    if (!manuaisPorClipe.has(k)) manuaisPorClipe.set(k, []);
+    manuaisPorClipe.get(k).push(v);
+  });
   const criar = [];
   const atualizar = new Map();
   const marcar = new Map();
   const CAMPOS = ['title', 'dataUrl', 'thumbUrl', 'clipInicio', 'clipFim', 'clipOrigemTitulo', 'adversarioId', 'equipa'];
   (clipes || []).forEach(c => {
     if (!c || c.origem === 'atleta' || !c.publicUrl) return;
-    const atual = autoPorClipe.get(c.id);
-    const ficha = c.equipa && !ehNossaEquipa(c.equipa, nomeNossaEquipa) ? fichaDaEquipa(c.equipa, adversarios) : null;
+    let atual = autoPorClipe.get(c.id);
+    const manuais = manuaisPorClipe.get(c.id) || [];
+    // Clipe que nunca teve equipa (`equipa` ausente, não null) mas foi
+    // enviado à mão para uma ficha: fica com a equipa dessa ficha.
+    let equipa = c.equipa;
+    let equipaHerdada = null;
+    if (equipa === undefined && manuais.length) {
+      const f0 = (adversarios || []).find(a => a.id === manuais[0].adversarioId);
+      if (f0) { equipa = f0.equipaCompeticao || f0.nome; equipaHerdada = equipa; }
+    }
+    const ficha = equipa && !ehNossaEquipa(equipa, nomeNossaEquipa) ? fichaDaEquipa(equipa, adversarios) : null;
     if (!ficha) { if (atual) remover.add(atual.id); return; }
+    const mesmaFicha = manuais.filter(m => m.adversarioId === ficha.id);
+    if (atual) mesmaFicha.forEach(m => remover.add(m.id));
+    else if (mesmaFicha.length) {
+      // Adota o envio à mão: passa a ser o envio automático deste clipe.
+      atual = { ...mesmaFicha[0], origemAnalise: { ...mesmaFicha[0].origemAnalise, auto: true } };
+      atualizar.set(atual.id, atual);
+      mesmaFicha.slice(1).forEach(m => remover.add(m.id));
+    }
     const tag = (TAGS_ANALISE || []).find(t => t.id === c.tagId);
     const titulo = (c.note || '').trim() || (tag && tag.label) || 'Clipe';
     const desejado = {
@@ -3122,17 +3150,18 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
       clipInicio: typeof c.origemInicio === 'number' ? c.origemInicio : 0,
       clipFim: typeof c.origemFim === 'number' ? c.origemFim : (c.duracao || 0),
       clipOrigemTitulo: c.originalTitulo || '',
-      adversarioId: ficha.id, equipa: ficha.equipaCompeticao || ficha.nome || c.equipa, pasta: '',
+      adversarioId: ficha.id, equipa: ficha.equipaCompeticao || ficha.nome || equipa, pasta: '',
     };
+    const extra = equipaHerdada ? { equipa: equipaHerdada } : {};
     if (atual) {
-      if (CAMPOS.some(k => (atual[k] ?? null) !== (desejado[k] ?? null))) atualizar.set(atual.id, { ...atual, ...desejado });
-      if (!c.envioFicha || c.envioFicha.adversarioId !== ficha.id) marcar.set(c.id, { itemId: atual.id, adversarioId: ficha.id });
+      if (atualizar.has(atual.id) || CAMPOS.some(k => (atual[k] ?? null) !== (desejado[k] ?? null))) atualizar.set(atual.id, { ...atual, ...desejado });
+      if (equipaHerdada || !c.envioFicha || c.envioFicha.adversarioId !== ficha.id) marcar.set(c.id, { envioFicha: { itemId: atual.id, adversarioId: ficha.id }, ...extra });
       return;
     }
     if (c.envioFicha && c.envioFicha.adversarioId === ficha.id) return; // apagado à mão na ficha: não volta
     const id = uid();
     criar.push({ id, ...desejado, origemAnalise: { clipeId: c.id, auto: true, em: new Date().toISOString() } });
-    marcar.set(c.id, { itemId: id, adversarioId: ficha.id });
+    marcar.set(c.id, { envioFicha: { itemId: id, adversarioId: ficha.id }, ...extra });
   });
   autos.forEach(v => { if (!clipesPorId.has(v.origemAnalise.clipeId)) remover.add(v.id); });
   return { criar, atualizar, remover, marcar };
@@ -3973,11 +4002,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     if (!videosReady || !clipesReady || !adversariosReady) return;
     const { criar, atualizar, remover, marcar } = planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa);
     if (!criar.length && !atualizar.size && !remover.size) {
-      if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, envioFicha: marcar.get(c.id) } : c)));
+      if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, ...marcar.get(c.id) } : c)));
       return;
     }
     setVideos(prev => [...criar, ...(prev || []).filter(v => !remover.has(v.id)).map(v => atualizar.get(v.id) || v)]);
-    if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, envioFicha: marcar.get(c.id) } : c)));
+    if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, ...marcar.get(c.id) } : c)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videos, clipes, adversarios, videosReady, clipesReady, adversariosReady, nomeNossaEquipa]);
 
@@ -4577,7 +4606,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} />
-            {pedidoFichaAnalise && (
+            {/* Por cima da bancada da Análise (z-index alto) e DENTRO do ecrã
+                inteiro, se estiver ligado: fora dele a janela não se via e o
+                pedido ficava preso em "A preparar a ficha do adversário…". */}
+            {pedidoFichaAnalise && createPortal(<div style={{ position: 'relative', zIndex: 2000 }}>
               <FichaAdversarioRapida
                 adversarios={adversarios}
                 equipasCompeticao={nomesEquipasCompeticao(standings)}
@@ -4587,7 +4619,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 onClose={() => { const p0 = pedidoFichaAnalise; setPedidoFichaAnalise(null); p0.resolver(null); }}
                 onConfirm={confirmarFichaAnalise}
               />
-            )}
+            </div>, (typeof document !== 'undefined' && document.fullscreenElement) || document.body)}
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} clinico={clinico} />}
           <NecessidadesLigacao key={teamId || 'sem-equipa'} teamId={teamId} onApi={setNecApiRaiz} />
