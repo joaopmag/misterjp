@@ -8173,9 +8173,11 @@ async function pintarCorEquipaWord(zip) {
    · "simples" (exemplo cinzento sobre branco): logótipo e nome na cor da
      equipa, sem caixa nem faixa;
    · "sobre" (exemplo com riscos claros, por cima de uma faixa de cor):
-     logótipo e nome a branco, sem fundo. As caixas "sobre" da mesma
-     página (logótipo à esquerda e "OUTROS LOGÓTIPOS" à direita) ficam
-     iguais e do mesmo tamanho: o da mais baixa, para caberem na faixa;
+     logótipo e nome a branco numa só linha, sem fundo. As caixas "sobre"
+     da mesma página (logótipo à esquerda e "OUTROS LOGÓTIPOS" à direita)
+     ficam iguais: altura da mais baixa (cabe na faixa), largura à medida
+     do nome, e simétricas na folha (mesma distância às duas bordas e à
+     mesma altura);
    · "faixa" (exemplo a cores, ex.: a faixa da ficha): faixa na cor da
      equipa com o logótipo numa caixa branca e o nome a branco ao centro. */
 const MARCA_CLUBE_DOC = 'MisterJP: logótipo e nome do clube';
@@ -8270,8 +8272,8 @@ async function desenharImagemClube({ largura, altura, estilo, logo }) {
       if (estilo === 'sobreLogo' || !nome) {
         if (temLogo) desenhaLogo((W - lado) / 2, (H - lado) / 2, lado);
       } else {
-        // Logótipo à medida da altura e o nome ao lado, numa ou duas linhas
-        // (a que deixar a letra maior).
+        // Logótipo à medida da altura e o nome ao lado, numa só linha. A
+        // largura da imagem já foi alargada para o nome caber em letra legível.
         const texto = nome.toUpperCase();
         const espaco = temLogo ? lado * 0.18 : 0;
         const maxW = W * 0.96 - (temLogo ? lado + espaco : 0);
@@ -8281,18 +8283,8 @@ async function desenharImagemClube({ largura, altura, estilo, logo }) {
           for (; fs > H * 0.08; fs *= 0.95) { letra(fs); if (linhas.every(l => g.measureText(l).width <= maxW)) break; }
           return fs;
         };
-        let linhas = [texto];
-        let fs = caber(linhas, H * 0.32);
-        const palavras = texto.split(/\s+/);
-        if (palavras.length > 1) {
-          let melhor = null;
-          for (let k = 1; k < palavras.length; k++) {
-            const ls = [palavras.slice(0, k).join(' '), palavras.slice(k).join(' ')];
-            const f2 = caber(ls, H * 0.3);
-            if (!melhor || f2 > melhor.f) melhor = { f: f2, ls };
-          }
-          if (melhor && melhor.f > fs * 1.15) { linhas = melhor.ls; fs = melhor.f; }
-        }
+        const linhas = [texto];
+        const fs = caber(linhas, H * 0.3);
         letra(fs);
         const larguraNome = Math.max(...linhas.map(l => g.measureText(l).width));
         let x = (W - ((temLogo ? lado + espaco : 0) + larguraNome)) / 2;
@@ -8464,6 +8456,67 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
         }
         it.cx = alvo.cx; it.cy = alvo.cy;
       });
+    }
+    if (sobres.length) {
+      // Largura para o nome caber numa linha ao lado do logótipo (letra a
+      // 30% da altura), sem passar de 4,2 vezes a altura.
+      const nomeMaius = String(T.nomeClube || '').toUpperCase();
+      let porLetra = 0;
+      try { const c2 = document.createElement('canvas').getContext('2d'); c2.font = 'bold 100px Arial, Helvetica, sans-serif'; porLetra = c2.measureText(nomeMaius).width / 100; } catch (e) { porLetra = nomeMaius.length * 0.68; }
+      const razao = Math.min(4.2, Math.max(1.2, (T.logoEquipa ? 0.9 + 0.18 : 0) + porLetra * 0.3 + 0.1));
+      const cyS = sobres[0].cy;
+      const cxS = Math.round(cyS * razao);
+      sobres.forEach(it => {
+        if (it.ext) it.ext.setAttribute('cx', String(cxS));
+        if (it.desenhoWord) {
+          const e2 = [...it.desenhoWord.childNodes].find(x => x.localName === 'extent');
+          if (e2) e2.setAttribute('cx', String(cxS));
+        }
+        it.cx = cxS;
+      });
+      // Duas caixas no Word: simétricas na folha (mesma distância à borda
+      // esquerda e à direita) e à mesma altura.
+      const ws = sobres.filter(it => it.desenhoWord && it.desenhoWord.localName === 'anchor');
+      const sect = doc.getElementsByTagNameNS('*', 'sectPr')[0];
+      const pgSz = sect ? [...sect.childNodes].find(x => x.localName === 'pgSz') : null;
+      const pgMar = sect ? [...sect.childNodes].find(x => x.localName === 'pgMar') : null;
+      const pgW = pgSz ? (Number(pgSz.getAttribute('w:w')) || 0) * 635 : 0;
+      if (ws.length === 2 && pgW) {
+        const margemE = pgMar ? (Number(pgMar.getAttribute('w:left')) || 0) * 635 : 0;
+        const filhoDe = (no, nome) => [...no.childNodes].find(x => x.localName === nome) || null;
+        const xAbs = (it) => {
+          const ph = filhoDe(it.desenhoWord, 'positionH');
+          const off = ph ? filhoDe(ph, 'posOffset') : null;
+          if (!ph || !off) return null;
+          const rf = ph.getAttribute('relativeFrom');
+          const dentroCelula = it.desenhoWord.getAttribute('layoutInCell') === '1' && (() => { for (let a = it.desenhoWord.parentNode; a; a = a.parentNode) if (a.localName === 'tc') return true; return false; })();
+          if (dentroCelula) return null;
+          const v = Number(off.textContent) || 0;
+          return rf === 'page' ? v : (rf === 'margin' || rf === 'column') ? margemE + v : null;
+        };
+        const [a, b] = ws;
+        const xa = xAbs(a), xb = xAbs(b);
+        const [esq, dir] = xa !== null && xb !== null && xb < xa ? [b, a] : [a, b];
+        const xEsq = xAbs(esq);
+        const L = xEsq !== null && xEsq >= 0 && xEsq < pgW / 2 - cxS ? xEsq : Math.round(pgW * 0.08);
+        const pos = (it, x) => {
+          let ph = filhoDe(it.desenhoWord, 'positionH');
+          if (!ph) return;
+          [...ph.childNodes].forEach(n2 => ph.removeChild(n2));
+          ph.setAttribute('relativeFrom', 'page');
+          const off = doc.createElementNS(ph.namespaceURI, `${ph.prefix ? ph.prefix + ':' : ''}posOffset`);
+          off.textContent = String(Math.round(x));
+          ph.appendChild(off);
+          // Posição pela folha, não pela célula da tabela.
+          it.desenhoWord.setAttribute('layoutInCell', '0');
+        };
+        pos(esq, L);
+        pos(dir, pgW - L - cxS);
+        // Mesma altura: a da caixa da esquerda.
+        const pvE = filhoDe(esq.desenhoWord, 'positionV');
+        const pvD = filhoDe(dir.desenhoWord, 'positionV');
+        if (pvE && pvD) dir.desenhoWord.replaceChild(pvE.cloneNode(true), pvD);
+      }
     }
     for (const { blip, comDescr, cx, cy, estilo } of itens) {
       const largura = 1600;
