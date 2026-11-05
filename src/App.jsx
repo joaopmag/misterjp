@@ -8925,6 +8925,7 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
    Plantel tem uma tabela com "Nome" e "Ano Nasc." (e o campo). */
 function tipoDoModeloWord(xml) {
   const t = semAcentosDoc(String(xml || '').replace(/<[^>]+>/g, ' '));
+  if (/relatorio de ocorrencia/.test(t)) return 'ocorrencia';
   if (/ano nasc/.test(t) && /\bnome\b/.test(t)) return 'organizacao';
   if (/nome completo/.test(t)) return 'fichas';
   return null;
@@ -9335,7 +9336,7 @@ function GerarOrganizacaoPlantelForm({ doc, players, matches, epoca, onClose }) 
 /* Um Word carregado antes de a app saber distinguir os modelos não tem
    `tipoWord`: lê-se o ficheiro uma vez, guarda-se o tipo e abre-se o
    formulário certo. */
-function GerarWordForm({ doc, players, matches, epoca, setDocumentos, onClose }) {
+function GerarWordForm({ doc, players, matches, epoca, setDocumentos, onClose, sessions, clinico, convocatorias, escalao }) {
   const [tipo, setTipo] = useState(doc.tipoWord || null);
   const [erro, setErro] = useState('');
   useEffect(() => {
@@ -9355,10 +9356,248 @@ function GerarWordForm({ doc, players, matches, epoca, setDocumentos, onClose })
   }, [tipo, doc.id, doc.storagePath, setDocumentos]);
   if (erro) return <div style={{ marginTop: 14, fontSize: 12, color: T.bad }}>{erro}</div>;
   if (!tipo) return <div style={{ marginTop: 14, fontSize: 12, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 8 }}><Loader2 size={14} className="spin" /> A ler o modelo…</div>;
+  if (tipo === 'ocorrencia') {
+    return <GerarRelatorioOcorrenciaForm doc={doc} players={players} matches={matches} sessions={sessions} clinico={clinico} convocatorias={convocatorias} escalao={escalao} onClose={onClose} />;
+  }
   return tipo === 'organizacao'
     ? <GerarOrganizacaoPlantelForm doc={doc} players={players} matches={matches} epoca={epoca} onClose={onClose} />
     : <GerarFichasIndividuaisForm doc={doc} players={players} epoca={epoca} onClose={onClose} />;
 }
+/* RELATÓRIO DE OCORRÊNCIA (Word), a partir do Boletim Clínico.
+
+   O modelo encontra-se pelos textos, como os outros:
+   · a linha com "horas" tem os espaços "____" para dia, mês, (ano) e hora;
+   · a linha com "Atleta:" tem o nome e o número do escalão ("Sub___");
+   · a linha "Diretor Desportivo, Sub ___" leva o escalão;
+   · cada secção (Contexto, Ocorrência, Exames/ meios diagnóstico,
+     Indicações, Previsão de retoma…) é um título seguido de linhas
+     "_____". O texto entra na primeira linha e ocupa as que precisar; as
+     que sobram ficam por baixo, para acrescentar à mão.
+   Os textos vêm propostos a partir da ocorrência e podem ser corrigidos no
+   formulário antes de gerar. */
+const SECCOES_OCORRENCIA = [
+  { id: 'contexto', rotulo: 'Contexto', re: /^contexto\b/ },
+  { id: 'ocorrencia', rotulo: 'Ocorrência', re: /^ocorrencia\b/ },
+  { id: 'exames', rotulo: 'Exames / meios de diagnóstico', re: /^exames\b/ },
+  { id: 'indicacoes', rotulo: 'Indicações', re: /^indicacoes\b/ },
+  { id: 'previsao', rotulo: 'Previsão de retoma e inserção na prática desportiva', re: /^previsao\b/ },
+];
+const DIAS_SEMANA_PT = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
+
+function dataPorExtenso(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${Number(m[3])} de ${MESES_PT[Number(m[2]) - 1]} de ${m[1]}` : '';
+}
+
+function textosDaOcorrencia(o0, { matches, sessions, convocatorias }) {
+  const o = recalcularOcorrencia(o0 || {});
+  const dia = o.inicio || '';
+  const jogo = (matches || []).find(m => m && m.date === dia);
+  const conv = jogo ? (convocatorias || []).find(c => c && c.data === dia) : null;
+  const hora = (conv && conv.horaJogo) || '';
+  let contexto = '';
+  if (jogo) {
+    contexto = `No dia ${dataPorExtenso(dia)}, decorria o jogo ${jogo.atHome ? 'em casa' : 'fora'} contra o ${jogo.opponent || 'adversário'}${hora ? `, pelas ${hora}` : ''}.`;
+  } else if ((sessions || []).some(s => s && s.date === dia && s.phase !== 'Descanso')) {
+    // Nº do treino na semana (segunda a domingo) até esse dia.
+    const d = new Date(`${dia}T12:00:00`);
+    const seg = new Date(d); seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const iniSemana = seg.toISOString().slice(0, 10);
+    const n = new Set((sessions || []).filter(s => s && s.phase !== 'Descanso' && s.date >= iniSemana && s.date <= dia).map(s => s.date)).size;
+    contexto = `No dia ${dataPorExtenso(dia)}, decorria o ${n}º treino semanal, ${DIAS_SEMANA_PT[d.getDay()]}.`;
+  } else if (dia) {
+    contexto = `No dia ${dataPorExtenso(dia)}.`;
+  }
+  const evolucao = o.evolucao || [];
+  const primeira = evolucao.find(e => e && e.data === dia && String(e.texto || '').trim()) || evolucao.find(e => e && String(e.texto || '').trim());
+  const frasesNivel = {
+    indisponivel: 'Ficou indisponível para treinos e jogos.',
+    condicionado: 'Passou a treino condicionado.',
+    vigilancia: 'Ficou apto, com vigilância.',
+  };
+  const ocorrencia = [
+    o.tipo ? `O atleta apresentou ${o.tipo.toLowerCase()}${o.zona && o.zona !== 'Outra' ? ` (${o.zona.toLowerCase()})` : ''}.` : '',
+    primeira ? String(primeira.texto).trim() : '',
+    frasesNivel[o.nivelInicial] || '',
+  ].filter(Boolean).join(' ');
+  // Exames: as atualizações que falam de consultas ou exames.
+  const reExame = /(exame|ecografi|eco\b|raio|rx\b|resson|\brm\b|tac\b|consulta|m[eé]dic|ortoped|fisiatr|diagn)/i;
+  const exames = evolucao
+    .filter(e => e && e !== primeira && reExame.test(String(e.texto || '')))
+    .map(e => `${dataPtRelatorio(e.data)}: ${String(e.texto).trim()}`)
+    .join('\n');
+  const indicacoes = String(o.restricoes || '').trim();
+  let previsao = '';
+  if (o.fim) previsao = `Alta a ${dataPtRelatorio(o.fim)}.`;
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(o.previsaoRetorno || '')) {
+    const semanas = dia ? Math.max(1, Math.round((new Date(`${o.previsaoRetorno}T12:00:00`) - new Date(`${dia}T12:00:00`)) / (7 * 86400000))) : null;
+    previsao = `Previsão de regresso a ${dataPtRelatorio(o.previsaoRetorno)}${semanas ? ` (cerca de ${semanas} ${semanas === 1 ? 'semana' : 'semanas'})` : ''}.`;
+  } else if (o.previsaoRetorno) previsao = String(o.previsaoRetorno);
+  return { hora, contexto, ocorrencia, exames, indicacoes, previsao };
+}
+
+async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escalao, textos }) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const xml = await zip.file('word/document.xml').async('string');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const W = W_NS;
+  const paragrafos = [...doc.getElementsByTagNameNS(W, 'p')];
+  const textoDe = (p) => [...p.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+  const escreverTexto = (p, texto) => {
+    const ts = [...p.getElementsByTagNameNS(W, 't')];
+    if (!ts.length) return;
+    ts[0].textContent = texto;
+    ts[0].setAttribute('xml:space', 'preserve');
+    ts.slice(1).forEach(t => t.parentNode.removeChild(t));
+  };
+  // Troca, por ordem, cada "____" da linha pelo valor (vazio: fica a linha).
+  const preencherLacunas = (p, valores, comEspaco = false) => {
+    const partes = textoDe(p).split(/(_{3,})/);
+    let i = 0;
+    partes.forEach((pt, k) => {
+      if (!/^_{3,}$/.test(pt)) return;
+      const v = valores[i++];
+      if (!v) return;
+      // "Sub___" fica "Sub-19"; um nome seguido de mais texto ("Escalão")
+      // guarda um pouco de espaço, que a linha "____" dava.
+      if (k > 0 && /sub\s*$/i.test(partes[k - 1]) && /^\d+$/.test(String(v))) {
+        partes[k - 1] = partes[k - 1].replace(/\s+$/, '');
+        partes[k] = `-${v}`;
+      } else {
+        partes[k] = String(v) + (comEspaco && k + 1 < partes.length && /^\s*\S/.test(partes[k + 1]) && !/^\s*[,.)]/.test(partes[k + 1]) ? '\u2003\u2003' : '');
+      }
+    });
+    const novo = partes.join('');
+    escreverTexto(p, novo.replace(/(\S)(horas)\b/, '$1 $2'));
+  };
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(data || ''));
+  const dia = m ? String(Number(m[3])) : '';
+  const mes = m ? MESES_PT[Number(m[2]) - 1] : '';
+  const ano = m ? m[1] : '';
+  const numEscalao = (String(escalao || '').match(/\d+/) || [''])[0];
+
+  paragrafos.forEach(p => {
+    const t = semAcentos(textoDe(p));
+    if (!/_{3,}/.test(textoDe(p))) return;
+    const lacunas = (textoDe(p).match(/_{3,}/g) || []).length;
+    if (/\bhoras\b/.test(t)) preencherLacunas(p, lacunas >= 4 ? [dia, mes, ano, hora] : [dia, mes, hora]);
+    else if (/atleta\s*:/.test(t)) preencherLacunas(p, [atleta, numEscalao], true);
+    else if (/diretor desportivo/.test(t) && /\bsub\b/.test(t)) preencherLacunas(p, [numEscalao]);
+  });
+
+  const ehLinha = (p) => /^[\s_]*$/.test(textoDe(p)) && /_{3,}/.test(textoDe(p));
+  SECCOES_OCORRENCIA.forEach(sec => {
+    const valor = String((textos && textos[sec.id]) || '').trim();
+    if (!valor) return;
+    const i = paragrafos.findIndex(p => sec.re.test(semAcentos(textoDe(p)).trim()));
+    if (i < 0) return;
+    const linhas = [];
+    for (let k = i + 1; k < paragrafos.length && ehLinha(paragrafos[k]); k++) linhas.push(paragrafos[k]);
+    if (!linhas.length) return;
+    // Cada parágrafo do texto vai para uma linha do modelo; as linhas que
+    // o texto ocupa (cerca de 85 letras cada) saem, as outras ficam.
+    const blocos = valor.split('\n').map(s => s.trim()).filter(Boolean);
+    const precisa = blocos.reduce((n, b) => n + Math.max(1, Math.ceil(b.length / 85)), 0);
+    blocos.forEach((b, k) => {
+      const alvo = k < linhas.length ? linhas[k] : null;
+      if (alvo) { escreverTexto(alvo, b); return; }
+      const novo = linhas[linhas.length - 1].cloneNode(true);
+      escreverTexto(novo, b);
+      const ref = linhas[linhas.length - 1];
+      ref.parentNode.insertBefore(novo, ref.nextSibling);
+      linhas.push(novo);
+    });
+    // Linhas em branco que sobram: tiram-se as que o texto já ocupa.
+    const vazias = linhas.slice(blocos.length);
+    const aTirar = Math.min(vazias.length, Math.max(0, precisa - blocos.length));
+    vazias.slice(0, aTirar).forEach(p => p.parentNode.removeChild(p));
+  });
+
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+  await carimbarMarcaWord(zip);
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
+
+function GerarRelatorioOcorrenciaForm({ doc, players, matches, sessions, clinico, convocatorias, escalao, onClose }) {
+  const nomeDe = (pid) => ((players || []).find(p => p.id === pid) || {}).name || '';
+  const lista = [...(clinico || [])].filter(o => o && o.playerId && o.inicio)
+    .sort((a, b) => String(b.inicio).localeCompare(String(a.inicio)));
+  const [ocId, setOcId] = useState(lista[0] ? lista[0].id : '');
+  const oc = lista.find(o => o.id === ocId) || null;
+  const [textos, setTextos] = useState({});
+  const [hora, setHora] = useState('');
+  const [aProcessar, setAProcessar] = useState(false);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    if (!oc) { setTextos({}); setHora(''); return; }
+    const t = textosDaOcorrencia(oc, { matches, sessions, convocatorias });
+    setTextos(t); setHora(t.hora || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocId]);
+  const gerar = async () => {
+    if (!oc) return;
+    setErro(''); setAProcessar(true);
+    try {
+      const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+      if (error) throw error;
+      const atleta = nomeDe(oc.playerId);
+      const blob = await gerarRelatorioOcorrencia(await ficheiro.arrayBuffer(), { data: oc.inicio, hora, atleta, escalao, textos });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Relatório de ocorrência - ${atleta || 'atleta'} - ${dataPtRelatorio(oc.inicio).replace(/\//g, '-')}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Não consegui gerar o ficheiro.');
+    } finally { setAProcessar(false); }
+  };
+  if (!lista.length) {
+    return (
+      <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 12.5, color: T.mutedDim }}>
+        Ainda não há ocorrências no Boletim Clínico.
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}><Btn variant="ghost" onClick={onClose}>Fechar</Btn></div>
+      </div>
+    );
+  }
+  const area = { width: '100%', minHeight: 58, resize: 'vertical', background: T.bg, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, lineHeight: 1.45, fontFamily: 'inherit', boxSizing: 'border-box' };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ ...FIELD_GRID }}>
+        <Field label="Ocorrência do Boletim Clínico">
+          <Select value={ocId} onChange={e => setOcId(e.target.value)}>
+            {lista.map(o => (
+              <option key={o.id} value={o.id}>{[nomeDe(o.playerId) || 'Atleta', o.tipo, o.zona, dataPtRelatorio(o.inicio)].filter(Boolean).join(' · ')}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Hora">
+          <Input type="time" value={hora} onChange={e => setHora(e.target.value)} />
+        </Field>
+      </div>
+      <div style={{ fontSize: 12, color: T.mutedDim, margin: '10px 0 8px', lineHeight: 1.5 }}>
+        Os textos vêm da ocorrência e podes corrigi-los aqui antes de gerar. Um campo vazio deixa as linhas do modelo para preencher à mão.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {SECCOES_OCORRENCIA.map(s => (
+          <label key={s.id} style={{ display: 'block' }}>
+            <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{s.rotulo}</div>
+            <textarea value={textos[s.id] || ''} onChange={e => setTextos(t => ({ ...t, [s.id]: e.target.value }))} style={area} />
+          </label>
+        ))}
+      </div>
+      {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={gerar} disabled={aProcessar || !oc}>
+          {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 function GerarFichasIndividuaisForm({ doc, players, epoca, onClose }) {
   const hoje = todayStr();
   const ativos = sortByPosition((players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje)));
@@ -9540,7 +9779,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                   )}
                   {/\.docx$/i.test(doc.fileName) && (
                     <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
-                      <FileText size={14} /> {doc.tipoWord === 'organizacao' ? 'Gerar organização do plantel' : 'Gerar fichas dos jogadores'}
+                      <FileText size={14} /> {doc.tipoWord === 'organizacao' ? 'Gerar organização do plantel' : doc.tipoWord === 'ocorrencia' ? 'Gerar relatório de ocorrência' : 'Gerar fichas dos jogadores'}
                     </Btn>
                   )}
                   {/\.doc$/i.test(doc.fileName) && (
@@ -9552,7 +9791,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                 </div>
               </div>
               {aGerar === doc.id && /\.docx$/i.test(doc.fileName) && (
-                <GerarWordForm doc={doc} players={players} matches={matches} epoca={epoca} setDocumentos={setDocumentos} onClose={() => setAGerar(null)} />
+                <GerarWordForm doc={doc} players={players} matches={matches} epoca={epoca} setDocumentos={setDocumentos} sessions={sessions} clinico={clinico} convocatorias={convocatorias} escalao={escalao} onClose={() => setAGerar(null)} />
               )}
               {aGerar === doc.id && !/\.docx$/i.test(doc.fileName) && (
                 <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} convocatorias={convocatorias} adversarios={adversarios} scouting={scouting} clube={clube} escalao={escalao} onClose={() => setAGerar(null)} />
@@ -9590,6 +9829,16 @@ const MODELOS_BASE = [
       ['Nome, Ano Nasc., Posição, Lat., Clube anterior, Entrada-Saída, Av. Ini, Av. Int, Av. Final', 'os títulos das colunas da tabela (a ordem pode mudar e podem faltar colunas). As linhas acrescentam-se sozinhas.'],
       ['Est. Principal, Est. Secundária', 'a estrutura tática vai para a célula ao lado de cada um.'],
       ['Caixas de texto no campo com GR, DC, DE, DD, MD, MC, MOC, EE, ED ou PL', 'servem de molde (tamanho, letra, escudo e espaço do campo). A app desenha os lugares da estrutura principal.'],
+    ],
+  },
+  {
+    id: 'ocorrencia', nome: 'Relatório de ocorrência', tipo: 'Word', ficheiro: '/modelos/relatorio-ocorrencia-modelo.docx',
+    descricao: 'Uma página por ocorrência do Boletim Clínico: contexto, ocorrência, exames, indicações e previsão de retoma.',
+    regras: [
+      ['Relatório de Ocorrência', 'tem de aparecer no documento: é por este título que a app sabe que modelo é.'],
+      ['Linha com "horas"', 'os espaços "____" recebem, por ordem, o dia, o mês, o ano e a hora (com três espaços: dia, mês e hora).'],
+      ['Atleta: ____ Escalão: Sub____ e Diretor Desportivo, Sub ____', 'o nome do atleta e o número do escalão.'],
+      ['Contexto, Ocorrência, Exames/ meios diagnóstico, Indicações, Previsão de retoma', 'cada título seguido das linhas "_____" onde entra o texto.'],
     ],
   },
   {
