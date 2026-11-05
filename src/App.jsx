@@ -17,7 +17,7 @@ import AnalisadorVideo, {
   TAGS_ANALISE, ehNossaEquipa,
 } from './AnalisadorVideo';
 import {
-  ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
+  ZoomIn, Info, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Sun, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
@@ -9176,9 +9176,90 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
           ))}
         </div>
       )}
+
+      <ModelosBase />
     </div>
   );
 });
+
+/* MODELOS BASE. Para um clube que quer usar os seus próprios documentos:
+   descarrega o modelo, muda o aspeto à vontade (logótipo, cores, letra,
+   tamanhos) e carrega-o em Documentos. A app encontra os campos pelos
+   TEXTOS, por isso basta manter os nomes indicados em "Como adaptar".
+   Os ficheiros vivem em public/modelos/ do projeto. */
+const MODELOS_BASE = [
+  {
+    id: 'fichas', nome: 'Ficha individual do jogador', tipo: 'Word', ficheiro: '/modelos/ficha-individual-modelo.docx',
+    descricao: 'Uma página por jogador: dados da ficha, foto e as três avaliações da época.',
+    regras: [
+      ['Nome Completo', 'o nome vai para a célula à direita.'],
+      ['Data nascimento, Nacionalidade, Posição, Clube Anterior, Peso, Altura, Lateralidade, Contacto', 'cada valor vai para a célula por baixo do título.'],
+      ['FOTO', 'a célula onde entra a fotografia (fica com o tamanho da célula).'],
+      ['Avaliação Inicial, Avaliação Intermédia, Avaliação Final', 'em cada uma: "Observações:", e "Nível Atual" e "Potencial" com o número na célula à direita.'],
+    ],
+  },
+  {
+    id: 'organizacao', nome: 'Organização do plantel', tipo: 'Word', ficheiro: '/modelos/organizacao-plantel-modelo.docx',
+    descricao: 'Uma folha com a tabela do plantel e o campo com a estrutura principal.',
+    regras: [
+      ['Nome, Ano Nasc., Posição, Lat., Clube anterior, Entrada-Saída, Av. Ini, Av. Int, Av. Final', 'os títulos das colunas da tabela (a ordem pode mudar e podem faltar colunas). As linhas acrescentam-se sozinhas.'],
+      ['Est. Principal, Est. Secundária', 'a estrutura tática vai para a célula ao lado de cada um.'],
+      ['Caixas de texto no campo com GR, DC, DE, DD, MD, MC, MOC, EE, ED ou PL', 'servem de molde (tamanho, letra, escudo e espaço do campo). A app desenha os lugares da estrutura principal.'],
+    ],
+  },
+];
+function ModelosBase() {
+  const [comoDe, setComoDe] = useState(null);
+  const m = MODELOS_BASE.find(x => x.id === comoDe);
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Modelos base da app</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 12, maxWidth: 640 }}>
+        Para usar documentos com a imagem do clube: descarrega o modelo, muda o logótipo, as cores e a letra à vontade,
+        guarda como .docx e carrega-o aqui em cima. Só tens de manter os nomes dos campos.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {MODELOS_BASE.map(x => (
+          <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <FileText size={20} color={T.muted} style={{ flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 14, color: T.cream }}>{x.nome} <span style={{ fontSize: 11.5, color: T.mutedDim }}>· {x.tipo}</span></div>
+              <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{x.descricao}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
+              <Btn variant="ghost" onClick={() => setComoDe(x.id)}><Info size={14} /> Como adaptar</Btn>
+              <a href={x.ficheiro} download style={{ textDecoration: 'none' }}>
+                <Btn variant="ghost"><Download size={14} /> Descarregar modelo</Btn>
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+      {m && (
+        <Modal title={`Como adaptar · ${m.nome}`} onClose={() => setComoDe(null)} wide>
+          <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.6, marginBottom: 12 }}>
+            Podes mudar à vontade o logótipo, as cores, a letra, os tamanhos e a posição das caixas.
+            A app encontra cada campo pelo texto, por isso estes textos têm de ficar escritos tal como estão:
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {m.regras.map(([campos, explica]) => (
+              <div key={campos} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 12px' }}>
+                <div style={{ fontSize: 12.5, color: T.warn, fontWeight: 600 }}>{campos}</div>
+                <div style={{ fontSize: 12.5, color: T.mutedDim, marginTop: 2 }}>{explica}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginTop: 12 }}>
+            No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+            <Btn onClick={() => setComoDe(null)}>Fechar</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
 
 // Ordem "de época" dos meses (Agosto→Julho), tal como os 12 blocos
 // vêm empilhados no modelo do SC Salgueiros — ver o comentário grande
