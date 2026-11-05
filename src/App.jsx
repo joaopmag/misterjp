@@ -8132,7 +8132,7 @@ async function carimbarMarcaExcel(zip) {
    JORNADA diz a folha. A competição oficial mais antiga da época é a 1ª
    fase; a segunda (ou a que tiver "2ª fase", "prova extra", "manutenção",
    "apuramento"… no nome) é a 2ª fase, que continua na PE a partir da 11ª.
-   Amigáveis e jogos ainda por jogar ficam de fora.
+   Amigáveis, taças e jogos ainda por jogar ficam de fora.
 
    O que se escreve por jogo: cabeçalho (treinador, prova, escalão, data,
    hora, local, nº do jogo, equipas e resultado), uma linha por atleta
@@ -8140,6 +8140,9 @@ async function carimbarMarcaExcel(zip) {
    cartões, rendimento de 1 a 5 e minutos), o sistema usado, as notas da
    equipa técnica e os pontos fortes e fracos da ficha do adversário. As
    análises por fases do jogo ficam em branco para preencher à mão. */
+// Taças não têm folhas de relatório no modelo (são eliminatórias): não
+// contam como 1ª nem como 2ª fase, mesmo que tenham "jornadas".
+const PISTA_TACA = /(ta[cç]a|supertac|cup\b)/i;
 const PISTA_SEGUNDA_FASE = /(2\s*[ªaº.]?\s*fase|fase\s*2|segunda\s*fase|prova\s*extra|\bpe\b|manuten|apuramento|subida|descida|play.?off)/i;
 
 function numeroDaJornada(rotulo) {
@@ -8198,7 +8201,7 @@ function planoDosRelatorios(matches, chavesDisponiveis, hoje) {
     if (m.date < c.inicio) c.inicio = m.date;
     comps.set(nome, c);
   });
-  const lista = [...comps.values()].sort((a, b) => a.inicio.localeCompare(b.inicio));
+  const lista = [...comps.values()].filter(c => !PISTA_TACA.test(c.nome)).sort((a, b) => a.inicio.localeCompare(b.inicio));
   const semPista = lista.filter(c => !PISTA_SEGUNDA_FASE.test(c.nome));
   const comPista = lista.filter(c => PISTA_SEGUNDA_FASE.test(c.nome));
   const primeira = semPista[0] || null;
@@ -8237,12 +8240,59 @@ function treinosDaSemana(m, sessions, matches) {
   return datas.slice(-4);
 }
 
+/* Texto longo num relatório (a análise do jogo, os pontos fortes e
+   fracos): a célula do modelo não quebra linhas e a linha tem altura
+   fixa, por isso um texto grande ficava cortado numa linha só. Cria-se
+   (uma vez por estilo) uma cópia do estilo da célula com quebra de linha
+   e alinhamento ao cimo, e a linha cresce à medida do texto. */
+async function estilosComQuebra(zip) {
+  const f = zip.file('xl/styles.xml');
+  let xml = f ? await f.async('string') : '';
+  const cache = {};
+  let mudou = false;
+  const obter = (s) => {
+    if (!xml) return s;
+    if (cache[s] != null) return cache[s];
+    const m = xml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/);
+    if (!m) return s;
+    const xfs = m[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
+    const base = xfs[Number(s) || 0];
+    if (!base) return s;
+    let novo = base.replace(/<alignment\b[^>]*\/>/, '');
+    const alinhamento = '<alignment horizontal="left" vertical="top" wrapText="1"/>';
+    novo = /\/>$/.test(novo) && !/<\/xf>$/.test(novo)
+      ? novo.replace(/\s*\/>$/, `>${alinhamento}</xf>`)
+      : novo.replace(/^<xf\b[^>]*>/, t => t + alinhamento);
+    novo = novo.replace(/\sapplyAlignment="[^"]*"/, '').replace(/^<xf\b/, '<xf applyAlignment="1"');
+    const idx = xfs.length;
+    const bloco = m[0].replace(/<\/cellXfs>$/, `${novo}</cellXfs>`).replace(/(<cellXfs\b[^>]*count=")\d+"/, `$1${idx + 1}"`);
+    xml = xml.replace(m[0], bloco);
+    cache[s] = idx;
+    mudou = true;
+    return idx;
+  };
+  return { obter, gravar: () => { if (mudou) zip.file('xl/styles.xml', xml); } };
+}
+
+function linhasDoTexto(texto, porLinha) {
+  return String(texto || '').split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / porLinha)), 0);
+}
+
+function definirAlturaDaLinha(sheetXml, linha, pontos) {
+  const re = new RegExp(`<row r="${linha}"([^>]*?)(/?)>`);
+  const m = sheetXml.match(re);
+  if (!m) return sheetXml;
+  const attrs = m[1].replace(/\sht="[^"]*"/, '').replace(/\scustomHeight="[^"]*"/, '');
+  return sheetXml.replace(re, `<row r="${linha}"${attrs} ht="${pontos}" customHeight="1"${m[2]}>`);
+}
+
 async function preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, convocatorias, adversarios, clube, escalao }) {
   const folhas = await folhasDoLivro(zip);
   const hoje = new Date().toISOString().slice(0, 10);
   const plano = planoDosRelatorios(matches, new Set(Object.keys(folhas)), hoje);
   plano.temFolhas = Object.keys(folhas).some(k => k.startsWith('relatorio'));
   const jogadores = players.slice(0, 30);
+  const estilos = await estilosComQuebra(zip);
 
   for (const { m, chave, n } of plano.jogos) {
     const caminho = folhas[chave];
@@ -8254,6 +8304,17 @@ async function preencherRelatoriosJornadas(zip, { players, matches, sessions, cl
     const ficha = fichaDaEquipa(m.opponent, adversarios);
     const texto = (ref, v) => { if (v !== '' && v != null) x = definirTextoNaCelula(x, ref, String(v)); };
     const numero = (ref, v) => { if (v !== '' && v != null && Number.isFinite(Number(v))) x = definirNumeroNaCelula(x, ref, Number(v)); };
+    // Escreve o texto com quebra de linha e devolve quantas linhas ocupa.
+    const textoLongo = (ref, v, porLinha) => {
+      const t = String(v || '').trim();
+      if (!t) return 0;
+      texto(ref, t);
+      x = x.replace(new RegExp(`<c r="${ref}"( s="(\\d+)")?`), (all, _a, sId) => `<c r="${ref}" s="${estilos.obter(sId || 0)}"`);
+      return linhasDoTexto(t, porLinha);
+    };
+    const crescer = (linha, nLinhas, minimo) => {
+      if (nLinhas > 0) x = definirAlturaDaLinha(x, linha, Math.max(minimo, Math.ceil(nLinhas * 12 + 6)));
+    };
 
     texto('C4', conv && conv.treinador);
     texto('J4', String(m.competition || '').trim());
@@ -8296,14 +8357,18 @@ async function preencherRelatoriosJornadas(zip, { players, matches, sessions, cl
     });
 
     if (m.formacao) texto('A49', /^1-/.test(m.formacao) ? m.formacao : `1-${m.formacao}`);
+    // Observações gerais: a análise do jogo (Jogos › Relatórios), todas
+    // as entradas, uma por parágrafo.
     const notas = notasDoJogo(m).map(nt => String(nt.texto || '').trim()).filter(Boolean);
-    if (notas.length) texto('A44', notas.join('\n'));
+    crescer(44, textoLongo('A44', notas.join('\n'), 160), 26.25);
     if (ficha) {
-      texto('A64', String(ficha.pontosFortes || '').trim());
-      texto('I64', String(ficha.pontosFracos || '').trim());
+      const nF = textoLongo('A64', ficha.pontosFortes, 85);
+      const nP = textoLongo('I64', ficha.pontosFracos, 72);
+      crescer(64, Math.max(nF, nP), 40.5);
     }
     zip.file(caminho, x);
   }
+  estilos.gravar();
   return plano;
 }
 
@@ -9440,6 +9505,16 @@ const MODELOS_BASE = [
       ['Caixas de texto no campo com GR, DC, DE, DD, MD, MC, MOC, EE, ED ou PL', 'servem de molde (tamanho, letra, escudo e espaço do campo). A app desenha os lugares da estrutura principal.'],
     ],
   },
+  {
+    id: 'estatistica', nome: 'Estatística e assiduidade da época', tipo: 'Excel', ficheiro: '/modelos/estatistica-assiduidade-modelo.xlsx',
+    descricao: 'Assiduidade mês a mês, um relatório por jornada e a estatística total da época, com gráficos.',
+    regras: [
+      ['Folhas "ESTATÍSTICA TOTAL" e "Ficha Assiduidade"', 'os nomes das folhas. Os atletas entram na coluna "Nome" da estatística e os outros quadros vão buscá-los lá.'],
+      ['"Ficha Assiduidade" seguido do mês (Agosto … Julho)', 'o título de cada bloco mensal. A app escreve o ano certo da época; os dias ficam nas colunas a seguir ao nome.'],
+      ['Folhas "Relatório 1ª Jornada" … "Relatório 30ª Jornada", "(2ª fase)" de 1 a 10 e "(PE)" de 11 a 15', 'uma folha por jogo oficial. A app usa a competição e o número da jornada para escolher a folha.'],
+      ['Posição das células dos relatórios', 'nos relatórios a app escreve por posição (cabeçalho nas linhas 4 a 7, atletas da linha 11 à 40, observações na 44, sistema na 49, adversário na 64). Muda cores e letra, mas não mudes linhas nem colunas de sítio.'],
+    ],
+  },
 ];
 function ModelosBase() {
   const [comoDe, setComoDe] = useState(null);
@@ -9449,12 +9524,14 @@ function ModelosBase() {
       <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Modelos base da app</div>
       <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 12, maxWidth: 640 }}>
         Para usar documentos com a imagem do clube: descarrega o modelo, muda o logótipo, as cores e a letra à vontade,
-        guarda como .docx e carrega-o aqui em cima. Só tens de manter os nomes dos campos.
+        guarda no mesmo formato (.docx ou .xlsx) e carrega-o aqui em cima. Só tens de manter os nomes dos campos.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {MODELOS_BASE.map(x => (
           <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <FileText size={20} color={T.muted} style={{ flexShrink: 0 }} />
+            {x.tipo === 'Excel'
+              ? <FileSpreadsheet size={20} color={T.muted} style={{ flexShrink: 0 }} />
+              : <FileText size={20} color={T.muted} style={{ flexShrink: 0 }} />}
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: 14, color: T.cream }}>{x.nome} <span style={{ fontSize: 11.5, color: T.mutedDim }}>· {x.tipo}</span></div>
               <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{x.descricao}</div>
@@ -9471,7 +9548,7 @@ function ModelosBase() {
       {m && (
         <Modal title={`Como adaptar · ${m.nome}`} onClose={() => setComoDe(null)} wide>
           <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.6, marginBottom: 12 }}>
-            Podes mudar à vontade o logótipo, as cores, a letra, os tamanhos e a posição das caixas.
+            {m.tipo === 'Excel' ? 'Podes mudar à vontade o logótipo, as cores e a letra.' : 'Podes mudar à vontade o logótipo, as cores, a letra, os tamanhos e a posição das caixas.'}
             A app encontra cada campo pelo texto, por isso estes textos têm de ficar escritos tal como estão:
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -9483,7 +9560,9 @@ function ModelosBase() {
             ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginTop: 12 }}>
-            No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.
+            {m.tipo === 'Excel'
+              ? 'No fim, guarda como Excel (.xlsx), não .xls, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.'
+              : 'No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.'}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
             <Btn onClick={() => setComoDe(null)}>Fechar</Btn>
