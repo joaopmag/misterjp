@@ -8516,6 +8516,67 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
         const pvE = filhoDe(esq.desenhoWord, 'positionV');
         const pvD = filhoDe(dir.desenhoWord, 'positionV');
         if (pvE && pvD) dir.desenhoWord.replaceChild(pvE.cloneNode(true), pvD);
+        // Por cima do texto, sem o empurrar (senão o título descia).
+        [esq, dir].forEach(it => {
+          const ww = [...it.desenhoWord.childNodes].find(x => /^wrap/.test(x.localName || ''));
+          if (ww && ww.localName !== 'wrapNone') {
+            const nn = doc.createElementNS(ww.namespaceURI, `${ww.prefix ? ww.prefix + ':' : ''}wrapNone`);
+            it.desenhoWord.replaceChild(nn, ww);
+          }
+        });
+        /* TUDO AO CENTRO DA BARRA. A barra é a linha da tabela onde estão as
+           caixas. O título fica centrado na vertical da célula; as caixas
+           ficam centradas na altura da linha. Para isso a tabela tem de ser
+           o primeiro elemento da folha e a linha ter altura definida: assim
+           sabe-se onde começa a barra (margem de cima + linhas anteriores). */
+        const acima = (no, nome) => { for (let x = no.parentNode; x; x = x.parentNode) if (x.localName === nome) return x; return null; };
+        const tr = acima(esq.desenhoWord, 'tr');
+        const tbl = tr ? acima(tr, 'tbl') : null;
+        const corpo = tbl ? tbl.parentNode : null;
+        const primeiro = corpo ? [...corpo.childNodes].find(x => x.nodeType === 1 && x.localName !== 'bookmarkStart') : null;
+        const alturaLinha = (linha) => {
+          const trPr = filhoDe(linha, 'trPr');
+          const h = trPr ? filhoDe(trPr, 'trHeight') : null;
+          return h ? (Number(h.getAttribute('w:val')) || 0) * 635 : 0;
+        };
+        if (tr && tbl && corpo && corpo.localName === 'body' && primeiro === tbl && acima(dir.desenhoWord, 'tr') === tr && alturaLinha(tr)) {
+          const linhas = [...tbl.childNodes].filter(x => x.localName === 'tr');
+          const antes = linhas.slice(0, linhas.indexOf(tr));
+          if (antes.every(alturaLinha)) {
+            const topo = (pgMar ? (Number(pgMar.getAttribute('w:top')) || 0) * 635 : 0) + antes.reduce((t, l) => t + alturaLinha(l), 0);
+            const y = topo + Math.round((alturaLinha(tr) - cyS) / 2);
+            [esq, dir].forEach(it => {
+              const pv = filhoDe(it.desenhoWord, 'positionV');
+              if (!pv) return;
+              [...pv.childNodes].forEach(n2 => pv.removeChild(n2));
+              pv.setAttribute('relativeFrom', 'page');
+              const off = doc.createElementNS(pv.namespaceURI, `${pv.prefix ? pv.prefix + ':' : ''}posOffset`);
+              off.textContent = String(Math.max(0, y));
+              pv.appendChild(off);
+            });
+            // Título (e o resto da barra) centrado na vertical das células.
+            [...tr.childNodes].filter(x => x.localName === 'tc').forEach(tc => {
+              let tcPr = filhoDe(tc, 'tcPr');
+              const W2 = tc.namespaceURI;
+              if (!tcPr) { tcPr = doc.createElementNS(W2, 'w:tcPr'); tc.insertBefore(tcPr, tc.firstChild); }
+              let va = filhoDe(tcPr, 'vAlign');
+              if (!va) {
+                va = doc.createElementNS(W2, 'w:vAlign');
+                // vAlign vem depois destes no tcPr (ordem do esquema).
+                const depois = [...tcPr.childNodes].find(x => ['hideMark', 'headers', 'cellIns', 'cellDel', 'cellMerge', 'tcPrChange'].includes(x.localName));
+                tcPr.insertBefore(va, depois || null);
+              }
+              va.setAttribute('w:val', 'center');
+            });
+            // O espaço antes/depois do parágrafo do título desviava-o do centro.
+            [...tr.getElementsByTagNameNS(W_NS, 'p')].forEach(pp => {
+              if (!textoDoNo(pp).trim()) return;
+              const pPr = filhoDe(pp, 'pPr');
+              const sp = pPr ? filhoDe(pPr, 'spacing') : null;
+              if (sp) { sp.setAttribute('w:before', '0'); sp.setAttribute('w:after', '0'); }
+            });
+          }
+        }
       }
     }
     for (const { blip, comDescr, cx, cy, estilo } of itens) {
