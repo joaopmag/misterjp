@@ -15990,8 +15990,17 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
 /* SEM BANCOS (impressões, partilhar, ver a sessão): o enquadramento do
    editor e da apresentação — a mesma margem de relvado à volta toda, nas
    duas vistas. Os bancos de suplentes deixaram de existir no campo. */
-function viewBoxSemBancos(vista) { return vista === 'meio' ? APRESENTACAO_VIEWBOX_MEIO : EDITOR_VIEWBOX; }
-function aspetoSemBancos(vista) { const b = vista === 'meio' ? APRESENTACAO_BOX_MEIO : EDITOR_BOX; return `${b.w} / ${b.h}`; }
+// Campo inteiro e meio-campo com a MESMA proporção (a do campo inteiro),
+// para saírem do mesmo tamanho lado a lado (ex.: impressão da sessão). O
+// meio-campo fica com a margem de 3,5 m em cima e em baixo e centrado na
+// largura (mais relvado dos lados).
+function viewBoxSemBancos(vista) {
+  if (vista !== 'meio') return EDITOR_VIEWBOX;
+  const h = APRESENTACAO_BOX_MEIO.h;
+  const w = h * EDITOR_BOX.w / EDITOR_BOX.h;
+  return `${(35 - w / 2).toFixed(3)} ${APRESENTACAO_BOX_MEIO.y} ${w.toFixed(3)} ${h}`;
+}
+function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
