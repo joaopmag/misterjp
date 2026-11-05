@@ -3181,6 +3181,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // vermelho de origem, mesmo com outra cor escolhida em "Gerir
   // equipa".
   T.corEquipa = (equipaAtiva && equipaAtiva.cor) || '#B5393F';
+  // Logótipo e nome do clube para os documentos Word (cabeçalho/rodapé
+  // gerados pela app — ver `aplicarClubeNosModelosWord`).
+  T.logoEquipa = (equipaAtiva && equipaAtiva.logo) || '';
+  T.nomeClube = String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim();
 
   /* MENU ABERTO TRANCA A PÁGINA ATRÁS.
 
@@ -8101,8 +8105,9 @@ const ASSINATURA_APP = 'Gerado pela app Mister JP';
    Gerir equipa, T.corEquipa): um clube novo só tem de pôr o logótipo.
    Cores que o clube tenha escolhido (azul, verde, preto…) não são
    tocadas. Num texto, uma cor de equipa muito clara (amarelo, branco)
-   não se lia: aí o texto leva uma versão escurecida dela. O Excel não
-   passa por aqui: lá as cores têm significado (faltas, gráficos). */
+   não se lia: aí o texto leva uma versão escurecida dela. O Excel tem a
+   sua própria função (`pintarCorEquipaExcel`), que não mexe nas cores das
+   faltas nem nos gráficos. */
 function corEquipaParaDocumentos() {
   const c = String(T.corEquipa || '').replace('#', '');
   if (!/^[0-9a-f]{6}$/i.test(c)) return null;
@@ -8143,6 +8148,287 @@ async function pintarCorEquipaWord(zip) {
     xml = xml.replace(/(\b(?:fillcolor|strokecolor|color2?)=")#?([0-9A-Fa-f]{6})(")/g, (m, a, h, z) => (ehVermelhoDeModelo(h) ? `${a}#${cor.fundo}${z}` : m));
     if (xml !== xml0) zip.file(caminho, xml);
   }
+}
+
+/* LOGÓTIPO E NOME DO CLUBE NOS CABEÇALHOS/RODAPÉS WORD.
+   Os modelos base trazem imagens de exemplo ("LOGÓTIPO E NOME DO
+   CLUBE", "LOGÓTIPOS DO RODAPÉ"). A app desenha no lugar delas uma
+   imagem com o logótipo e o nome do clube (os de Gerir equipa) na cor da
+   equipa, com o mesmo tamanho, por isso ninguém tem de os pôr à mão.
+   · Ao DESCARREGAR um modelo base (`forcar`): todas as imagens do
+     cabeçalho e do rodapé são de exemplo e são trocadas.
+   · Ao GERAR: só se trocam as imagens marcadas pela app (texto
+     alternativo MARCA_CLUBE_DOC) ou as de exemplo dos modelos base. Um
+     cabeçalho desenhado pelo próprio clube fica como está.
+   A imagem marcada volta a ser desenhada em cada documento, por isso um
+   logótipo ou cor novos em Gerir equipa aparecem logo. */
+const MARCA_CLUBE_DOC = 'MisterJP: logótipo e nome do clube';
+const IMAGENS_EXEMPLO_MODELO = /^n-(cab|rod)\.png$/i;
+
+async function carregarLogoEquipaParaDoc() {
+  const src = T.logoEquipa;
+  if (!src) return null;
+  const doImg = (url, cors) => new Promise((res, rej) => {
+    const im = new Image();
+    if (cors) im.crossOrigin = 'anonymous';
+    im.onload = () => res(im); im.onerror = rej; im.src = url;
+  });
+  try {
+    const r = await fetch(src);
+    if (!r.ok) throw new Error('logo');
+    const url = URL.createObjectURL(await r.blob());
+    try { return await doImg(url, false); } finally { setTimeout(() => URL.revokeObjectURL(url), 2000); }
+  } catch (e) {
+    try { return await doImg(src, true); } catch (e2) { return null; }
+  }
+}
+
+async function desenharImagemClube({ largura, altura, tipo, logo }) {
+  const W = largura, H = altura;
+  const fazer = (comLogo) => {
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    const corDoc = corEquipaParaDocumentos() || { fundo: 'B5393F', texto: 'B5393F' };
+    const base = `#${corDoc.fundo}`;
+    const [r, gg, b] = [0, 2, 4].map(i => parseInt(corDoc.fundo.slice(i, i + 2), 16));
+    const lum = (0.2126 * r + 0.7152 * gg + 0.0722 * b) / 255;
+    const nome = String(T.nomeClube || '').trim();
+    const raio = (x, y, w, h, rr) => { g.beginPath(); g.moveTo(x + rr, y); g.arcTo(x + w, y, x + w, y + h, rr); g.arcTo(x + w, y + h, x, y + h, rr); g.arcTo(x, y + h, x, y, rr); g.arcTo(x, y, x + w, y, rr); g.closePath(); };
+    const desenhaLogo = (x, y, lado) => {
+      if (!comLogo || !logo) return;
+      const lw = logo.naturalWidth || logo.width, lh = logo.naturalHeight || logo.height;
+      if (!lw || !lh) return;
+      const k = Math.min(lado / lw, lado / lh);
+      g.drawImage(logo, x + (lado - lw * k) / 2, y + (lado - lh * k) / 2, lw * k, lh * k);
+    };
+    const ajustaLetra = (texto, maxW, maxH, peso) => {
+      let fs = maxH;
+      do { g.font = `${peso} ${Math.round(fs)}px Arial, Helvetica, sans-serif`; if (g.measureText(texto).width <= maxW) break; fs *= 0.94; } while (fs > maxH * 0.35);
+      return fs;
+    };
+    if (tipo === 'cabecalho') {
+      // Faixa na cor da equipa, logótipo numa caixa branca à esquerda e o nome ao centro.
+      const grad = g.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, base);
+      grad.addColorStop(1, `rgb(${Math.round(r * 0.72)},${Math.round(gg * 0.72)},${Math.round(b * 0.72)})`);
+      g.fillStyle = grad; g.fillRect(0, 0, W, H);
+      const pad = H * 0.12;
+      const lado = H - pad * 2;
+      let xTexto = pad;
+      if (comLogo && logo) {
+        g.fillStyle = '#FFFFFF'; raio(pad, pad, lado, lado, lado * 0.12); g.fill();
+        desenhaLogo(pad + lado * 0.08, pad + lado * 0.08, lado * 0.84);
+        xTexto = pad * 2 + lado;
+      }
+      if (nome) {
+        const texto = nome.toUpperCase();
+        const larguraTexto = W - xTexto - pad;
+        ajustaLetra(texto, larguraTexto, H * 0.36, 'bold');
+        g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(texto, xTexto + larguraTexto / 2, H / 2);
+      }
+    } else {
+      // Rodapé: fundo branco, logótipo pequeno e o nome na cor da equipa, ao centro.
+      g.fillStyle = '#FFFFFF'; g.fillRect(0, 0, W, H);
+      const lado = H * 0.7;
+      const texto = nome;
+      let fs = 0, larguraNome = 0;
+      if (texto) {
+        fs = ajustaLetra(texto, W * 0.8 - (comLogo && logo ? lado * 1.3 : 0), H * 0.32, 'bold');
+        larguraNome = g.measureText(texto).width;
+      }
+      const total = (comLogo && logo ? lado : 0) + (texto && comLogo && logo ? lado * 0.3 : 0) + larguraNome;
+      let x = (W - total) / 2;
+      if (comLogo && logo) { desenhaLogo(x, (H - lado) / 2, lado); x += lado * 1.3; }
+      if (texto) {
+        g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`;
+        g.fillStyle = `#${corDoc.texto}`; g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText(texto, x, H / 2);
+      }
+    }
+    return new Promise((res, rej) => {
+      try { cv.toBlob(bl => (bl ? res(bl) : rej(new Error('imagem'))), 'image/png'); } catch (e) { rej(e); }
+    });
+  };
+  // Um logótipo de outro site sem permissão (CORS) "suja" a imagem e o
+  // browser não a deixa gravar: aí sai só com o nome.
+  try { return await fazer(true); } catch (e) { return fazer(false); }
+}
+
+async function aplicarClubeNosModelosWord(zip, { forcar = false } = {}) {
+  if (!T.nomeClube && !T.logoEquipa) return;
+  const partes = Object.keys(zip.files).filter(n => /^word\/(header|footer)\d*\.xml$/.test(n));
+  if (!partes.length) return;
+  const parser = new DOMParser();
+  const ser = new XMLSerializer();
+  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const TIPO_IMG = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+  let logo; let carregouLogo = false;
+  let usouPng = false;
+  let n = 1;
+  for (const caminho of partes) {
+    const doc = parser.parseFromString(await zip.file(caminho).async('string'), 'application/xml');
+    const relsPath = caminho.replace(/^word\//, 'word/_rels/') + '.rels';
+    const relsDoc = parser.parseFromString(zip.file(relsPath) ? await zip.file(relsPath).async('string') : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${REL_NS}"></Relationships>`, 'application/xml');
+    const relsRaiz = relsDoc.documentElement;
+    const ids = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')].map(x => x.getAttribute('Id'));
+    const desenhos = [...doc.getElementsByTagNameNS('*', 'inline'), ...doc.getElementsByTagNameNS('*', 'anchor')];
+    let mudou = false;
+    for (const d of desenhos) {
+      const docPr = [...d.childNodes].find(x => x.localName === 'docPr');
+      const ext = [...d.childNodes].find(x => x.localName === 'extent');
+      const blip = d.getElementsByTagNameNS('*', 'blip')[0];
+      const cNvPr = d.getElementsByTagNameNS('*', 'cNvPr')[0];
+      if (!blip || !ext) continue;
+      const marcado = docPr && docPr.getAttribute('descr') === MARCA_CLUBE_DOC;
+      const exemplo = cNvPr && IMAGENS_EXEMPLO_MODELO.test(cNvPr.getAttribute('name') || '');
+      if (!forcar && !marcado && !exemplo) continue;
+      const cx = Number(ext.getAttribute('cx')) || 0, cy = Number(ext.getAttribute('cy')) || 0;
+      if (!cx || !cy) continue;
+      if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
+      const largura = 1600;
+      const altura = Math.max(40, Math.round(largura * cy / cx));
+      const tipo = /header/.test(caminho) ? 'cabecalho' : 'rodape';
+      const blob = await desenharImagemClube({ largura, altura, tipo, logo });
+      while (zip.file(`word/media/mjp-clube-${n}.png`)) n++;
+      const nomeMedia = `mjp-clube-${n}.png`; n++;
+      zip.file(`word/media/${nomeMedia}`, await blob.arrayBuffer());
+      let k = 1; while (ids().includes(`rIdMJPc${k}`)) k++;
+      const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
+      rel.setAttribute('Id', `rIdMJPc${k}`); rel.setAttribute('Type', TIPO_IMG); rel.setAttribute('Target', `media/${nomeMedia}`);
+      relsRaiz.appendChild(rel);
+      blip.setAttributeNS(R_NS, 'r:embed', `rIdMJPc${k}`);
+      if (docPr) docPr.setAttribute('descr', MARCA_CLUBE_DOC);
+      usouPng = true; mudou = true;
+    }
+    if (mudou) {
+      zip.file(caminho, ser.serializeToString(doc));
+      zip.file(relsPath, ser.serializeToString(relsDoc));
+    }
+  }
+  if (usouPng) {
+    const ctPath = '[Content_Types].xml';
+    let ct = await zip.file(ctPath).async('string');
+    if (!/<Default\b[^>]*Extension="png"/i.test(ct)) ct = ct.replace(/(<Types\b[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
+    zip.file(ctPath, ct);
+  }
+}
+
+/* EXCEL: CABEÇALHOS NA COR DA EQUIPA E COM O CLUBE.
+   Só se mexe nos estilos fixos das células (secções <fonts> e <fills>
+   do styles.xml), que é onde estão os títulos e cabeçalhos. NÃO se toca:
+   · na formatação condicional (<dxfs>), que é onde estão as cores das
+     faltas, presenças, lesões…;
+   · nos gráficos (xl/charts) nem nos temas.
+   As imagens do topo das folhas (logótipos de exemplo) passam a ser a
+   imagem do clube, como no Word: ao descarregar o modelo base, as que
+   começam nas primeiras 6 linhas; ao gerar, só as marcadas pela app. */
+async function pintarCorEquipaExcel(zip) {
+  const cor = corEquipaParaDocumentos();
+  const f = zip.file('xl/styles.xml');
+  if (!cor || !f) return;
+  const xml0 = await f.async('string');
+  const trocar = (bloco, nova) => bloco.replace(/(\brgb=")(?:[0-9A-Fa-f]{2})?([0-9A-Fa-f]{6})(")/g, (m, a, h, z) => (ehVermelhoDeModelo(h) ? `${a}FF${nova}${z}` : m));
+  const xml = xml0
+    .replace(/<fonts\b[\s\S]*?<\/fonts>/, b => trocar(b, cor.texto))
+    .replace(/<fills\b[\s\S]*?<\/fills>/, b => trocar(b, cor.fundo));
+  if (xml !== xml0) zip.file('xl/styles.xml', xml);
+}
+
+async function aplicarClubeNosModelosExcel(zip, { forcar = false } = {}) {
+  if (!T.nomeClube && !T.logoEquipa) return;
+  const desenhosXml = Object.keys(zip.files).filter(n => /^xl\/drawings\/drawing\d+\.xml$/.test(n));
+  if (!desenhosXml.length) return;
+  const parser = new DOMParser();
+  const ser = new XMLSerializer();
+  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const TIPO_IMG = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+  let logo; let carregouLogo = false;
+  const imagens = new Map(); // "largura x altura" → caminho do png (uma só imagem por tamanho)
+  let n = 1;
+  for (const caminho of desenhosXml) {
+    const doc = parser.parseFromString(await zip.file(caminho).async('string'), 'application/xml');
+    const relsPath = caminho.replace(/^xl\/drawings\//, 'xl/drawings/_rels/') + '.rels';
+    if (!zip.file(relsPath)) continue;
+    const relsDoc = parser.parseFromString(await zip.file(relsPath).async('string'), 'application/xml');
+    const relsRaiz = relsDoc.documentElement;
+    const ids = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')].map(x => x.getAttribute('Id'));
+    let mudou = false;
+    for (const pic of [...doc.getElementsByTagNameNS('*', 'pic')]) {
+      const ancora = pic.parentNode;
+      const cNvPr = pic.getElementsByTagNameNS('*', 'cNvPr')[0];
+      const blip = pic.getElementsByTagNameNS('*', 'blip')[0];
+      const xfrm = pic.getElementsByTagNameNS('*', 'xfrm')[0];
+      const ext = xfrm ? [...xfrm.childNodes].find(x => x.localName === 'ext') : null;
+      if (!blip || !ext) continue;
+      const marcado = cNvPr && cNvPr.getAttribute('descr') === MARCA_CLUBE_DOC;
+      const de = ancora ? [...ancora.childNodes].find(x => x.localName === 'from') : null;
+      const linhaEl = de ? [...de.childNodes].find(x => x.localName === 'row') : null;
+      const noTopo = linhaEl ? Number(linhaEl.textContent) <= 5 : false;
+      if (!marcado && !(forcar && noTopo)) continue;
+      const cx = Number(ext.getAttribute('cx')) || 0, cy = Number(ext.getAttribute('cy')) || 0;
+      if (!cx || !cy) continue;
+      const largura = 1600;
+      const altura = Math.max(40, Math.round(largura * cy / cx));
+      const chave = `${largura}x${altura}`;
+      if (!imagens.has(chave)) {
+        if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
+        // Imagem estreita e alta (só o símbolo): fica o logótipo sozinho.
+        const blob = await desenharImagemClube({ largura, altura, tipo: altura >= largura * 0.6 ? 'rodape' : 'cabecalho', logo });
+        while (zip.file(`xl/media/mjp-clube-${n}.png`)) n++;
+        const nome = `mjp-clube-${n}.png`; n++;
+        zip.file(`xl/media/${nome}`, await blob.arrayBuffer());
+        imagens.set(chave, nome);
+      }
+      let k = 1; while (ids().includes(`rIdMJPc${k}`)) k++;
+      const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
+      rel.setAttribute('Id', `rIdMJPc${k}`); rel.setAttribute('Type', TIPO_IMG); rel.setAttribute('Target', `../media/${imagens.get(chave)}`);
+      relsRaiz.appendChild(rel);
+      blip.setAttributeNS(R_NS, 'r:embed', `rIdMJPc${k}`);
+      if (cNvPr) cNvPr.setAttribute('descr', MARCA_CLUBE_DOC);
+      mudou = true;
+    }
+    if (mudou) {
+      zip.file(caminho, ser.serializeToString(doc));
+      zip.file(relsPath, ser.serializeToString(relsDoc));
+    }
+  }
+  if (imagens.size) {
+    const ctPath = '[Content_Types].xml';
+    let ct = await zip.file(ctPath).async('string');
+    if (!/<Default\b[^>]*Extension="png"/i.test(ct)) ct = ct.replace(/(<Types\b[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
+    zip.file(ctPath, ct);
+  }
+}
+
+/* Descarregar um modelo base já com a imagem do clube: cor da equipa e
+   logótipo/nome do clube (Word: cabeçalho e rodapé; Excel: cabeçalhos
+   das folhas, sem mexer nas cores das faltas nem nos gráficos). */
+async function descarregarModeloBase(x) {
+  const r = await fetch(x.ficheiro);
+  if (!r.ok) throw new Error('Não consegui descarregar o modelo.');
+  let blob = await r.blob();
+  if (x.tipo === 'Word') {
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    await pintarCorEquipaWord(zip);
+    await aplicarClubeNosModelosWord(zip, { forcar: true });
+    blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  } else if (x.tipo === 'Excel') {
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    await pintarCorEquipaExcel(zip);
+    await aplicarClubeNosModelosExcel(zip, { forcar: true });
+    blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = decodeURIComponent(x.ficheiro.split('/').pop());
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 async function carimbarMarcaExcel(zip) {
@@ -8587,6 +8873,8 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   // alguém forçar o Excel a recalcular — ver o comentário grande em
   // `forcarRecalculoAoAbrir`.
   await forcarRecalculoAoAbrir(zip);
+  await pintarCorEquipaExcel(zip);
+  await aplicarClubeNosModelosExcel(zip);
   await carimbarMarcaExcel(zip);
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
@@ -8972,6 +9260,7 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   zip.file('[Content_Types].xml', tipos);
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
+  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9337,6 +9626,7 @@ async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) 
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
+  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9586,6 +9876,7 @@ async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escal
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
   await carimbarMarcaWord(zip);
   await pintarCorEquipaWord(zip);
+  await aplicarClubeNosModelosWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9816,11 +10107,11 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
         onChange={e => { const f = e.target.files[0]; if (f) carregarFicheiro(f); e.target.value = ''; }}
       />
 
-      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20, maxWidth: 640 }}>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20 }}>
         Carrega aqui o modelo em branco (Excel, Word ou PDF). A app guarda só esse original — nunca guarda
         as cópias preenchidas: cada vez que geras uma, é criada na hora e descarregada logo a seguir.
       </div>
-      {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 16, maxWidth: 640 }}>{erro}</div>}
+      {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 16 }}>{erro}</div>}
 
       {(documentos || []).length === 0 ? (
         <EmptyState text="Ainda sem modelos carregados." action={<Btn onClick={() => fileInputRef.current?.click()}><Plus size={15} /> Carregar modelo</Btn>} />
@@ -9926,15 +10217,18 @@ const MODELOS_BASE = [
 ];
 function ModelosBase() {
   const [comoDe, setComoDe] = useState(null);
+  const [aDescarregar, setADescarregar] = useState(null);
+  const [erroDesc, setErroDesc] = useState('');
   const m = MODELOS_BASE.find(x => x.id === comoDe);
   return (
     <div style={{ marginTop: 28 }}>
       <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Modelos base da app</div>
-      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 12, maxWidth: 640 }}>
-        Para usar documentos com a imagem do clube: descarrega o modelo, põe o logótipo do clube,
-        guarda no mesmo formato (.docx ou .xlsx) e carrega-o aqui em cima. Nos Word, os vermelhos do modelo passam
-        sozinhos para a cor da equipa (a de Gerir equipa). Só tens de manter os nomes dos campos.
+      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 12 }}>
+        Os modelos descarregam-se já com a imagem do clube: a cor da equipa e o logótipo e o nome do clube
+        (os de Gerir equipa) nos cabeçalhos. No Excel, as cores das faltas e dos gráficos não mudam. Muda o que quiseres, guarda no mesmo formato (.docx ou .xlsx)
+        e carrega-o aqui em cima. Só tens de manter os nomes dos campos.
       </div>
+      {erroDesc && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 10 }}>{erroDesc}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {MODELOS_BASE.map(x => (
           <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -9947,9 +10241,12 @@ function ModelosBase() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
               <Btn variant="ghost" onClick={() => setComoDe(x.id)}><Info size={14} /> Como adaptar</Btn>
-              <a href={x.ficheiro} download style={{ textDecoration: 'none' }}>
-                <Btn variant="ghost"><Download size={14} /> Descarregar modelo</Btn>
-              </a>
+              <Btn variant="ghost" disabled={aDescarregar === x.id} onClick={async () => {
+                setErroDesc(''); setADescarregar(x.id);
+                try { await descarregarModeloBase(x); } catch (e) { setErroDesc(e.message || 'Não consegui descarregar o modelo.'); } finally { setADescarregar(null); }
+              }}>
+                {aDescarregar === x.id ? <Loader2 size={14} className="spin" /> : <Download size={14} />} Descarregar modelo
+              </Btn>
             </div>
           </div>
         ))}
@@ -9970,7 +10267,7 @@ function ModelosBase() {
           </div>
           <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginTop: 12 }}>
             {m.tipo === 'Excel'
-              ? 'No fim, guarda como Excel (.xlsx), não .xls, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.'
+              ? 'No fim, guarda como Excel (.xlsx), não .xls, e carrega-o em Documentos. Ao gerar, os cabeçalhos vermelhos passam para a cor da equipa (as cores das faltas e dos gráficos ficam como estão) e a marca ™ Mister JP é acrescentada no rodapé.'
               : 'No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. Ao gerar, os vermelhos do modelo passam para a cor da equipa e a marca ™ Mister JP é acrescentada no rodapé.'}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
