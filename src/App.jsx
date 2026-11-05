@@ -4177,7 +4177,16 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         html { -webkit-text-size-adjust: 100%; }
         @media (max-width: 860px) { input, select, textarea { font-size: 16px !important; } }
         .print-sheet { display: none; }
+        /* Marca MisterJP: só na impressão, no canto inferior direito de
+           CADA folha (um elemento fixo repete-se em todas as páginas). */
+        .mjp-marca-impressao { display: none; }
         @media print {
+          .mjp-marca-impressao {
+            display: block !important; position: fixed; right: 0; bottom: 0;
+            font: 700 7pt Arial, sans-serif; color: #9a9a9a; letter-spacing: .03em;
+            background: transparent; z-index: 2147483647;
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          }
           @page { size: A4; margin: 12mm; }
 
           /* PÁGINA EM BRANCO NO FIM — porquê e como se resolve.
@@ -4197,7 +4206,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             overflow: visible !important;
             background: #fff !important;
           }
-          body > *:not(.print-sheet) { display: none !important; }
+          body > *:not(.print-sheet):not(.mjp-marca-impressao) { display: none !important; }
 
           .print-sheet {
             display: block !important;
@@ -4219,6 +4228,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           .print-sheet > *:last-child { page-break-after: auto; break-after: auto; }
         }
       `}</style>
+      {/* Marca MisterJP em todas as impressões e PDFs (ver o estilo acima). */}
+      {createPortal(<div className="mjp-marca-impressao" aria-hidden="true">{MARCA_APP}</div>, document.body)}
 
       {/* Em ecrã largo a página não faz scroll: a barra lateral e o conteúdo
           têm cada um o seu próprio scroll, para o menu não fugir enquanto se
@@ -7829,6 +7840,143 @@ async function resolverCaminhoDaFolha(zip, nomeFolha) {
    o mesmo procedimento bloco a bloco, sobre o MESMO .zip, e só no fim
    gerar o ficheiro — assim os meses escolhidos saem todos juntos num
    único Excel, tal como já vinham no modelo original. */
+/* MARCA "MisterJP" EM TODOS OS DOCUMENTOS QUE A APP GERA.
+
+   Pequena, cinzenta, no canto inferior direito de cada página:
+   · impressões e PDFs da app: um elemento fixo que o browser repete em
+     cada folha (ver `.mjp-marca-impressao` no estilo global);
+   · Word: no rodapé de cada secção (no que o modelo já tiver, ou num
+     rodapé novo só com a marca), por isso aparece em todas as páginas
+     sem mexer no corpo do documento;
+   · Excel: no rodapé de impressão de cada folha (&R = à direita). */
+const MARCA_APP = '™ Mister JP';
+
+async function carimbarMarcaWord(zip) {
+  const docPath = 'word/document.xml';
+  const relsPath = 'word/_rels/document.xml.rels';
+  const df = zip.file(docPath);
+  if (!df) return;
+  const parser = new DOMParser();
+  const ser = new XMLSerializer();
+  const doc = parser.parseFromString(await df.async('string'), 'application/xml');
+  const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const TIPO_RODAPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer';
+  const relsDoc = parser.parseFromString(zip.file(relsPath) ? await zip.file(relsPath).async('string') : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="${REL_NS}"></Relationships>`, 'application/xml');
+  const relsRaiz = relsDoc.documentElement;
+  const rels = [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')];
+  const alvoDe = (id) => { const r = rels.find(x => x.getAttribute('Id') === id); return r ? `word/${r.getAttribute('Target').replace(/^\/?word\//, '').replace(/^\.\//, '')}` : null; };
+  const paragrafoMarca = (d) => {
+    const p = d.createElementNS(W_NS, 'w:p');
+    const ppr = d.createElementNS(W_NS, 'w:pPr');
+    const sp = d.createElementNS(W_NS, 'w:spacing'); sp.setAttribute('w:before', '0'); sp.setAttribute('w:after', '0'); sp.setAttribute('w:line', '240'); sp.setAttribute('w:lineRule', 'auto');
+    const jc = d.createElementNS(W_NS, 'w:jc'); jc.setAttribute('w:val', 'right');
+    ppr.appendChild(sp); ppr.appendChild(jc); p.appendChild(ppr);
+    const r = d.createElementNS(W_NS, 'w:r');
+    const rpr = d.createElementNS(W_NS, 'w:rPr');
+    const f = d.createElementNS(W_NS, 'w:rFonts'); ['w:ascii', 'w:hAnsi', 'w:cs'].forEach(a => f.setAttribute(a, 'Arial'));
+    const b = d.createElementNS(W_NS, 'w:b');
+    const c = d.createElementNS(W_NS, 'w:color'); c.setAttribute('w:val', '9A9A9A');
+    const sz = d.createElementNS(W_NS, 'w:sz'); sz.setAttribute('w:val', '12');
+    const szc = d.createElementNS(W_NS, 'w:szCs'); szc.setAttribute('w:val', '12');
+    [f, b, c, sz, szc].forEach(n => rpr.appendChild(n));
+    const t = d.createElementNS(W_NS, 'w:t'); t.textContent = MARCA_APP;
+    r.appendChild(rpr); r.appendChild(t); p.appendChild(r);
+    return p;
+  };
+  const jaCarimbados = new Set();
+  const carimbarRodape = async (caminho) => {
+    if (!caminho || jaCarimbados.has(caminho) || !zip.file(caminho)) return;
+    jaCarimbados.add(caminho);
+    const fd = parser.parseFromString(await zip.file(caminho).async('string'), 'application/xml');
+    const raiz = fd.documentElement;
+    if (semAcentosDoc(textoDoNo(raiz)).includes(MARCA_APP.toLowerCase())) return;
+    const ps = [...raiz.childNodes].filter(n => n.localName === 'p');
+    const marca = paragrafoMarca(fd);
+    // Rodapé com um só parágrafo vazio: a marca fica no lugar dele (não cresce).
+    if (ps.length === 1 && !textoDoNo(ps[0]).trim() && !ps[0].getElementsByTagNameNS('*', 'drawing').length) raiz.replaceChild(marca, ps[0]);
+    else raiz.appendChild(marca);
+    zip.file(caminho, ser.serializeToString(fd));
+  };
+  let caminhoNovo = null;
+  const rodapeNovo = async () => {
+    if (caminhoNovo) return caminhoNovo.id;
+    let n = 1; while (zip.file(`word/footerMJP${n}.xml`)) n++;
+    const nome = `footerMJP${n}.xml`;
+    zip.file(`word/${nome}`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="${W_NS}"><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:color w:val="9A9A9A"/><w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr><w:t>${MARCA_APP}</w:t></w:r></w:p></w:ftr>`);
+    let id = 1; while (rels.some(x => x.getAttribute('Id') === `rIdMJP${id}`)) id++;
+    const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
+    rel.setAttribute('Id', `rIdMJP${id}`); rel.setAttribute('Type', TIPO_RODAPE); rel.setAttribute('Target', nome);
+    relsRaiz.appendChild(rel); rels.push(rel);
+    const ctPath = '[Content_Types].xml';
+    let ct = await zip.file(ctPath).async('string');
+    if (!ct.includes(`/word/${nome}`)) ct = ct.replace('</Types>', `<Override PartName="/word/${nome}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`);
+    zip.file(ctPath, ct);
+    caminhoNovo = { id: `rIdMJP${id}` };
+    return caminhoNovo.id;
+  };
+  const settings = zip.file('word/settings.xml') ? await zip.file('word/settings.xml').async('string') : '';
+  const parImpar = /<w:evenAndOddHeaders(?![^>]*w:val="(0|false)")/.test(settings);
+  for (const sect of [...doc.getElementsByTagNameNS(W_NS, 'sectPr')]) {
+    const refs = [...sect.childNodes].filter(n => n.localName === 'footerReference');
+    const titulo = [...sect.childNodes].some(n => n.localName === 'titlePg' && !/^(0|false)$/.test(n.getAttribute('w:val') || ''));
+    const precisos = ['default', ...(titulo ? ['first'] : []), ...(parImpar ? ['even'] : [])];
+    for (const tipo of precisos) {
+      const ref = refs.find(r => (r.getAttribute('w:type') || 'default') === tipo);
+      if (ref) { await carimbarRodape(alvoDe(ref.getAttributeNS(R_NS, 'id') || ref.getAttribute('r:id'))); continue; }
+      const id = await rodapeNovo();
+      const nova = doc.createElementNS(W_NS, 'w:footerReference');
+      nova.setAttribute('w:type', tipo);
+      nova.setAttributeNS(R_NS, 'r:id', id);
+      // As referências de cabeçalho e rodapé vêm primeiro no sectPr.
+      const depois = [...sect.childNodes].find(n => n.nodeType === 1 && !['headerReference', 'footerReference'].includes(n.localName));
+      sect.insertBefore(nova, depois || null);
+    }
+    // Rodapé encostado ao fundo da folha (distância 0): sobe um pouco, para a marca não ficar fora da zona de impressão.
+    const pgMar = [...sect.childNodes].find(n => n.localName === 'pgMar');
+    if (pgMar && (Number(pgMar.getAttribute('w:footer')) || 0) < 200) pgMar.setAttribute('w:footer', '200');
+  }
+  zip.file(docPath, ser.serializeToString(doc));
+  zip.file(relsPath, ser.serializeToString(relsDoc));
+}
+
+async function carimbarMarcaExcel(zip) {
+  const codigo = `&amp;R&amp;"Arial,Bold"&amp;7&amp;K999999${MARCA_APP}`;
+  const DEPOIS = ['rowBreaks', 'colBreaks', 'customProperties', 'cellWatches', 'ignoredErrors', 'smartTags', 'drawing', 'legacyDrawing', 'legacyDrawingHF', 'drawingHF', 'picture', 'oleObjects', 'controls', 'webPublishItems', 'tableParts', 'extLst'];
+  const folhas = Object.keys(zip.files).filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+  for (const caminho of folhas) {
+    let xml = await zip.file(caminho).async('string');
+    if (xml.includes(MARCA_APP)) continue;
+    const hf = xml.match(/<headerFooter\b[^>]*\/>|<headerFooter\b[^>]*>[\s\S]*?<\/headerFooter>/);
+    // Já há algo à direita (ex.: n.º da página): a marca junta-se no fim
+    // dessa secção, se for a última; senão, fica como está.
+    const juntar = (rodape) => {
+      if (!/&amp;R/.test(rodape)) return rodape + codigo;
+      const resto = rodape.slice(rodape.lastIndexOf('&amp;R'));
+      return /&amp;[LC]/.test(resto) ? rodape : `${rodape}  ${codigo.replace('&amp;R', '')}`;
+    };
+    if (hf) {
+      let bloco = hf[0];
+      if (/\/>$/.test(bloco)) bloco = bloco.replace(/\/>$/, '></headerFooter>');
+      const comRodape = (tag) => {
+        if (new RegExp(`<${tag}>`).test(bloco)) bloco = bloco.replace(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`), (m, c) => `<${tag}>${juntar(c)}</${tag}>`);
+        else if (tag === 'oddFooter' && /<oddHeader>[\s\S]*?<\/oddHeader>/.test(bloco)) bloco = bloco.replace(/(<oddHeader>[\s\S]*?<\/oddHeader>)/, `$1<oddFooter>${codigo}</oddFooter>`);
+        else if (tag === 'oddFooter') bloco = bloco.replace(/(<headerFooter\b[^>]*>)/, `$1<oddFooter>${codigo}</oddFooter>`);
+        else bloco = bloco.replace('</headerFooter>', `<${tag}>${codigo}</${tag}>`.replace(/^/, '') + '</headerFooter>');
+      };
+      comRodape('oddFooter');
+      if (/differentOddEven="(1|true)"/.test(bloco)) comRodape('evenFooter');
+      if (/differentFirst="(1|true)"/.test(bloco)) comRodape('firstFooter');
+      xml = xml.replace(hf[0], bloco);
+    } else {
+      const novo = `<headerFooter><oddFooter>${codigo}</oddFooter></headerFooter>`;
+      const m = xml.match(new RegExp(`<(${DEPOIS.join('|')})\\b`));
+      xml = m ? xml.replace(m[0], novo + m[0]) : xml.replace('</worksheet>', `${novo}</worksheet>`);
+    }
+    zip.file(caminho, xml);
+  }
+}
+
 async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos) {
   const zip = await JSZip.loadAsync(arrayBuffer);
 
@@ -7887,6 +8035,7 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   // alguém forçar o Excel a recalcular — ver o comentário grande em
   // `forcarRecalculoAoAbrir`.
   await forcarRecalculoAoAbrir(zip);
+  await carimbarMarcaExcel(zip);
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
@@ -8269,6 +8418,7 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
   zip.file(relsPath, rels);
   zip.file('[Content_Types].xml', tipos);
+  await carimbarMarcaWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
@@ -8305,11 +8455,8 @@ function estruturasMaisUsadas(matches) {
      tabela ocupar a mesma altura (a folha continua a ser uma só).
    · Est. Principal / Est. Secundária: a estrutura tática escrita no
      formulário (vem preenchida com as formações mais usadas nos jogos).
-   · Campo: cada caixa de texto com o código de uma posição (GR, DC, DE,
-     DD, MD, MC, MOC, EE, ED, PL) recebe os jogadores dessa posição
-     principal e, a seguir, com "(s)", os que a têm como secundária. Duas
-     caixas com o mesmo código (ex.: dois DC) repartem os jogadores. A
-     altura da caixa acompanha o número de nomes. */
+   · Campo: desenhado com a estrutura principal, cada jogador uma só vez
+     (ver o passo 2, mais abaixo). */
 async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) {
   const zip = await JSZip.loadAsync(arrayBuffer);
   const docFile = zip.file('word/document.xml');
@@ -8436,75 +8583,205 @@ async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) 
   }
   if (!feitaTabela) throw new Error('Este Word não tem a tabela da Organização do Plantel ("Nome", "Ano Nasc."…).');
 
-  // 2. Campo: caixas de texto com o código da posição.
+  /* 2. CAMPO: A ESTRUTURA PRINCIPAL, CADA JOGADOR UMA SÓ VEZ.
+
+     · As caixas seguem a estrutura principal (ex.: 1-4-2-3-1): uma caixa
+       por lugar da formação, na posição em que a formação o desenha. As
+       caixas do modelo servem de molde (tamanho, letra, cor, escudo) e
+       de medida do campo (até onde vão para os lados, para cima e para
+       baixo). Se a estrutura escrita não for uma formação que a app
+       conheça, ficam as caixas do modelo, cada uma com o seu código.
+     · Cada jogador aparece uma vez: na posição principal, se ela existir
+       na estrutura; senão na secundária; senão na mais próxima (ex.: um
+       MD num 4-2-3-1 vai para MC). Quem não está na principal aparece em
+       itálico com a sua posição entre parênteses, ex.: "15 Lisandro (MD)".
+     · Dois lugares iguais (dois DC, dois MC) repartem os jogadores. */
+  const PROXIMAS = {
+    GR: ['GR'],
+    DC: ['DC', 'MD', 'DD', 'DE'],
+    DD: ['DD', 'AD', 'DC', 'ED', 'MD'],
+    DE: ['DE', 'AE', 'DC', 'EE', 'MD'],
+    MD: ['MD', 'MC', 'DC', 'MOC'],
+    MC: ['MC', 'MD', 'MOC'],
+    MOC: ['MOC', 'MC', 'PL', 'ED', 'EE'],
+    ED: ['ED', 'AD', 'EE', 'MOC', 'PL', 'DD'],
+    EE: ['EE', 'AE', 'ED', 'MOC', 'PL', 'DE'],
+    PL: ['PL', 'MOC', 'ED', 'EE'],
+  };
   const caixas = [...corpo.getElementsByTagNameNS(W_NS, 'txbxContent')].filter(c => !dentroDeFallback(c));
-  const porCodigo = new Map();
-  caixas.forEach(c => {
-    const cod = textoDoNo(c).replace(/[-–\s]/g, '').toUpperCase();
-    if (!POSITIONS.includes(cod)) return;
-    if (!porCodigo.has(cod)) porCodigo.set(cod, []);
-    porCodigo.get(cod).push(c);
-  });
+  const comCodigo = caixas.map(c => ({ c, cod: textoDoNo(c).replace(/[-–\s]/g, '').toUpperCase() })).filter(x => POSITIONS.includes(x.cod));
+  const subirAte = (no, local, ns) => { let n = no; while (n && !(n.localName === local && (!ns || n.namespaceURI === ns))) n = n.parentNode; return n; };
+  const runDe = (no) => { let n = no; while (n && !(n.localName === 'r' && n.namespaceURI === W_NS && n.parentNode && n.parentNode.localName === 'p')) n = n.parentNode; return n; };
+  const pos = (anc, eixo) => {
+    const el = [...anc.childNodes].find(n => n.localName === (eixo === 'H' ? 'positionH' : 'positionV'));
+    const o = el && [...el.childNodes].find(n => n.localName === 'posOffset');
+    return o ? Number(o.textContent) || 0 : 0;
+  };
+  const extentDe = (anc) => { const e = [...anc.childNodes].find(n => n.localName === 'extent'); return e ? { cx: Number(e.getAttribute('cx')) || 0, cy: Number(e.getAttribute('cy')) || 0 } : { cx: 0, cy: 0 }; };
   const nivelAtual = (p) => { const e = estatutoDaAvaliacao(avaliacaoBaseDoJogador(p, epoca)); return e.nivel || 0; };
-  const ordenar = (lista) => [...lista].sort((a, b) => (nivelAtual(b) - nivelAtual(a)) || ((Number(a.number) || 99) - (Number(b.number) || 99)));
   const rotulo = (p) => `${p.number ? `${p.number} ` : ''}${shortPlayerName(p, players)}`;
-  const LINHA_EMU = 95000;
-  porCodigo.forEach((lista, cod) => {
-    const principais = ordenar(ativos.filter(p => p.position === cod));
-    const secundarios = ordenar(ativos.filter(p => p.secondaryPosition === cod && p.position !== cod));
-    lista.forEach((caixa, j) => {
-      const k = lista.length;
-      const linhas = [
-        ...principais.filter((_, i) => i % k === j).map(p => ({ t: rotulo(p), sec: false })),
-        ...secundarios.filter((_, i) => i % k === j).map(p => ({ t: `${rotulo(p)} (s)`, sec: true })),
-      ];
-      const escreverCaixa = (conteudo) => {
-        const ps = [...conteudo.childNodes].filter(n => n.localName === 'p');
-        const molde = ps[0];
-        const pPr = molde ? filho(molde, 'pPr') : null;
-        const rPrBase = (() => {
-          const r0 = molde ? [...molde.getElementsByTagNameNS(W_NS, 'r')][0] : null;
-          const rp = (r0 && filho(r0, 'rPr')) || (pPr && filho(pPr, 'rPr'));
-          if (!rp) return null;
-          const c0 = rp.cloneNode(true);
-          [...c0.childNodes].forEach(n => { if (['b', 'bCs', 'color'].includes(n.localName)) c0.removeChild(n); });
-          return c0;
-        })();
-        ps.forEach(p => conteudo.removeChild(p));
-        (linhas.length ? linhas : [{ t: '–', sec: false }]).forEach(l => {
-          const p = modelo.createElementNS(W_NS, 'w:p');
-          if (pPr) p.appendChild(pPr.cloneNode(true));
-          const r = modelo.createElementNS(W_NS, 'w:r');
-          const rp = rPrBase ? rPrBase.cloneNode(true) : modelo.createElementNS(W_NS, 'w:rPr');
-          if (l.sec) rp.appendChild(modelo.createElementNS(W_NS, 'w:i'));
-          r.appendChild(rp);
-          const t = modelo.createElementNS(W_NS, 'w:t');
-          t.setAttribute('xml:space', 'preserve'); t.textContent = l.t;
-          r.appendChild(t); p.appendChild(r); conteudo.appendChild(p);
-        });
-      };
-      escreverCaixa(caixa);
+  const LINHA_EMU = 82000; // uma linha de 6,5 pt, com folga
+
+  // Lugares a preencher: os da estrutura principal, ou as caixas do modelo.
+  const chave = String((estruturas && estruturas.principal) || '').trim().replace(/^1-/, '');
+  const formacao = FORMACOES[chave] && LAYOUT_FORMACAO[chave] ? chave : null;
+  let lugares = comCodigo.map(x => ({ cod: x.cod, caixa: x.c }));
+  if (formacao && comCodigo.length) {
+    const ancoras = comCodigo.map(x => subirAte(x.c, 'anchor', WP_NS)).filter(Boolean);
+    const molde = ancoras[0];
+    const runMolde = runDe(molde);
+    const paragrafo = runMolde && runMolde.parentNode;
+    // Medidas do campo, tiradas das caixas do modelo.
+    const centros = ancoras.map(a => pos(a, 'H') + extentDe(a).cx / 2);
+    const topos = ancoras.map(a => pos(a, 'V'));
+    const larguraMolde = extentDe(molde).cx;
+    const alturaMolde = extentDe(molde).cy;
+    const xMin = Math.min(...centros); const xMax = Math.max(...centros);
+    const yMin = Math.min(...topos); const yMax = Math.max(...topos);
+    // Escudos: imagens pequenas no mesmo parágrafo das caixas.
+    const runsDoParagrafo = [...paragrafo.childNodes].filter(n => n.localName === 'r');
+    const ehEscudo = (r) => {
+      const anc = r.getElementsByTagNameNS(WP_NS, 'anchor')[0];
+      if (!anc || r.getElementsByTagNameNS(W_NS, 'txbxContent').length) return false;
+      const e = extentDe(anc);
+      return e.cx > 0 && e.cx < 400000 && e.cy < 500000;
+    };
+    const escudos = runsDoParagrafo.filter(ehEscudo);
+    const moldeEscudo = escudos[0] ? escudos[0].cloneNode(true) : null;
+    const moldeCaixa = runMolde.cloneNode(true);
+    [...comCodigo.map(x => runDe(x.c)), ...escudos].forEach(r => { if (r && r.parentNode) r.parentNode.removeChild(r); });
+    let proximoId = 1 + Math.max(1000, ...[...modelo.getElementsByTagNameNS(WP_NS, 'docPr')].map(d => Number(d.getAttribute('id')) || 0));
+    const mexer = (run, H, V, cx, cy, nome) => {
+      const anc = run.getElementsByTagNameNS(WP_NS, 'anchor')[0];
+      [...run.getElementsByTagNameNS(MC_NS, 'Fallback')].forEach(f => f.parentNode.removeChild(f));
+      const ph = [...anc.childNodes].find(n => n.localName === 'positionH');
+      const pv = [...anc.childNodes].find(n => n.localName === 'positionV');
+      [[ph, H], [pv, V]].forEach(([el, v]) => { const o = el && [...el.childNodes].find(n => n.localName === 'posOffset'); if (o) o.textContent = String(Math.round(v)); });
+      const ex = [...anc.childNodes].find(n => n.localName === 'extent');
+      if (ex) { ex.setAttribute('cx', String(Math.round(cx))); ex.setAttribute('cy', String(Math.round(cy))); }
+      const xf = anc.getElementsByTagNameNS(A_NS, 'xfrm')[0];
+      const ext = xf && [...xf.childNodes].find(n => n.localName === 'ext');
+      if (ext) { ext.setAttribute('cx', String(Math.round(cx))); ext.setAttribute('cy', String(Math.round(cy))); }
+      const id = proximoId++;
+      const dp = [...anc.childNodes].find(n => n.localName === 'docPr');
+      if (dp) { dp.setAttribute('id', String(id)); dp.setAttribute('name', nome); }
+      [...anc.getElementsByTagNameNS('http://schemas.openxmlformats.org/drawingml/2006/picture', 'cNvPr')].forEach(c => { c.setAttribute('id', String(id)); c.setAttribute('name', nome); });
+      anc.setAttribute('relativeHeight', String(251700000 + id));
+      return run;
+    };
+    // Onde fica cada lugar: a formação desenha-o deitado (baliza à
+    // esquerda, lado direito em baixo); na folha o campo está de pé, com a
+    // nossa baliza em baixo e o lado direito à direita.
+    const pontos = LAYOUT_FORMACAO[formacao];
+    const lugaresF = FORMACOES[formacao].map((cod, i) => ({ cod, fundo: pontos[i][0], lado: pontos[i][1] }));
+    const fMin = Math.min(...lugaresF.map(l => l.fundo)); const fMax = Math.max(...lugaresF.map(l => l.fundo));
+    const lMin = Math.min(...lugaresF.map(l => l.lado)); const lMax = Math.max(...lugaresF.map(l => l.lado));
+    const meioX = (xMin + xMax) / 2;
+    const meiaLargura = Math.max(xMax - meioX, larguraMolde);
+    const spanLado = Math.max(lMax - 0.5, 0.5 - lMin) || 0.36;
+    /* O GR fica sempre onde está a caixa mais baixa do modelo; as outras
+       linhas repartem-se entre a segunda linha do modelo (a defesa) e a de
+       cima. Uma escala única para todas apertava a defesa contra o GR. */
+    const toposModelo = [...new Set(topos.map(t => Math.round(t / 50000)))].map(t => t * 50000).sort((a, b) => b - a);
+    // Um pouco acima da defesa do modelo, para a defesa não encostar ao escudo do GR.
+    const yDefesa = (toposModelo.length > 2 ? toposModelo[1] : yMin + (yMax - yMin) * 0.8) - 80000;
+    const semGR = lugaresF.filter(l => l.cod !== 'GR');
+    const gMin = semGR.length ? Math.min(...semGR.map(l => l.fundo)) : fMin;
+    lugaresF.forEach(l => {
+      l.cx = meioX + ((l.lado - 0.5) / spanLado) * meiaLargura;
+      l.top = l.cod === 'GR'
+        ? yMax
+        : yDefesa - ((l.fundo - gMin) / ((fMax - gMin) || 1)) * (yDefesa - yMin);
+    });
+    // Caixas na mesma linha não se podem tocar: encolhem até caberem.
+    lugaresF.forEach(l => {
+      const vizinhos = lugaresF.filter(o => o !== l && Math.abs(o.top - l.top) < alturaMolde);
+      const dist = vizinhos.length ? Math.min(...vizinhos.map(o => Math.abs(o.cx - l.cx))) : Infinity;
+      l.w = Math.min(larguraMolde, dist - 40000);
+    });
+    lugares = lugaresF.map(l => {
+      if (moldeEscudo) {
+        const e = extentDe(moldeEscudo.getElementsByTagNameNS(WP_NS, 'anchor')[0]);
+        paragrafo.appendChild(mexer(moldeEscudo.cloneNode(true), l.cx - e.cx / 2, l.top - e.cy - 15000, e.cx, e.cy, `Escudo ${l.cod}`));
+      }
+      const run = mexer(moldeCaixa.cloneNode(true), l.cx - l.w / 2, l.top, l.w, alturaMolde, `Caixa ${l.cod}`);
+      paragrafo.appendChild(run);
+      return { cod: l.cod, caixa: run.getElementsByTagNameNS(W_NS, 'txbxContent')[0], cx: l.cx };
+    });
+  }
+
+  // Cada jogador num só lugar.
+  const presentes = new Set(lugares.map(l => l.cod));
+  const destino = (p) => {
+    if (presentes.has(p.position)) return { cod: p.position, fora: false };
+    if (p.secondaryPosition && presentes.has(p.secondaryPosition)) return { cod: p.secondaryPosition, fora: true };
+    const alt = (PROXIMAS[p.position] || []).find(c => presentes.has(c));
+    return alt ? { cod: alt, fora: true } : null;
+  };
+  const porCodigo = new Map();
+  ativos.forEach(p => {
+    const d = destino(p);
+    if (!d) return;
+    if (!porCodigo.has(d.cod)) porCodigo.set(d.cod, []);
+    porCodigo.get(d.cod).push({ p, fora: d.fora });
+  });
+  const escreverCaixa = (conteudo, linhas) => {
+    const ps = [...conteudo.childNodes].filter(n => n.localName === 'p');
+    const molde = ps[0];
+    const pPr = molde ? filho(molde, 'pPr') : null;
+    const rPrBase = (() => {
+      const r0 = molde ? [...molde.getElementsByTagNameNS(W_NS, 'r')][0] : null;
+      const rp = (r0 && filho(r0, 'rPr')) || (pPr && filho(pPr, 'rPr'));
+      if (!rp) return null;
+      const c0 = rp.cloneNode(true);
+      [...c0.childNodes].forEach(n => { if (['b', 'bCs', 'color'].includes(n.localName)) c0.removeChild(n); });
+      return c0;
+    })();
+    ps.forEach(p => conteudo.removeChild(p));
+    (linhas.length ? linhas : [{ t: '–', fora: false }]).forEach(l => {
+      const p = modelo.createElementNS(W_NS, 'w:p');
+      if (pPr) p.appendChild(pPr.cloneNode(true));
+      const r = modelo.createElementNS(W_NS, 'w:r');
+      const rp = rPrBase ? rPrBase.cloneNode(true) : modelo.createElementNS(W_NS, 'w:rPr');
+      if (l.fora) rp.appendChild(modelo.createElementNS(W_NS, 'w:i'));
+      r.appendChild(rp);
+      const t = modelo.createElementNS(W_NS, 'w:t');
+      t.setAttribute('xml:space', 'preserve'); t.textContent = l.t;
+      r.appendChild(t); p.appendChild(r); conteudo.appendChild(p);
+    });
+  };
+  const grupos = new Map();
+  lugares.forEach(l => { if (!grupos.has(l.cod)) grupos.set(l.cod, []); grupos.get(l.cod).push(l); });
+  grupos.forEach((lista, cod) => {
+    // Da esquerda para a direita, para a repartição ser previsível.
+    const ordem = lista.every(l => l.cx != null) ? [...lista].sort((a, b) => a.cx - b.cx) : lista;
+    const jogadores = [...(porCodigo.get(cod) || [])].sort((a, b) => (a.fora - b.fora) || (nivelAtual(b.p) - nivelAtual(a.p)) || ((Number(a.p.number) || 99) - (Number(b.p.number) || 99)));
+    ordem.forEach((lugar, j) => {
+      const k = ordem.length;
+      const linhas = jogadores.filter((_, i) => i % k === j).map(x => ({ t: x.fora ? `${rotulo(x.p)} (${x.p.position || '?'})` : rotulo(x.p), fora: x.fora }));
+      const caixa = lugar.caixa;
+      escreverCaixa(caixa, linhas);
       // A mesma caixa na versão de recurso (programas antigos), se houver.
-      let alt = caixa.parentNode; while (alt && !(alt.localName === 'AlternateContent' && alt.namespaceURI === MC_NS)) alt = alt.parentNode;
+      const alt = subirAte(caixa.parentNode, 'AlternateContent', MC_NS);
       const fb = alt && [...alt.childNodes].find(n => n.localName === 'Fallback');
       const gemea = fb && fb.getElementsByTagNameNS(W_NS, 'txbxContent')[0];
-      if (gemea) escreverCaixa(gemea);
+      if (gemea) escreverCaixa(gemea, linhas);
       // Altura da caixa para caberem os nomes (o Word não a recalcula ao abrir).
-      const wsp = (() => { let n = caixa.parentNode; while (n && !(n.localName === 'wsp' && n.namespaceURI === WPS_NS)) n = n.parentNode; return n; })();
+      const wsp = subirAte(caixa.parentNode, 'wsp', WPS_NS);
       if (wsp) {
         const bodyPr = wsp.getElementsByTagNameNS(WPS_NS, 'bodyPr')[0];
         const ins = bodyPr ? (Number(bodyPr.getAttribute('tIns')) || 45720) + (Number(bodyPr.getAttribute('bIns')) || 45720) : 91440;
         const precisa = ins + Math.max(1, linhas.length) * LINHA_EMU;
         const ext = wsp.getElementsByTagNameNS(A_NS, 'ext')[0];
         if (ext && Number(ext.getAttribute('cy')) < precisa) ext.setAttribute('cy', String(precisa));
-        let anc = wsp.parentNode; while (anc && !(anc.localName === 'anchor' && anc.namespaceURI === WP_NS)) anc = anc.parentNode;
+        const anc = subirAte(wsp.parentNode, 'anchor', WP_NS);
         const ex = anc && [...anc.childNodes].find(n => n.localName === 'extent');
         if (ex && Number(ex.getAttribute('cy')) < precisa) ex.setAttribute('cy', String(precisa));
       }
     });
   });
-
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
+  await carimbarMarcaWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
@@ -8540,7 +8817,7 @@ function GerarOrganizacaoPlantelForm({ doc, players, matches, epoca, onClose }) 
         {ativos.length} jogador{ativos.length === 1 ? '' : 'es'} do plantel (os que já saíram ficam de fora), na tabela e no campo pelas posições.
       </div>
       <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
-        Av. Ini, Int e Final: o Nível atual de cada fase do Estatuto na época {epoca || ''}. No campo, (s) é quem tem essa posição como secundária.
+        Av. Ini, Int e Final: o Nível atual de cada fase do Estatuto na época {epoca || ''}. No campo, com a estrutura principal: cada jogador aparece uma vez; quem não tem lugar na sua posição vai para a secundária ou para a mais próxima, em itálico e com a posição dele entre parênteses.
       </div>
       <div style={{ ...FIELD_GRID, marginTop: 12 }}>
         <Field label="Estrutura principal"><Input value={principal} onChange={e => setPrincipal(e.target.value)} placeholder="Ex.: 1-4-3-3" /></Field>
