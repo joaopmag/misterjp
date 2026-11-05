@@ -16068,7 +16068,7 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 const PITCH_TARGET_VH = 86;
 // Altura (px) do que rodeia o campo na janela da apresentação: cabeçalho
 // da janela, etiquetas, descrição e a linha dos controlos por baixo.
-const CHROME_APRESENTACAO_PX = 330;
+const CHROME_APRESENTACAO_PX = 215;
 // Altura de tudo o que rodeia o campo no editor (computador): cores,
 // ferramentas, dica, linha das animações, painel do selecionado e marca.
 // O campo fica com o resto do ecrã: tudo à vista sem scroll.
@@ -21331,7 +21331,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const restart = () => { stop(); setTimeout(start, 30); };
 
   // Enquadramento da apresentação: o do editor (sem bancos), nas duas vistas.
-  const vbApresentacao = exercise.diagram && exercise.diagram.vista === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX;
+  const vistaMeio = !!(exercise.diagram && exercise.diagram.vista === 'meio');
+  const vbApresentacao = vistaMeio ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX;
   const vbNums = vbApresentacao.split(' ').map(Number);
   return (
     <Modal title={exercise.name} onClose={onClose} wide xwide fullPage>
@@ -21391,9 +21392,14 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           </VistaCampo>
           {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
               inteiro e aparece também quando se guarda a imagem. */}
+          {/* Fora das quatro linhas: no campo inteiro, na margem por baixo
+              da linha lateral (antes da bandeirola); no meio-campo, ao
+              alto, na margem do lado direito. */}
           <text
-            x={vbNums[0] + vbNums[2] - vbNums[3] * 0.025} y={vbNums[1] + vbNums[3] - vbNums[3] * 0.025}
-            textAnchor="end" fontSize={(vbNums[3] * 0.031).toFixed(2)} fill="#ffffff55"
+            {...(vistaMeio
+              ? { x: vbNums[0] + vbNums[2] - 1.4, y: vbNums[1] + vbNums[3] - 1, transform: `rotate(-90 ${vbNums[0] + vbNums[2] - 1.4} ${vbNums[1] + vbNums[3] - 1})`, textAnchor: 'start', fontSize: 1.9 }
+              : { x: 103, y: vbNums[1] + vbNums[3] - 0.9, textAnchor: 'end', fontSize: 2 })}
+            fill="#ffffff55"
             style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.08em', pointerEvents: 'none' }}
           >™ Mister JP</text>
         </svg>
@@ -38911,8 +38917,10 @@ function PlayerTreinoView({ code, teamId, onBack }) {
                 {/* O texto encosta ao campo: o espaço que sobra num cartão com
                     título mais curto fica por cima, e campos e textos ficam
                     todos alinhados entre cartões. */}
+                {/* Título em cima, sempre com o espaço de duas linhas (mesmo
+                    curto), para os títulos ficarem todos à mesma altura. */}
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, lineHeight: 1.35, minHeight: '2.7em', marginBottom: 6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.name || 'Exercício'}</div>
                 <div style={{ marginTop: 'auto' }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || 'Exercício'}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
                   {x.phase && (
                     <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{momentoTexto(x)}</span>
