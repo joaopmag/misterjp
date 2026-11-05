@@ -38894,7 +38894,9 @@ function PlayerTreinoView({ code, teamId, onBack }) {
               <div
                 key={x.id || i}
                 onClick={() => setAVer(x)}
-                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
+                // Coluna: o campo vai para o fundo do cartão, para os campos
+                // ficarem todos à mesma altura (com títulos de 1 ou 2 linhas).
+                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
               >
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || 'Exercício'}</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
@@ -38908,7 +38910,10 @@ function PlayerTreinoView({ code, teamId, onBack }) {
                 {x.description && (
                   <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.description}</p>
                 )}
-                <DiagramThumb diagram={x.diagram} />
+                {/* Com ▶ no canto para ver a animação ali mesmo, no cartão. */}
+                <div style={{ marginTop: 'auto', paddingTop: 4 }}>
+                  <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} />
+                </div>
               </div>
             ))}
           </div>
