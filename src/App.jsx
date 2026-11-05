@@ -19594,7 +19594,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     imprimirComNome([exerciseInfo?.name, exerciseInfo?.phase].filter(Boolean).join(' · '));
   };
   const clearAll = () => {
-    commit({ elements: [], arrows: [], sequence: [] });
+    // Limpa os itens, mas mantém a vista (meio-campo fica em meio-campo) e
+    // o que se mostra nos círculos (Posição / Nº / Cor).
+    commit({ elements: [], arrows: [], sequence: [], ...(value && value.vista ? { vista: value.vista } : {}), ...(value && value.rotulos ? { rotulos: value.rotulos } : {}) });
     setSelectedId(null);
     setSelectedArrowId(null);
     if (onClearAll) onClearAll();
