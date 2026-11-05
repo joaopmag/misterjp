@@ -4698,7 +4698,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 ref={documentosRef}
                 documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions}
                 matches={matches} clinico={clinico} teamId={teamId} semBotaoTopo epoca={season && season.name}
-                convocatorias={convocatorias} adversarios={adversarios}
+                convocatorias={convocatorias} adversarios={adversarios} scouting={scouting}
                 clube={String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim()}
                 escalao={String((equipaAtiva && equipaAtiva.escalao) || '').trim()}
               />
@@ -8293,7 +8293,7 @@ function definirAlturaDaLinha(sheetXml, linha, pontos) {
   return sheetXml.replace(re, `<row r="${linha}"${attrs} ht="${pontos}" customHeight="1"${m[2]}>`);
 }
 
-async function preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, convocatorias, adversarios, clube, escalao }) {
+async function preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, convocatorias, adversarios, scouting, clube, escalao }) {
   const folhas = await folhasDoLivro(zip);
   const hoje = new Date().toISOString().slice(0, 10);
   const plano = planoDosRelatorios(matches, new Set(Object.keys(folhas)), hoje);
@@ -8319,8 +8319,10 @@ async function preencherRelatoriosJornadas(zip, { players, matches, sessions, cl
       x = x.replace(new RegExp(`<c r="${ref}"( s="(\\d+)")?`), (all, _a, sId) => `<c r="${ref}" s="${estilos.obter(sId || 0)}"`);
       return linhasDoTexto(t, porLinha);
     };
+    // 13 pontos por linha de texto (letra 9 com o espaço entre linhas) e
+    // nunca acima de 409, o máximo que o Excel aceita numa linha.
     const crescer = (linha, nLinhas, minimo) => {
-      if (nLinhas > 0) x = definirAlturaDaLinha(x, linha, Math.max(minimo, Math.ceil(nLinhas * 12 + 6)));
+      if (nLinhas > 0) x = definirAlturaDaLinha(x, linha, Math.min(409, Math.max(minimo, Math.ceil(nLinhas * 13 + 8))));
     };
 
     texto('C4', conv && conv.treinador);
@@ -8367,11 +8369,18 @@ async function preencherRelatoriosJornadas(zip, { players, matches, sessions, cl
     // Observações gerais: a análise do jogo (Jogos › Relatórios), todas
     // as entradas, uma por parágrafo.
     const notas = notasDoJogo(m).map(nt => String(nt.texto || '').trim()).filter(Boolean);
-    crescer(44, textoLongo('A44', notas.join('\n'), 160), 26.25);
+    crescer(44, textoLongo('A44', notas.join('\n'), 150), 26.25);
     if (ficha) {
-      const nF = textoLongo('A64', ficha.pontosFortes, 85);
-      const nP = textoLongo('I64', ficha.pontosFracos, 72);
+      const nF = textoLongo('A64', ficha.pontosFortes, 78);
+      const nP = textoLongo('I64', ficha.pontosFracos, 66);
       crescer(64, Math.max(nF, nP), 40.5);
+      // Melhores jogadores: os jogadores-chave da ficha do adversário
+      // (Scouting), um por linha: "nº Nome (posição)".
+      const chave = (ficha.jogadoresChaveIds || [])
+        .map(id => (scouting || []).find(j => j && j.id === id))
+        .filter(j => j && String(j.name || '').trim())
+        .map(j => [j.camisola ? String(j.camisola).trim() : '', String(j.name).trim(), j.position ? `(${j.position})` : ''].filter(Boolean).join(' '));
+      crescer(66, textoLongo('I66', chave.join('\n'), 66), 39.75);
     }
     zip.file(caminho, x);
   }
@@ -9348,7 +9357,7 @@ function GerarFichasIndividuaisForm({ doc, players, epoca, onClose }) {
     </div>
   );
 }
-const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo, epoca, convocatorias, adversarios, clube, escalao }, ref) {
+const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo, epoca, convocatorias, adversarios, scouting, clube, escalao }, ref) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
@@ -9503,7 +9512,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                 <GerarWordForm doc={doc} players={players} matches={matches} epoca={epoca} setDocumentos={setDocumentos} onClose={() => setAGerar(null)} />
               )}
               {aGerar === doc.id && !/\.docx$/i.test(doc.fileName) && (
-                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} convocatorias={convocatorias} adversarios={adversarios} clube={clube} escalao={escalao} onClose={() => setAGerar(null)} />
+                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} convocatorias={convocatorias} adversarios={adversarios} scouting={scouting} clube={clube} escalao={escalao} onClose={() => setAGerar(null)} />
               )}
             </div>
           ))}
@@ -9621,7 +9630,7 @@ function anoDoMesNaEpoca(mes, anoInicioEpoca) {
   return mes >= 7 ? anoInicioEpoca : anoInicioEpoca + 1;
 }
 
-function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, convocatorias, adversarios, clube, escalao, onClose }) {
+function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, convocatorias, adversarios, scouting, clube, escalao, onClose }) {
   const agora = new Date();
   // Ano em que a época atual começou: se estamos entre Agosto e
   // Dezembro a época começou este ano civil, senão começou no anterior.
@@ -9665,7 +9674,7 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, c
       // fórmula) e nas linhas P/F/L/E da própria ficha.
       const ordenados = sortByPosition(players);
       const mesesEAnos = mesesOrdenados.map(mes => ({ mes, ano: anoDoMesNaEpoca(mes, anoInicioEpoca) }));
-      const relatorios = comRelatorios ? { convocatorias, adversarios, clube, escalao } : null;
+      const relatorios = comRelatorios ? { convocatorias, adversarios, scouting, clube, escalao } : null;
       const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, matches, clinico, mesesEAnos, anoInicioEpoca, relatorios);
 
       const url = URL.createObjectURL(blob);
