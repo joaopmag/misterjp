@@ -12125,6 +12125,183 @@ function fmtDate(d) {
 /* ---------------------------------------------------------------
    PLANTEL
 ---------------------------------------------------------------- */
+/* RECUPERAR JOGADORES APAGADOS (e o histórico que foi com eles).
+
+   Apagar um jogador apaga também o rasto dele (ver limparRastoDoJogador):
+   tira-o das listas dos treinos, jogos e convocatórias e apaga as linhas de
+   bem-estar, clínico e desenvolvimento. O `audit_log` do Supabase guarda a
+   cópia de cada registo ANTES de cada alteração/eliminação — é daí que se
+   recupera:
+   · o próprio jogador (a cópia apagada, com a foto);
+   · nos treinos, jogos e convocatórias editados pela limpeza (até 5 min
+     depois de apagar), volta a pôr SÓ a parte dele — presenças, faltas,
+     lesionado, convocado, titular, lugar no alinhamento, avaliações e o
+     relatório do jogo — por cima do registo ATUAL (o que se mudou depois
+     nesses registos fica como está);
+   · as linhas de bem-estar, clínico e desenvolvimento dele apagadas nessa
+     limpeza.
+   O jogador volta com "Data de saída" (por defeito o dia em que foi
+   apagado), para o histórico ficar e ele não contar como ativo. Antes de
+   gravar mostra o que vai repor. */
+const RECUP_LISTAS = {
+  sessions: ['attendance', 'faltas', 'lesionados', 'escalao'],
+  matches: ['convocados', 'attendance', 'faltas', 'lesionados', 'escalao', 'starters'],
+  convocatorias: ['convocados'],
+};
+const RECUP_MAPAS = { sessions: ['ratings'], matches: ['ratings', 'report'], convocatorias: [] };
+const dadosDoAudit = (x) => (x && typeof x === 'object' && 'data' in x && 'id' in x ? x.data : x);
+function reporJogadorNoRegisto(tabela, atual, antigo, pid) {
+  if (!atual || !antigo) return null;
+  let novo = atual; let mud = false;
+  RECUP_LISTAS[tabela].forEach(k => {
+    const a = antigo[k]; const c = atual[k];
+    if (Array.isArray(a) && a.includes(pid) && !(Array.isArray(c) && c.includes(pid))) {
+      novo = { ...novo, [k]: [...(Array.isArray(c) ? c : []), pid] }; mud = true;
+    }
+  });
+  RECUP_MAPAS[tabela].forEach(k => {
+    const a = antigo[k]; const c = (atual[k] && typeof atual[k] === 'object') ? atual[k] : {};
+    if (a && typeof a === 'object' && Object.prototype.hasOwnProperty.call(a, pid) && !Object.prototype.hasOwnProperty.call(c, pid)) {
+      novo = { ...novo, [k]: { ...c, [pid]: a[pid] } }; mud = true;
+    }
+  });
+  if (tabela === 'matches' && Array.isArray(antigo.alinhamento) && Array.isArray(atual.alinhamento)) {
+    const al = atual.alinhamento.map((x, i) => ((x == null && antigo.alinhamento[i] === pid) ? pid : x));
+    if (JSON.stringify(al) !== JSON.stringify(atual.alinhamento)) { novo = { ...novo, alinhamento: al }; mud = true; }
+  }
+  return mud ? novo : null;
+}
+
+function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches, setConvocatorias, monitoring = [], setMonitoring, clinico = [], setClinico, desenvolvimento = [], setDesenvolvimento, onClose }) {
+  const [lista, setLista] = useState(null); // null = a carregar
+  const [erro, setErro] = useState('');
+  const [escolhido, setEscolhido] = useState(null); // { pid, em, dados }
+  const [plano, setPlano] = useState(null); // o que vai repor
+  const [saida, setSaida] = useState('');
+  const [aGravar, setAGravar] = useState(false);
+  const [feito, setFeito] = useState('');
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      await ensureSession();
+      const r = await supabase.from('audit_log')
+        .select('record_id, changed_at, old_data')
+        .eq('table_name', 'players').ilike('action', 'del%')
+        .order('changed_at', { ascending: false }).limit(60);
+      if (cancelado) return;
+      if (r.error) { setErro('Não consegui ler o histórico do Supabase.'); setLista([]); return; }
+      const atuais = new Set((players || []).map(p => p.id));
+      const vistos = new Set();
+      setLista((r.data || []).filter(x => {
+        if (atuais.has(x.record_id) || vistos.has(x.record_id)) return false;
+        vistos.add(x.record_id); return true;
+      }).map(x => ({ pid: x.record_id, em: x.changed_at, dados: dadosDoAudit(x.old_data) || {} })));
+    })();
+    return () => { cancelado = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const escolher = async (item) => {
+    setEscolhido(item); setPlano(null); setFeito(''); setErro('');
+    setSaida(String(item.em || '').slice(0, 10));
+    const t0 = new Date(item.em); const t1 = new Date(t0.getTime() + 5 * 60000);
+    const ed = await supabase.from('audit_log')
+      .select('table_name, record_id, changed_at, old_data')
+      .in('table_name', ['sessions', 'matches', 'convocatorias']).ilike('action', 'upd%')
+      .gte('changed_at', t0.toISOString()).lte('changed_at', t1.toISOString())
+      .order('changed_at', { ascending: true }).limit(2000);
+    const ap = await supabase.from('audit_log')
+      .select('table_name, record_id, changed_at, old_data')
+      .in('table_name', ['monitoring', 'clinico', 'desenvolvimento']).ilike('action', 'del%')
+      .gte('changed_at', t0.toISOString()).lte('changed_at', t1.toISOString())
+      .order('changed_at', { ascending: true }).limit(5000);
+    if (ed.error || ap.error) { setErro('Não consegui ler o histórico do Supabase.'); return; }
+    const antigos = { sessions: new Map(), matches: new Map(), convocatorias: new Map() };
+    (ed.data || []).forEach(x => {
+      const od = dadosDoAudit(x.old_data);
+      // A cópia MAIS ANTIGA da janela é a de antes da limpeza.
+      if (od && !antigos[x.table_name].has(x.record_id) && JSON.stringify(od).includes(item.pid)) antigos[x.table_name].set(x.record_id, od);
+    });
+    const linhas = { monitoring: [], clinico: [], desenvolvimento: [] };
+    const jaHa = { monitoring: new Set(monitoring.map(x => x.id)), clinico: new Set(clinico.map(x => x.id)), desenvolvimento: new Set(desenvolvimento.map(x => x.id)) };
+    (ap.data || []).forEach(x => {
+      const od = dadosDoAudit(x.old_data);
+      if (od && od.playerId === item.pid && !jaHa[x.table_name].has(x.record_id)) linhas[x.table_name].push({ ...od, id: x.record_id });
+    });
+    setPlano({ antigos, linhas });
+  };
+
+  const recuperar = () => {
+    if (!escolhido || !plano || aGravar) return;
+    setAGravar(true);
+    const { pid, dados } = escolhido;
+    setPlayers(prev => (prev.some(p => p.id === pid) ? prev : [...prev, { ...dados, id: pid, exitDate: saida || dados.exitDate || '' }]));
+    const aplicar = (tabela, setter) => {
+      if (!setter || !plano.antigos[tabela].size) return;
+      setter(prev => prev.map(reg => {
+        const a = plano.antigos[tabela].get(reg.id);
+        return a ? (reporJogadorNoRegisto(tabela, reg, a, pid) || reg) : reg;
+      }));
+    };
+    aplicar('sessions', setSessions); aplicar('matches', setMatches); aplicar('convocatorias', setConvocatorias);
+    const juntar = (setter, novas) => { if (setter && novas.length) setter(prev => { const ids = new Set(prev.map(x => x.id)); return [...prev, ...novas.filter(x => !ids.has(x.id))]; }); };
+    juntar(setMonitoring, plano.linhas.monitoring); juntar(setClinico, plano.linhas.clinico); juntar(setDesenvolvimento, plano.linhas.desenvolvimento);
+    setFeito(`${itemLabel(dados, 'Jogador')} recuperado, com o histórico.`);
+    setLista(l => (l || []).filter(x => x.pid !== pid));
+    setEscolhido(null); setPlano(null); setAGravar(false);
+  };
+
+  const n = (m) => (m ? m.size : 0);
+  return (
+    <Modal title="Recuperar jogadores apagados" onClose={onClose}>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.55, marginBottom: 14 }}>
+        Volta a pôr o jogador e o histórico que foi apagado com ele (treinos, jogos, convocatórias,
+        bem-estar, clínico e desenvolvimento). Fica com "Data de saída", para o histórico contar e ele não
+        aparecer como ativo.
+      </div>
+      {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 10 }}>{erro}</div>}
+      {feito && <div style={{ fontSize: 12.5, color: T.good || T.warn, marginBottom: 10 }}>{feito}</div>}
+      {lista === null ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><Loader2 className="animate-spin" color={T.warn} size={20} /></div>
+      ) : !lista.length ? (
+        <div style={{ fontSize: 13, color: T.mutedDim }}>Não há jogadores apagados para recuperar.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lista.map(x => (
+            <button key={x.pid} type="button" onClick={() => escolher(x)}
+              style={{ textAlign: 'left', background: escolhido && escolhido.pid === x.pid ? T.surface2 || T.surface : T.surface, border: `1px solid ${escolhido && escolhido.pid === x.pid ? T.warn : T.line}`, borderRadius: 8, padding: '10px 12px', color: T.cream, cursor: 'pointer', fontFamily: 'inherit' }}>
+              <div style={{ fontWeight: 500, fontSize: 14 }}>{String(x.dados.name || 'Jogador').trim()}{x.dados.position ? ` · ${x.dados.position}` : ''}</div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Apagado a {fmtDate(String(x.em).slice(0, 10))}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {escolhido && (
+        <div style={{ marginTop: 16, borderTop: `1px solid ${T.line}`, paddingTop: 14 }}>
+          {!plano ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}><Loader2 className="animate-spin" color={T.warn} size={18} /></div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: T.cream, marginBottom: 8 }}>Vai repor:</div>
+              <div style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.7, marginBottom: 12 }}>
+                {n(plano.antigos.sessions)} treinos · {n(plano.antigos.matches)} jogos · {n(plano.antigos.convocatorias)} convocatórias
+                {' · '}{plano.linhas.monitoring.length} de bem-estar · {plano.linhas.clinico.length} do boletim clínico · {plano.linhas.desenvolvimento.length} de desenvolvimento
+              </div>
+              <Field label="Data de saída do clube (vazio = continua no plantel)">
+                <Input type="date" value={saida} onChange={e => setSaida(e.target.value)} />
+              </Field>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <Btn variant="ghost" onClick={() => { setEscolhido(null); setPlano(null); }}>Cancelar</Btn>
+                <Btn onClick={recuperar} disabled={aGravar}><RotateCcw size={14} /> Recuperar</Btn>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [], autorizarApagarRasto }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [modalVoltarPerfil, setModalVoltarPerfil] = useState(false); // true só quando abriu a partir do perfil
@@ -12181,6 +12358,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
      isso o rasto só se limpa depois de a janela de anulação passar. Sem
      isso, anular deixava o jogador de volta e o histórico dele apagado,
      que é pior do que qualquer um dos dois estados. */
+  const [recuperarAberto, setRecuperarAberto] = useState(false);
   const remove = (id) => {
     const jogador = players.find(x => x.id === id);
     if (!jogador) return;
@@ -12199,7 +12377,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
     askConfirm({
       label: itemLabel(jogador, 'Jogador'),
       note: partes.length
-        ? `Apaga também o histórico dele: ${partes.join(', ')}. Podes anular durante alguns segundos.`
+        ? `Apaga também o histórico dele: ${partes.join(', ')}. Se o jogador SAIU DO CLUBE, não apagues: edita-o e preenche a "Data de saída" — o histórico fica. Podes anular durante alguns segundos.`
         : undefined,
       onConfirm: () => {
         setPlayers(prev => prev.filter(x => x.id !== id));
@@ -12316,7 +12494,21 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
       {statsFor ? null : (
         <>
       <SectionHeader title="Plantel" subtitle={`${players.length} jogador${players.length === 1 ? '' : 'es'} inscrito${players.length === 1 ? '' : 's'}`}
-        action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar jogador</Btn>} />
+        action={(
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Btn variant="ghost" onClick={() => setRecuperarAberto(true)}><RotateCcw size={14} /> Recuperar apagados</Btn>
+            <Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar jogador</Btn>
+          </div>
+        )} />
+      {recuperarAberto && (
+        <RecuperarJogadoresModal
+          players={players} setPlayers={setPlayers}
+          setSessions={setSessions} setMatches={setMatches} setConvocatorias={setConvocatorias}
+          monitoring={monitoring} setMonitoring={setMonitoring} clinico={clinico} setClinico={setClinico}
+          desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
+          onClose={() => setRecuperarAberto(false)}
+        />
+      )}
 
       {players.length === 0 ? (
         <EmptyState text="O plantel está vazio." action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
