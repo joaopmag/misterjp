@@ -13472,7 +13472,7 @@ function Exercicios({ exercises, setExercises, meta }) {
             />
           ) : (
             <svg viewBox={viewBoxSemBancos(printExercise.diagram && printExercise.diagram.vista)} style={{ width: '100%', aspectRatio: aspetoSemBancos(printExercise.diagram && printExercise.diagram.vista), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-              <VistaCampo vista={printExercise.diagram && printExercise.diagram.vista}>
+              <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={printExercise.diagram && printExercise.diagram.vista}>
               <PitchMarkings printMode semBancos />
               <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
@@ -13595,7 +13595,7 @@ function IdeiaNoDossier({ ideia, numero }) {
                 background: '#fff', border: '1px solid #ccc', borderRadius: 6,
               }}
             >
-              <VistaCampo vista={ideia.diagram && ideia.diagram.vista}>
+              <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={ideia.diagram && ideia.diagram.vista}>
               <PitchMarkings printMode semBancos />
               <SpaceZonesReadOnly diagram={ideia.diagram} printMode />
               <DiagramElements elements={p.elements} arrows={p.arrows} interactive={false} printMode />
@@ -14610,7 +14610,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
             <strong>Fase de jogo:</strong> {momentoTexto(printIdeia)}
           </div>
           <svg viewBox={viewBoxSemBancos(printIdeia.diagram && printIdeia.diagram.vista)} style={{ width: '100%', aspectRatio: aspetoSemBancos(printIdeia.diagram && printIdeia.diagram.vista), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-            <VistaCampo vista={printIdeia.diagram && printIdeia.diagram.vista}>
+            <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={printIdeia.diagram && printIdeia.diagram.vista}>
             <PitchMarkings printMode semBancos />
             <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
             <DiagramElements
@@ -16002,6 +16002,18 @@ function viewBoxSemBancos(vista) {
   return `${(35 - w / 2).toFixed(3)} ${v0} ${w.toFixed(3)} ${h.toFixed(3)}`;
 }
 function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
+/* LINHAS LATERAIS ALARGADAS NO MEIO-CAMPO (impressões, partilhar, vista
+   da sessão e cartões). O meio-campo é mais "quadrado" do que a caixa do
+   campo inteiro: para a caixa ficar do mesmo tamanho, com a linha do
+   meio-campo à vista E as linhas laterais junto às bordas, o desenho do
+   campo estica-se na largura (linhas, zonas, setas e as POSIÇÕES dos
+   itens). Os ícones NÃO esticam (ver `useContraEsticar`): ficam redondos.
+   O fator leva as linhas laterais até à mesma folga do campo inteiro. */
+const ESTICAR_IMPRESSAO_MEIO = (() => {
+  const h = 53.5 + 0.9 + 2.1;
+  const w = h * EDITOR_BOX.w / EDITOR_BOX.h;
+  return (w / 2 - EDITOR_MARGEM) / 34;
+})();
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
@@ -16014,17 +16026,34 @@ const CARTAO_MEIO_V0 = -1.8;
 const CARTAO_MEIO_H = 53.5 + 0.6 - CARTAO_MEIO_V0;
 const CARTAO_MEIO_W = CARTAO_MEIO_H * 111.6 / 71.2;
 const CARTAO_VIEWBOX_MEIO = `${(35 - CARTAO_MEIO_W / 2).toFixed(3)} ${CARTAO_MEIO_V0} ${CARTAO_MEIO_W.toFixed(3)} ${CARTAO_MEIO_H.toFixed(3)}`;
+// Linhas laterais no cartão com a folga do campo inteiro no cartão (1,6).
+const ESTICAR_CARTAO_MEIO = (CARTAO_MEIO_W / 2 - 1.6) / 34;
 const CARTAO_ASPECT = '111.6 / 71.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 function aspetoCartao() { return CARTAO_ASPECT; }
 const VistaCampoCtx = React.createContext('completo');
-function VistaCampo({ vista, gRef, children }) {
+const VistaEsticarCtx = React.createContext(1);
+// `esticar` (só no meio-campo): alarga o campo na largura do ecrã (o eixo y
+// do campo) à volta do centro (y 35). Ver ESTICAR_IMPRESSAO_MEIO.
+function VistaCampo({ vista, gRef, children, esticar = 1 }) {
   const v = vista === 'meio' ? 'meio' : 'completo';
+  const k = v === 'meio' && esticar && esticar !== 1 ? esticar : 1;
+  const t = v === 'meio'
+    ? (k !== 1 ? `${VISTA_MEIO_TRANSFORM} translate(0 35) scale(1 ${k.toFixed(4)}) translate(0 -35)` : VISTA_MEIO_TRANSFORM)
+    : undefined;
   return (
     <VistaCampoCtx.Provider value={v}>
-      <g ref={gRef} transform={v === 'meio' ? VISTA_MEIO_TRANSFORM : undefined}>{children}</g>
+      <VistaEsticarCtx.Provider value={k}>
+        <g ref={gRef} transform={t}>{children}</g>
+      </VistaEsticarCtx.Provider>
     </VistaCampoCtx.Provider>
   );
+}
+// Desfaz o esticar num ícone (à volta da sua posição): o sítio estica com o
+// campo, o desenho do ícone não. Sem esticar, não mexe em nada.
+function useContraEsticar() {
+  const k = React.useContext(VistaEsticarCtx);
+  return k === 1 ? () => undefined : (x, y) => `translate(0 ${y}) scale(1 ${(1 / k).toFixed(4)}) translate(0 ${-y})`;
 }
 // Rotação que mantém um texto direito na vista vertical (à volta de cx, cy).
 function useRodarTexto() {
@@ -17196,6 +17225,7 @@ function iconScaleForPhase(phase, diagram) {
 function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode, iconScale = 1 }) {
   const k = iconScale || 1;
   const rodarTexto = useRodarTexto();
+  const contraEsticar = useContraEsticar();
   // Enquanto a ferramenta ativa é para colocar um novo item (jogador,
   // guarda-redes, bola, cone, baliza, estaca, técnico) ou desenhar uma
   // seta/linha, as áreas de toque dos elementos e das setas já colocadas
@@ -17289,7 +17319,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
 
         if (el.kind === 'cone') {
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.4" onPointerDown={handler} style={hitStyle} />}
               <polygon points={`${el.x},${el.y - 1.2} ${el.x - 1.1},${el.y + 1.0} ${el.x + 1.1},${el.y + 1.0}`} fill="#C4832F" style={{ pointerEvents: 'none' }} />
             </g>
@@ -17322,7 +17352,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
             netLines.push(<line key={`h${j}`} x1={-w / 2} y1={gy} x2={w / 2} y2={gy} stroke={corBaliza} strokeWidth="0.05" opacity={opRede} />);
           }
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {hitsEnabled && (
                 <rect x={-w / 2 - 0.4} y={-h / 2 - 0.4} width={w + 0.8} height={h + 0.8} transform={tr}
                   onPointerDown={handler} style={hitStyle} />
@@ -17340,7 +17370,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         }
         if (el.kind === 'stake') {
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {/* A área de toque cobre a estaca TODA (base e vara). Antes era só
                   um círculo na base: tocar na vara, que é o que se vê, não a
                   apanhava e a estaca parecia impossível de mexer. */}
@@ -17389,7 +17419,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const { size, linhas, alturaLinha, folgaY, w: boxW, h: boxH, cx: tx, topo } = textBoxMetrics(el);
           const fill = printMode ? '#1B1B1B' : '#F0E7D6';
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {hitsEnabled && (
                 <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH}
                   transform={rodarTexto(tx, topo + boxH / 2)}
@@ -17412,7 +17442,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           // Marcador do treinador: mais pequeno que um jogador e com o "T"
           // a preto — a dourado sobre fundo claro quase não se lia.
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.9 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 <circle cx={el.x} cy={el.y} r={1.5 * k} fill="#F0E7D6" stroke="#C9A227" strokeWidth={0.3 * k} />
@@ -17423,7 +17453,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         }
         if (el.kind === 'ball') {
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.8 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 <TriondaBall cx={el.x} cy={el.y} r={1.6 * k} />
@@ -17435,7 +17465,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const tm = teamInfo(el.team);
           const isKeeper = el.kind === 'keeper';
           return (
-            <g key={el.id} data-anim-id={el.id}>
+            <g key={el.id} data-anim-id={el.id} transform={contraEsticar(el.x, el.y)}>
               {/* A área de toque nunca encolhe abaixo do dedo: mesmo com os
                   ícones pequenos, continua a dar para agarrar e arrastar. */}
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(2.2 * k, 1.8)} onPointerDown={handler} style={hitStyle} />}
@@ -18098,7 +18128,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
   const pushFrame = (elements, holdMs, staticArrows = diagram.arrows || []) => {
     frames.push({
       svg: ReactDOMServer.renderToStaticMarkup(
-        <VistaCampo vista={diagram.vista}>
+        <VistaCampo vista={diagram.vista} esticar={cartao ? ESTICAR_CARTAO_MEIO : ESTICAR_IMPRESSAO_MEIO}>
           <PitchMarkings cartao={cartao} semBancos={!cartao} />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -20582,7 +20612,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
           <svg viewBox={viewBoxSemBancos(vistaCampo)} style={{ width: '100%', aspectRatio: aspetoSemBancos(vistaCampo), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-            <VistaCampo vista={vistaCampo}>
+            <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={vistaCampo}>
             <PitchMarkings printMode semBancos />
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
@@ -20690,7 +20720,7 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
       preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
       style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: aspetoCartao(diagram && diagram.vista) }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
     >
-      <VistaCampo vista={diagram && diagram.vista}>
+      <VistaCampo vista={diagram && diagram.vista} esticar={ESTICAR_CARTAO_MEIO}>
       <PitchMarkings cartao />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -26950,7 +26980,7 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
                                   background: '#fff', border: '1px solid #ccc', borderRadius: 6,
                                 }}
                               >
-                                <VistaCampo vista={ex.diagram && ex.diagram.vista}>
+                                <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={ex.diagram && ex.diagram.vista}>
                                 <PitchMarkings printMode semBancos />
                                 <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
                                 <DiagramElements
@@ -27664,7 +27694,7 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
         // que usam este mesmo diagrama (Ficha de Jogador, Prancheta)
         // ficam exatamente como estavam.
         <svg viewBox={viewBoxSemBancos(ex.diagram && ex.diagram.vista)} style={{ width: '82%', aspectRatio: aspetoSemBancos(ex.diagram && ex.diagram.vista), display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-          <VistaCampo vista={ex.diagram && ex.diagram.vista}>
+          <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={ex.diagram && ex.diagram.vista}>
           <PitchMarkings printMode semBancos />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           {(() => {
@@ -29273,7 +29303,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
-                        <VistaCampo vista={ex.diagram && ex.diagram.vista}>
+                        <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={ex.diagram && ex.diagram.vista}>
                         <PitchMarkings semBancos />
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         {(() => {
