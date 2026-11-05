@@ -15990,31 +15990,30 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
 /* SEM BANCOS (impressões, partilhar, ver a sessão): o enquadramento do
    editor e da apresentação — a mesma margem de relvado à volta toda, nas
    duas vistas. Os bancos de suplentes deixaram de existir no campo. */
-/* Meio-campo nas impressões, no partilhar e na vista da sessão: enche a
-   largura (3,5 m para lá das linhas laterais e atrás da baliza) e vai até
-   à linha do meio-campo, com o meio círculo à vista e 1,5 m de folga por
-   baixo. Por isso tem a sua própria proporção (um pouco mais alto que o
-   campo inteiro). */
-const SEM_BANCOS_BOX_MEIO = { x: -2.5, y: -2.5, w: 75, h: 57.5 };
+/* Meio-campo nas impressões, no partilhar e na vista da sessão: a MESMA
+   proporção do campo inteiro (caixas do mesmo tamanho lado a lado) e a
+   encher a largura (3,5 m para lá das linhas laterais e atrás da baliza).
+   O corte fica em baixo, uns metros antes da linha do meio-campo. */
 function viewBoxSemBancos(vista) {
   if (vista !== 'meio') return EDITOR_VIEWBOX;
-  const b = SEM_BANCOS_BOX_MEIO;
-  return `${b.x} ${b.y} ${b.w} ${b.h}`;
+  const w = 75;
+  const h = w * EDITOR_BOX.h / EDITOR_BOX.w;
+  return `-2.5 -2.5 ${w} ${h.toFixed(3)}`;
 }
-function aspetoSemBancos(vista) { const b = vista === 'meio' ? SEM_BANCOS_BOX_MEIO : EDITOR_BOX; return `${b.w} / ${b.h}`; }
+function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
    margem dos lados), para todos os cartões terem a mesma altura. */
 const CARTAO_VIEWBOX = '-2.3 -0.6 111.6 71.2';
-// Meio-campo no cartão: a mesma folga curta do campo inteiro à volta das
-// linhas (laterais u 1–69, baliza em cima, linha do meio-campo v 53,5),
-// para encher a largura; tem a sua própria proporção (mais alto).
-const CARTAO_VIEWBOX_MEIO = '-0.6 -2 71.2 56.2';
+// Meio-campo no cartão: a MESMA proporção do campo inteiro (cartões todos
+// do mesmo tamanho) e a encher a largura, com a folga curta do campo
+// inteiro à volta das linhas laterais (u 1–69) e da baliza. O corte fica
+// em baixo, uns metros antes da linha do meio-campo.
+const CARTAO_VIEWBOX_MEIO = `-0.6 -2 71.2 ${(71.2 * 71.2 / 111.6).toFixed(2)}`;
 const CARTAO_ASPECT = '111.6 / 71.2';
-const CARTAO_ASPECT_MEIO = '71.2 / 56.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
-function aspetoCartao(vista) { return vista === 'meio' ? CARTAO_ASPECT_MEIO : CARTAO_ASPECT; }
+function aspetoCartao() { return CARTAO_ASPECT; }
 const VistaCampoCtx = React.createContext('completo');
 function VistaCampo({ vista, gRef, children }) {
   const v = vista === 'meio' ? 'meio' : 'completo';
