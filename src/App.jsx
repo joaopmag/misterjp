@@ -4691,6 +4691,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 ref={documentosRef}
                 documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions}
                 matches={matches} clinico={clinico} teamId={teamId} semBotaoTopo epoca={season && season.name}
+                convocatorias={convocatorias} adversarios={adversarios}
+                clube={String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim()}
+                escalao={String((equipaAtiva && equipaAtiva.escalao) || '').trim()}
               />
             </div>
           </div>
@@ -8118,7 +8121,193 @@ async function carimbarMarcaExcel(zip) {
   }
 }
 
-async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos) {
+/* RELATÓRIOS DAS JORNADAS (o mesmo Excel da estatística da época).
+
+   O modelo tem uma folha por jornada: "Relatório Nª Jornada" (1ª fase,
+   1 a 30), "Relatório Nª Jornada (2ª fase)" (1 a 10) e "Relatório Nª
+   Jornada (PE)" (11 a 15). A folha ESTATÍSTICA TOTAL soma tudo por
+   fórmula, por isso basta preencher cada relatório.
+
+   Que folha recebe cada jogo: a COMPETIÇÃO diz a fase e o NÚMERO DA
+   JORNADA diz a folha. A competição oficial mais antiga da época é a 1ª
+   fase; a segunda (ou a que tiver "2ª fase", "prova extra", "manutenção",
+   "apuramento"… no nome) é a 2ª fase, que continua na PE a partir da 11ª.
+   Amigáveis e jogos ainda por jogar ficam de fora.
+
+   O que se escreve por jogo: cabeçalho (treinador, prova, escalão, data,
+   hora, local, nº do jogo, equipas e resultado), uma linha por atleta
+   (T1 a T4, convocado, titular, suplente utilizado, golos, assistências,
+   cartões, rendimento de 1 a 5 e minutos), o sistema usado, as notas da
+   equipa técnica e os pontos fortes e fracos da ficha do adversário. As
+   análises por fases do jogo ficam em branco para preencher à mão. */
+const PISTA_SEGUNDA_FASE = /(2\s*[ªaº.]?\s*fase|fase\s*2|segunda\s*fase|prova\s*extra|\bpe\b|manuten|apuramento|subida|descida|play.?off)/i;
+
+function numeroDaJornada(rotulo) {
+  const m = String(rotulo || '').match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// Chave de comparação de um nome de folha: sem acentos, sem espaços e
+// com "º" igual a "ª" ("1ª Jornada(2º fase)" e "3ª Jornada (2ª fase)"
+// têm grafias diferentes no próprio modelo).
+function chaveDaFolha(nome) {
+  return semAcentos(nome).replace(/º/g, 'ª').replace(/\s+/g, '');
+}
+
+async function folhasDoLivro(zip) {
+  const wbXml = await zip.file('xl/workbook.xml').async('string');
+  const relsXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const out = {};
+  [...wbXml.matchAll(/<sheet\b[^>]*>/g)].forEach(([tag]) => {
+    const nome = (tag.match(/name="([^"]*)"/) || [])[1];
+    const rid = (tag.match(/r:id="([^"]*)"/) || [])[1];
+    if (!nome || !rid) return;
+    const mRel = relsXml.match(new RegExp(`<Relationship Id="${rid}"[^>]*Target="([^"]+)"`));
+    if (!mRel) return;
+    const alvo = mRel[1].replace(/^\/?xl\//, '').replace(/^\//, '');
+    out[chaveDaFolha(nome.replace(/&amp;/g, '&'))] = `xl/${alvo}`;
+  });
+  return out;
+}
+
+function chaveDoRelatorio(fase, n) {
+  if (fase === 1) return chaveDaFolha(`Relatório ${n}ª Jornada`);
+  return chaveDaFolha(n <= 10 ? `Relatório ${n}ª Jornada (2ª fase)` : `Relatório ${n}ª Jornada (PE)`);
+}
+
+// Rendimento da app (0 a 10) para a escala do modelo (1 a 5): metade,
+// arredondada, nunca abaixo de 1 nem acima de 5.
+function rendimentoDe1a5(nota) {
+  if (nota === '' || nota == null || Number.isNaN(Number(nota))) return null;
+  return Math.min(5, Math.max(1, Math.round(Number(nota) / 2)));
+}
+
+function dataPtRelatorio(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+/* Escolhe a folha de cada jogo. Devolve { jogos: [{ m, chave, fase, n }],
+   ignorados: [{ m, motivo }] }. */
+function planoDosRelatorios(matches, chavesDisponiveis, hoje) {
+  const oficiais = (matches || []).filter(m => m && m.date && !isFriendlyMatch(m) && numeroDaJornada(m.jornada));
+  const comps = new Map();
+  oficiais.forEach(m => {
+    const nome = String(m.competition || '').trim();
+    const c = comps.get(nome) || { nome, inicio: m.date };
+    if (m.date < c.inicio) c.inicio = m.date;
+    comps.set(nome, c);
+  });
+  const lista = [...comps.values()].sort((a, b) => a.inicio.localeCompare(b.inicio));
+  const semPista = lista.filter(c => !PISTA_SEGUNDA_FASE.test(c.nome));
+  const comPista = lista.filter(c => PISTA_SEGUNDA_FASE.test(c.nome));
+  const primeira = semPista[0] || null;
+  const segunda = comPista[0] || semPista[1] || null;
+  const faseDe = (nome) => (primeira && nome === primeira.nome ? 1 : segunda && nome === segunda.nome ? 2 : null);
+
+  const jogos = [];
+  const ignorados = [];
+  const usadas = new Set();
+  [...oficiais].sort((a, b) => a.date.localeCompare(b.date)).forEach(m => {
+    const jogado = m.date <= hoje && (parseScore(m.result) || (m.convocados || []).length);
+    if (!jogado) return;
+    const fase = faseDe(String(m.competition || '').trim());
+    const n = numeroDaJornada(m.jornada);
+    if (!fase) { ignorados.push({ m, motivo: 'competição sem folha no modelo' }); return; }
+    const chave = chaveDoRelatorio(fase, n);
+    if (!chavesDisponiveis.has(chave)) { ignorados.push({ m, motivo: 'jornada sem folha no modelo' }); return; }
+    if (usadas.has(chave)) { ignorados.push({ m, motivo: 'jornada repetida' }); return; }
+    usadas.add(chave);
+    jogos.push({ m, chave, fase, n });
+  });
+  return { jogos, ignorados, primeira: primeira && primeira.nome, segunda: segunda && segunda.nome };
+}
+
+/* Os treinos da semana do jogo, por ordem: as sessões dos 7 dias antes
+   do jogo (depois do jogo anterior, se foi nesse intervalo), as últimas
+   quatro. */
+function treinosDaSemana(m, sessions, matches) {
+  const d0 = new Date(`${m.date}T12:00:00`);
+  const limite = new Date(d0); limite.setDate(limite.getDate() - 7);
+  let desde = limite.toISOString().slice(0, 10);
+  (matches || []).forEach(x => { if (x && x.id !== m.id && x.date && x.date < m.date && x.date >= desde) desde = x.date; });
+  const datas = [...new Set((sessions || [])
+    .filter(s => s && s.date && s.phase !== 'Descanso' && s.date > desde && s.date < m.date)
+    .map(s => s.date))].sort();
+  return datas.slice(-4);
+}
+
+async function preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, convocatorias, adversarios, clube, escalao }) {
+  const folhas = await folhasDoLivro(zip);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const plano = planoDosRelatorios(matches, new Set(Object.keys(folhas)), hoje);
+  plano.temFolhas = Object.keys(folhas).some(k => k.startsWith('relatorio'));
+  const jogadores = players.slice(0, 30);
+
+  for (const { m, chave, n } of plano.jogos) {
+    const caminho = folhas[chave];
+    let x = await zip.file(caminho).async('string');
+    const conv = (convocatorias || []).find(c => c && c.data === m.date) || null;
+    const sc = parseScore(m.result);
+    const nossos = sc ? (m.atHome ? sc.home : sc.away) : null;
+    const deles = sc ? (m.atHome ? sc.away : sc.home) : null;
+    const ficha = fichaDaEquipa(m.opponent, adversarios);
+    const texto = (ref, v) => { if (v !== '' && v != null) x = definirTextoNaCelula(x, ref, String(v)); };
+    const numero = (ref, v) => { if (v !== '' && v != null && Number.isFinite(Number(v))) x = definirNumeroNaCelula(x, ref, Number(v)); };
+
+    texto('C4', conv && conv.treinador);
+    texto('J4', String(m.competition || '').trim());
+    texto('P4', (conv && conv.escalao) || escalao);
+    texto('C5', dataPtRelatorio(m.date));
+    texto('J5', conv && conv.horaJogo);
+    texto('O5', (conv && conv.localJogo) || (m.atHome ? 'Casa' : 'Fora'));
+    numero('C6', n);
+    texto('A7', clube);
+    numero('G7', nossos);
+    numero('I7', deles);
+    texto('K7', m.opponent);
+
+    const report = m.report || {};
+    const convocados = m.convocados || [];
+    const titulares = m.starters || [];
+    const datasTreino = treinosDaSemana(m, sessions, matches);
+    jogadores.forEach((p, i) => {
+      const linha = 11 + i;
+      datasTreino.forEach((d, k) => {
+        const estado = estadoNoDia(p.id, d, sessions, [], clinico);
+        if (estado !== null) numero(`${'CDEF'[k]}${linha}`, VALOR_ASSIDUIDADE[estado]);
+      });
+      const convocado = convocados.includes(p.id);
+      const r = report[p.id] || {};
+      const min = Number(r.minutes) || 0;
+      const titular = convocado && titulares.includes(p.id);
+      numero(`G${linha}`, convocado ? 1 : 0);
+      numero(`H${linha}`, titular ? 1 : 0);
+      numero(`I${linha}`, convocado && !titular && min > 0 ? 1 : 0);
+      if (!convocado) return;
+      numero(`J${linha}`, Number(r.goals) || 0);
+      numero(`K${linha}`, Number(r.assists) || 0);
+      numero(`L${linha}`, r.card === 'yellow' || r.card === 'yellow2' ? 1 : 0);
+      numero(`M${linha}`, r.card === 'yellow2' ? 1 : 0);
+      numero(`N${linha}`, r.card === 'red' || r.card === 'yellow2' ? 1 : 0);
+      const nota = rendimentoDe1a5(r.rating != null && r.rating !== '' ? r.rating : (m.ratings || {})[p.id]);
+      if (nota !== null) numero(`O${linha}`, nota);
+      numero(`P${linha}`, min);
+    });
+
+    if (m.formacao) texto('A49', /^1-/.test(m.formacao) ? m.formacao : `1-${m.formacao}`);
+    const notas = notasDoJogo(m).map(nt => String(nt.texto || '').trim()).filter(Boolean);
+    if (notas.length) texto('A44', notas.join('\n'));
+    if (ficha) {
+      texto('A64', String(ficha.pontosFortes || '').trim());
+      texto('I64', String(ficha.pontosFracos || '').trim());
+    }
+    zip.file(caminho, x);
+  }
+  return plano;
+}
+
+async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos, anoInicioEpoca, relatorios) {
   const zip = await JSZip.loadAsync(arrayBuffer);
 
   const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
@@ -8137,6 +8326,25 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
     estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
   });
 
+  // A ESTATÍSTICA TOTAL tem mais dois quadros por baixo (1ª fase e
+  // 2ª fase/Prova Extra) com os nomes escritos à mão ("Atleta 1"…). Cada
+  // quadro começa numa linha com "Nome" na coluna B; os atletas vêm duas
+  // linhas abaixo. O primeiro quadro (linha 4) já foi tratado acima.
+  {
+    const ssFile = zip.file('xl/sharedStrings.xml');
+    const ssXml = ssFile ? await ssFile.async('string') : '';
+    const ss = [...ssXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]).trim());
+    const iNome = ss.findIndex(t => semAcentos(t) === 'nome');
+    if (iNome >= 0) {
+      [...estatXml.matchAll(new RegExp(`<c r="B(\\d+)"[^>]*t="s"[^>]*><v>${iNome}</v></c>`, 'g'))]
+        .map(m => parseInt(m[1], 10))
+        .filter(linha => linha > 4)
+        .forEach(linha => {
+          jogadores.forEach((p, i) => { estatXml = definirTextoNaCelula(estatXml, `B${linha + 2 + i}`, p.name); });
+        });
+    }
+  }
+
   // A tabela de shared strings só serve para PROCURAR o título de cada
   // bloco; o texto que se escreve vai embutido diretamente na célula,
   // não se toca na tabela partilhada em si.
@@ -8144,11 +8352,31 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   const sharedXml = sharedXmlFile ? await sharedXmlFile.async('string') : '';
   const sharedStrings = [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));
 
+  // Localizam-se os 12 blocos ANTES de se escrever qualquer título: a
+  // procura é pelo título original (shared string) e, depois de reescrito,
+  // o título deixa de lá estar.
+  const blocos = {};
+  ORDEM_EPOCA.forEach(m => { blocos[m] = localizarBlocoAssiduidade(assidXml, sharedStrings, m); });
+
+  // Todos os 12 títulos passam a ter o ano certo da época (Agosto a
+  // Dezembro no ano em que a época começa, Janeiro a Julho no seguinte),
+  // mesmo os meses que não se preencheram. O modelo traz anos antigos
+  // escritos à mão ("Agosto 2022", e até "Dezembro 2023" por engano).
+  const anoBase = Number.isFinite(anoInicioEpoca)
+    ? anoInicioEpoca
+    : (mesesEAnos && mesesEAnos[0] ? (mesesEAnos[0].mes >= 7 ? mesesEAnos[0].ano : mesesEAnos[0].ano - 1) : null);
+  if (anoBase !== null) {
+    ORDEM_EPOCA.forEach(m => {
+      const b = blocos[m];
+      if (b) assidXml = definirTextoNaCelula(assidXml, `A${b.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[m]} ${anoDoMesNaEpoca(m, anoBase)}`);
+    });
+  }
+
   (mesesEAnos || []).forEach(({ mes, ano }) => {
-    const bloco = localizarBlocoAssiduidade(assidXml, sharedStrings, mes);
+    const bloco = blocos[mes];
     if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} na Ficha Assiduidade — o modelo pode ter mudado.`);
 
-    assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
+    if (anoBase === null) assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
 
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
     jogadores.forEach((p, i) => {
@@ -8171,6 +8399,11 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
 
   zip.file(estatPath, estatXml);
   zip.file(assidPath, assidXml);
+
+  // Relatórios das jornadas, no mesmo ficheiro (só se pedido e se o
+  // modelo os tiver). O resultado (jogos preenchidos e ignorados) volta
+  // em `relatorios.resumo` para o formulário o mostrar.
+  if (relatorios) relatorios.resumo = await preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, ...relatorios });
 
   // Sem isto, a coluna do total (AH) abre com o valor antigo (0) até
   // alguém forçar o Excel a recalcular — ver o comentário grande em
@@ -9043,7 +9276,7 @@ function GerarFichasIndividuaisForm({ doc, players, epoca, onClose }) {
     </div>
   );
 }
-const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo, epoca }, ref) {
+const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo, epoca, convocatorias, adversarios, clube, escalao }, ref) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
@@ -9150,7 +9383,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
                   {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
                     <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
-                      <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
+                      <FileSpreadsheet size={14} /> Gerar estatística e assiduidade
                     </Btn>
                   )}
                   {/\.docx$/i.test(doc.fileName) && (
@@ -9170,7 +9403,7 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                 <GerarWordForm doc={doc} players={players} matches={matches} epoca={epoca} setDocumentos={setDocumentos} onClose={() => setAGerar(null)} />
               )}
               {aGerar === doc.id && !/\.docx$/i.test(doc.fileName) && (
-                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
+                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} convocatorias={convocatorias} adversarios={adversarios} clube={clube} escalao={escalao} onClose={() => setAGerar(null)} />
               )}
             </div>
           ))}
@@ -9274,7 +9507,7 @@ function anoDoMesNaEpoca(mes, anoInicioEpoca) {
   return mes >= 7 ? anoInicioEpoca : anoInicioEpoca + 1;
 }
 
-function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, onClose }) {
+function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, convocatorias, adversarios, clube, escalao, onClose }) {
   const agora = new Date();
   // Ano em que a época atual começou: se estamos entre Agosto e
   // Dezembro a época começou este ano civil, senão começou no anterior.
@@ -9285,6 +9518,10 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, o
   const [mesesSelecionados, setMesesSelecionados] = useState(() => new Set([agora.getMonth()]));
   const [erro, setErro] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
+  // Os relatórios das jornadas vivem no mesmo Excel: preenchem-se todos
+  // de uma vez, com os jogos oficiais já realizados.
+  const [comRelatorios, setComRelatorios] = useState(true);
+  const [resumoRelatorios, setResumoRelatorios] = useState(null);
 
   const alternarMes = (m) => {
     setMesesSelecionados(prev => {
@@ -9298,7 +9535,8 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, o
 
   const gerar = async () => {
     setErro('');
-    if (mesesOrdenados.length === 0) { setErro('Escolhe pelo menos um mês.'); return; }
+    if (mesesOrdenados.length === 0 && !comRelatorios) { setErro('Escolhe pelo menos um mês.'); return; }
+    setResumoRelatorios(null);
     setAProcessar(true);
     try {
       // O ficheiro vive no Supabase Storage — descarrega-se por dentro
@@ -9313,7 +9551,8 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, o
       // fórmula) e nas linhas P/F/L/E da própria ficha.
       const ordenados = sortByPosition(players);
       const mesesEAnos = mesesOrdenados.map(mes => ({ mes, ano: anoDoMesNaEpoca(mes, anoInicioEpoca) }));
-      const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, matches, clinico, mesesEAnos);
+      const relatorios = comRelatorios ? { convocatorias, adversarios, clube, escalao } : null;
+      const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, matches, clinico, mesesEAnos, anoInicioEpoca, relatorios);
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -9323,13 +9562,18 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, o
       const nomesMeses = mesesEAnos.map(({ mes, ano }) => `${MESES_PT[mes]} ${ano}`);
       const seguidos = mesesOrdenados.length > 1 && mesesOrdenados.every((m, i) => i === 0
         || ORDEM_EPOCA.indexOf(m) === ORDEM_EPOCA.indexOf(mesesOrdenados[i - 1]) + 1);
-      const rotulo = nomesMeses.length === 1
-        ? nomesMeses[0]
-        : (seguidos ? `${nomesMeses[0]} a ${nomesMeses[nomesMeses.length - 1]}` : nomesMeses.join(', '));
-      a.download = `Ficha Assiduidade - ${rotulo}.xlsx`;
+      const rotulo = nomesMeses.length === 0
+        ? `Época ${anoInicioEpoca}-${anoInicioEpoca + 1}`
+        : nomesMeses.length === 1
+          ? nomesMeses[0]
+          : (seguidos ? `${nomesMeses[0]} a ${nomesMeses[nomesMeses.length - 1]}` : nomesMeses.join(', '));
+      a.download = `${comRelatorios ? 'Estatística e Assiduidade' : 'Ficha Assiduidade'} - ${rotulo}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-      onClose();
+      // Com relatórios, o formulário fica aberto a mostrar que jogos
+      // entraram e quais ficaram de fora (e porquê).
+      if (relatorios && relatorios.resumo) setResumoRelatorios(relatorios.resumo);
+      else onClose();
     } catch (e) {
       setErro(e.message || 'Não consegui gerar o ficheiro.');
     } finally {
@@ -9368,9 +9612,42 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, o
         })}
       </div>
 
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 14, fontSize: 13, color: T.cream, cursor: 'pointer' }}>
+        <input type="checkbox" checked={comRelatorios} onChange={e => { setComRelatorios(e.target.checked); setResumoRelatorios(null); }} style={{ marginTop: 2, accentColor: T.gold }} />
+        <span>
+          Preencher também os relatórios das jornadas
+          <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>
+            Todos os jogos oficiais já realizados. As análises por fases do jogo ficam para preencher à mão.
+          </span>
+        </span>
+      </label>
+
+      {resumoRelatorios && (
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, border: `1px solid ${T.line}`, fontSize: 12.5, color: T.cream, lineHeight: 1.5 }}>
+          {!resumoRelatorios.temFolhas ? (
+            <span style={{ color: T.warn }}>Este modelo não tem folhas "Relatório … Jornada". Saiu só a assiduidade.</span>
+          ) : (
+            <>
+              <div><Check size={13} color={T.good} style={{ verticalAlign: '-2px', marginRight: 4 }} />
+                {resumoRelatorios.jogos.length === 0 ? 'Nenhum jogo oficial realizado para preencher.' : `${resumoRelatorios.jogos.length} ${resumoRelatorios.jogos.length === 1 ? 'relatório preenchido' : 'relatórios preenchidos'}.`}
+              </div>
+              {resumoRelatorios.primeira && <div style={{ color: T.mutedDim }}>1ª fase: {resumoRelatorios.primeira}{resumoRelatorios.segunda ? ` · 2ª fase e PE: ${resumoRelatorios.segunda}` : ''}</div>}
+              {resumoRelatorios.ignorados.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ color: T.warn }}>Ficaram de fora:</div>
+                  {resumoRelatorios.ignorados.map(({ m, motivo }) => (
+                    <div key={m.id} style={{ color: T.mutedDim }}>{[m.competition, m.jornada, `vs ${m.opponent || ''}`].filter(Boolean).join(' · ')}, {motivo}</div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn variant="ghost" onClick={onClose}>{resumoRelatorios ? 'Fechar' : 'Cancelar'}</Btn>
         <Btn onClick={gerar} disabled={aProcessar}>
           {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
         </Btn>
