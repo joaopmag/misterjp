@@ -20701,53 +20701,38 @@ function RotulosMomento({ x }) {
   );
 }
 
-/* Campo "Momento" com "+ Momento" para juntar um 2.º (o 1.º é o
-   dominante). `celula`: estilo de cada célula quando o campo vive numa
-   grelha (exercício); sem ele, os dois ficam lado a lado (ideia). */
+/* Campos "Momento" e "2.º momento", sempre os dois e do mesmo tamanho:
+   escolher ou não o 2.º não muda nada na página. O 1.º é o dominante; o
+   2.º começa em "—" (sem 2.º momento). `celula`: estilo de cada célula
+   quando os campos vivem numa grelha (exercício); sem ele, ficam lado a
+   lado (ideia). */
 function CamposMomento({ f, setF, rotulo = 'Momento', celula = null }) {
-  const temSegundo = !!(f.phase2 && f.phase2 !== f.phase);
-  const botao = { display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.muted, padding: '0 12px', fontSize: 12.5, whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' };
   const primeiro = (
     <Field label={rotulo}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Select value={f.phase} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase: v, phase2: prev.phase2 === v ? '' : (prev.phase2 || '') })); }}>
-            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-        </div>
-        {!temSegundo && (
-          <button type="button" title="Juntar um 2.º momento a este" style={botao}
-            onClick={() => setF(prev => ({ ...prev, phase2: (SEGUNDO_MOMENTO_SUGERIDO[prev.phase] && SEGUNDO_MOMENTO_SUGERIDO[prev.phase] !== prev.phase) ? SEGUNDO_MOMENTO_SUGERIDO[prev.phase] : EXERCISE_PHASES.find(p => p !== prev.phase) }))}>
-            <Plus size={14} /> Momento
-          </button>
-        )}
-      </div>
+      <Select value={f.phase} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase: v, phase2: prev.phase2 === v ? '' : (prev.phase2 || '') })); }}>
+        {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+      </Select>
     </Field>
   );
-  const segundo = temSegundo ? (
+  const segundo = (
     <Field label="2.º momento">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Select value={f.phase2} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase2: v })); }}>
-            {EXERCISE_PHASES.filter(p => p !== f.phase).map(p => <option key={p} value={p}>{p}</option>)}
-          </Select>
-        </div>
-        <button type="button" title="Tirar o 2.º momento" style={{ ...botao, padding: '0 10px' }} onClick={() => setF(prev => ({ ...prev, phase2: '' }))}>
-          <X size={14} />
-        </button>
-      </div>
+      <Select value={f.phase2 && f.phase2 !== f.phase ? f.phase2 : ''} onChange={e => { const v = e.target.value; setF(prev => ({ ...prev, phase2: v })); }}>
+        <option value="">—</option>
+        {EXERCISE_PHASES.filter(p => p !== f.phase).map(p => <option key={p} value={p}>{p}</option>)}
+      </Select>
     </Field>
-  ) : null;
-  if (celula) return <>{<div style={celula}>{primeiro}</div>}{segundo && <div style={celula}>{segundo}</div>}</>;
+  );
+  if (celula) return <><div style={celula}>{primeiro}</div><div style={celula}>{segundo}</div></>;
   return (
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
       <div style={{ flex: '1 1 260px', minWidth: 0 }}>{primeiro}</div>
-      {segundo && <div style={{ flex: '1 1 260px', minWidth: 0 }}>{segundo}</div>}
+      <div style={{ flex: '1 1 260px', minWidth: 0 }}>{segundo}</div>
     </div>
   );
 }
 
 function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
+  const ecraEstreito = useIsMobile();
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_exercicio_${exercise?.id || 'novo'}`, f, setF);
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
@@ -20927,13 +20912,19 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
         </div>
         {/* "Momento" (era "Fase de jogo") e com duas colunas de largura:
             "Organização Defensiva" ficava cortado na caixa. */}
-        <CamposMomento f={f} setF={setF} celula={{ gridColumn: 'span 2', minWidth: 0 }} />
+        {/* No computador, Momento, 2.º momento, Tempo, Espaço, Nº jogadores
+            e Material numa só linha (os dois momentos um pouco mais largos,
+            para "Organização Defensiva" caber). No telemóvel, a grelha de
+            sempre. */}
+        <div style={ecraEstreito ? { ...FIELD_FULL, ...FIELD_GRID } : { ...FIELD_FULL, display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1.4fr) repeat(4, minmax(0, 1fr))', gap: 12 }}>
+        <CamposMomento f={f} setF={setF} celula={{ minWidth: 0, ...(ecraEstreito ? { gridColumn: 'span 2' } : {}) }} />
         <Field label="Tempo (min)"><TempoInput value={f.defaultDuration} onChange={v => setF({ ...f, defaultDuration: v })} placeholder="Ex: 15 ou 7+7" /></Field>
         <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
           <Input value={f.playersCount} onChange={e => setF({ ...f, playersCount: e.target.value })} onBlur={autoInsertPlayers} placeholder="4x4, 4+1, 3 Gr" />
         </Field>
         <Field label="Material"><Input value={f.material} onChange={e => setF({ ...f, material: e.target.value })} placeholder="Coletes, cones, balizas, estacas" /></Field>
+        </div>
         <div style={FIELD_FULL}>
           <Field label="Descrição / instruções"><TextArea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Objetivo, regras, condicionantes..." /></Field>
         </div>
