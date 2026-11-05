@@ -4604,6 +4604,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
               autorizarApagarRasto={{ monitoring: autorizarApagarMonitoring, clinico: autorizarApagarClinico, desenvolvimento: autorizarApagarMomento }}
               meta={playersMeta}
+              teamId={teamId}
               diario={diario}
             />
           )}
@@ -12172,7 +12173,18 @@ function reporJogadorNoRegisto(tabela, atual, antigo, pid) {
   return mud ? novo : null;
 }
 
-function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches, setConvocatorias, monitoring = [], setMonitoring, clinico = [], setClinico, desenvolvimento = [], setDesenvolvimento, onClose }) {
+/* Lê o audit_log pela função `auditoria_equipa` do Supabase (SECURITY
+   DEFINER): o audit_log não tem leitura direta para a app (RLS sem
+   políticas) e não tem team_id; a função só responde a quem é membro da
+   equipa e só devolve alterações feitas por membros dessa equipa. */
+async function lerAuditoria(teamId, { tabelas, acao, desde = null, ate = null, limite = 2000, recentesPrimeiro = false }) {
+  const r = await supabase.rpc('auditoria_equipa', {
+    p_team: teamId, p_tabelas: tabelas, p_acao: acao, p_desde: desde, p_ate: ate, p_limite: limite, p_recentes_primeiro: recentesPrimeiro,
+  });
+  return r;
+}
+
+function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches, setConvocatorias, monitoring = [], setMonitoring, clinico = [], setClinico, desenvolvimento = [], setDesenvolvimento, teamId, onClose }) {
   const [lista, setLista] = useState(null); // null = a carregar
   const [erro, setErro] = useState('');
   const [escolhido, setEscolhido] = useState(null); // { pid, em, dados }
@@ -12185,12 +12197,14 @@ function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches,
     let cancelado = false;
     (async () => {
       await ensureSession();
-      const r = await supabase.from('audit_log')
-        .select('record_id, changed_at, old_data')
-        .eq('table_name', 'players').ilike('action', 'del%')
-        .order('changed_at', { ascending: false }).limit(60);
+      const r = await lerAuditoria(teamId, { tabelas: ['players'], acao: 'del', limite: 60, recentesPrimeiro: true });
       if (cancelado) return;
-      if (r.error) { setErro('Não consegui ler o histórico do Supabase.'); setLista([]); return; }
+      if (r.error) {
+        setErro(/auditoria_equipa/i.test(String(r.error.message || '')) || r.error.code === 'PGRST202'
+          ? 'Falta correr no Supabase o SQL da função "auditoria_equipa".'
+          : 'Não consegui ler o histórico do Supabase.');
+        setLista([]); return;
+      }
       const atuais = new Set((players || []).map(p => p.id));
       const vistos = new Set();
       setLista((r.data || []).filter(x => {
@@ -12205,16 +12219,8 @@ function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches,
     setEscolhido(item); setPlano(null); setFeito(''); setErro('');
     setSaida(String(item.em || '').slice(0, 10));
     const t0 = new Date(item.em); const t1 = new Date(t0.getTime() + 5 * 60000);
-    const ed = await supabase.from('audit_log')
-      .select('table_name, record_id, changed_at, old_data')
-      .in('table_name', ['sessions', 'matches', 'convocatorias']).ilike('action', 'upd%')
-      .gte('changed_at', t0.toISOString()).lte('changed_at', t1.toISOString())
-      .order('changed_at', { ascending: true }).limit(2000);
-    const ap = await supabase.from('audit_log')
-      .select('table_name, record_id, changed_at, old_data')
-      .in('table_name', ['monitoring', 'clinico', 'desenvolvimento']).ilike('action', 'del%')
-      .gte('changed_at', t0.toISOString()).lte('changed_at', t1.toISOString())
-      .order('changed_at', { ascending: true }).limit(5000);
+    const ed = await lerAuditoria(teamId, { tabelas: ['sessions', 'matches', 'convocatorias'], acao: 'upd', desde: t0.toISOString(), ate: t1.toISOString(), limite: 2000 });
+    const ap = await lerAuditoria(teamId, { tabelas: ['monitoring', 'clinico', 'desenvolvimento'], acao: 'del', desde: t0.toISOString(), ate: t1.toISOString(), limite: 5000 });
     if (ed.error || ap.error) { setErro('Não consegui ler o histórico do Supabase.'); return; }
     const antigos = { sessions: new Map(), matches: new Map(), convocatorias: new Map() };
     (ed.data || []).forEach(x => {
@@ -12302,7 +12308,7 @@ function RecuperarJogadoresModal({ players, setPlayers, setSessions, setMatches,
   );
 }
 
-function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [], autorizarApagarRasto }) {
+function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [], autorizarApagarRasto, teamId }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [modalVoltarPerfil, setModalVoltarPerfil] = useState(false); // true só quando abriu a partir do perfil
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
@@ -12506,6 +12512,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
           setSessions={setSessions} setMatches={setMatches} setConvocatorias={setConvocatorias}
           monitoring={monitoring} setMonitoring={setMonitoring} clinico={clinico} setClinico={setClinico}
           desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
+          teamId={teamId}
           onClose={() => setRecuperarAberto(false)}
         />
       )}
