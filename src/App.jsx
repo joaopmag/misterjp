@@ -8091,6 +8091,60 @@ async function carimbarMarcaWord(zip) {
   zip.file(relsPath, ser.serializeToString(relsDoc));
 }
 
+/* Assinatura dos documentos que a app preenche (ex.: relatório de
+   ocorrência, na linha "(______)" por cima do departamento). */
+const ASSINATURA_APP = 'Gerado pela app Mister JP';
+
+/* COR DA EQUIPA NOS MODELOS WORD.
+   Os modelos base vêm com o vermelho de origem (títulos, faixas, caixas).
+   Ao gerar, todos os tons vermelhos passam a ser a cor da equipa (a de
+   Gerir equipa, T.corEquipa): um clube novo só tem de pôr o logótipo.
+   Cores que o clube tenha escolhido (azul, verde, preto…) não são
+   tocadas. Num texto, uma cor de equipa muito clara (amarelo, branco)
+   não se lia: aí o texto leva uma versão escurecida dela. O Excel não
+   passa por aqui: lá as cores têm significado (faltas, gráficos). */
+function corEquipaParaDocumentos() {
+  const c = String(T.corEquipa || '').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(c)) return null;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16));
+  const lin = [r, g, b].map(v => v / 255).map(v => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  const lum = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  const hex = (arr) => arr.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  // Texto: escurece até se ler em papel branco.
+  let f = 1, txt = [r, g, b];
+  while (lum * f ** 2.2 > 0.25 && f > 0.3) { f -= 0.05; txt = [r * f, g * f, b * f]; }
+  return { fundo: c.toUpperCase(), texto: lum > 0.25 ? hex(txt) : c.toUpperCase() };
+}
+function ehVermelhoDeModelo(hex) {
+  if (!/^[0-9a-f]{6}$/i.test(hex || '')) return false;
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (d === 0 || max !== r) return false;
+  const sat = d / (1 - Math.abs(2 * l - 1));
+  let h = ((g - b) / d) * 60; if (h < 0) h += 360;
+  return (h <= 15 || h >= 340) && sat >= 0.45 && l >= 0.2 && l <= 0.65;
+}
+async function pintarCorEquipaWord(zip) {
+  const cor = corEquipaParaDocumentos();
+  if (!cor) return;
+  const partes = Object.keys(zip.files).filter(n => /^word\/(document|header\d*|footer\d*)\.xml$/.test(n));
+  for (const caminho of partes) {
+    const xml0 = await zip.file(caminho).async('string');
+    let xml = xml0;
+    // Cor do texto (tira a cor de tema, senão o Word ignorava a nova).
+    xml = xml.replace(/<w:color\b[^>]*\/>/g, (tag) => {
+      const m = /w:val="([0-9A-Fa-f]{6})"/.exec(tag);
+      if (!m || !ehVermelhoDeModelo(m[1])) return tag;
+      return `<w:color w:val="${cor.texto}"/>`;
+    });
+    // Sombreados de células/parágrafos, formas e caixas (DrawingML e VML).
+    xml = xml.replace(/(<w:shd\b[^>]*\bw:fill=")([0-9A-Fa-f]{6})(")/g, (m, a, h, z) => (ehVermelhoDeModelo(h) ? a + cor.fundo + z : m));
+    xml = xml.replace(/(<a:srgbClr\b[^>]*\bval=")([0-9A-Fa-f]{6})(")/g, (m, a, h, z) => (ehVermelhoDeModelo(h) ? a + cor.fundo + z : m));
+    xml = xml.replace(/(\b(?:fillcolor|strokecolor|color2?)=")#?([0-9A-Fa-f]{6})(")/g, (m, a, h, z) => (ehVermelhoDeModelo(h) ? `${a}#${cor.fundo}${z}` : m));
+    if (xml !== xml0) zip.file(caminho, xml);
+  }
+}
+
 async function carimbarMarcaExcel(zip) {
   const codigo = `&amp;R&amp;"Arial,Bold"&amp;7&amp;K999999${MARCA_APP}`;
   const DEPOIS = ['rowBreaks', 'colBreaks', 'customProperties', 'cellWatches', 'ignoredErrors', 'smartTags', 'drawing', 'legacyDrawing', 'legacyDrawingHF', 'drawingHF', 'picture', 'oleObjects', 'controls', 'webPublishItems', 'tableParts', 'extLst'];
@@ -8917,6 +8971,7 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   zip.file(relsPath, rels);
   zip.file('[Content_Types].xml', tipos);
   await carimbarMarcaWord(zip);
+  await pintarCorEquipaWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9281,6 +9336,7 @@ async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) 
   });
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
   await carimbarMarcaWord(zip);
+  await pintarCorEquipaWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9422,16 +9478,28 @@ function textosDaOcorrencia(o0, { matches, sessions, convocatorias }) {
   ].filter(Boolean).join(' ');
   // Exames: as atualizações que falam de consultas ou exames.
   const reExame = /(exame|ecografi|eco\b|raio|rx\b|resson|\brm\b|tac\b|consulta|m[eé]dic|ortoped|fisiatr|diagn)/i;
+  // Sem nenhuma referência a exames/consultas nas atualizações, parte-se
+  // do princípio de que a avaliação foi feita pelo departamento médico.
   const exames = evolucao
     .filter(e => e && e !== primeira && reExame.test(String(e.texto || '')))
     .map(e => `${dataPtRelatorio(e.data)}: ${String(e.texto).trim()}`)
-    .join('\n');
-  const indicacoes = String(o.restricoes || '').trim();
+    .join('\n') || 'Avaliação realizada pelo departamento médico do clube.';
+  // Indicações: o nível atribuído à lesão e, por baixo, as restrições.
+  const nivelIni = o.nivelInicial ? nivelClinico(o.nivelInicial).label : '';
+  const nivelAtual = o.nivel ? nivelClinico(o.nivel).label : '';
+  const linhaNivel = nivelIni && nivelAtual && nivelIni !== nivelAtual && !o.fim
+    ? `Nível atribuído: ${nivelIni}; atualmente ${nivelAtual.charAt(0).toLowerCase()}${nivelAtual.slice(1)}.`
+    : (nivelIni || nivelAtual) ? `Nível atribuído: ${nivelIni || nivelAtual}.` : '';
+  const restr = String(o.restricoes || '').trim();
+  const indicacoes = [linhaNivel, restr ? `Restrições: ${restr}${/[.!?]$/.test(restr) ? '' : '.'}` : ''].filter(Boolean).join('\n');
   let previsao = '';
   if (o.fim) previsao = `Alta a ${dataPtRelatorio(o.fim)}.`;
   else if (/^\d{4}-\d{2}-\d{2}$/.test(o.previsaoRetorno || '')) {
-    const semanas = dia ? Math.max(1, Math.round((new Date(`${o.previsaoRetorno}T12:00:00`) - new Date(`${dia}T12:00:00`)) / (7 * 86400000))) : null;
-    previsao = `Previsão de regresso a ${dataPtRelatorio(o.previsaoRetorno)}${semanas ? ` (cerca de ${semanas} ${semanas === 1 ? 'semana' : 'semanas'})` : ''}.`;
+    // Menos de uma semana conta-se em dias (1 dia não é "cerca de 1 semana").
+    const dias = dia ? Math.round((new Date(`${o.previsaoRetorno}T12:00:00`) - new Date(`${dia}T12:00:00`)) / 86400000) : 0;
+    const semanas = Math.round(dias / 7);
+    const duracao = dias <= 0 ? '' : dias < 7 ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : `${semanas} ${semanas === 1 ? 'semana' : 'semanas'}`;
+    previsao = `Previsão de regresso a ${dataPtRelatorio(o.previsaoRetorno)}${duracao ? ` (cerca de ${duracao})` : ''}.`;
   } else if (o.previsaoRetorno) previsao = String(o.previsaoRetorno);
   return { hora, contexto, ocorrencia, exames, indicacoes, previsao };
 }
@@ -9483,6 +9551,8 @@ async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escal
     if (/\bhoras\b/.test(t)) preencherLacunas(p, lacunas >= 4 ? [dia, mes, ano, hora] : [dia, mes, hora]);
     else if (/atleta\s*:/.test(t)) preencherLacunas(p, [atleta, numEscalao], true);
     else if (/diretor desportivo/.test(t) && /\bsub\b/.test(t)) preencherLacunas(p, [numEscalao]);
+    // Linha da assinatura "(______)": o documento sai assinado pela app.
+    else if (/^\s*\(\s*_{3,}\s*\)\s*$/.test(textoDe(p))) escreverTexto(p, `(${ASSINATURA_APP})`);
   });
 
   const ehLinha = (p) => /^[\s_]*$/.test(textoDe(p)) && /_{3,}/.test(textoDe(p));
@@ -9515,6 +9585,7 @@ async function gerarRelatorioOcorrencia(arrayBuffer, { data, hora, atleta, escal
 
   zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
   await carimbarMarcaWord(zip);
+  await pintarCorEquipaWord(zip);
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
@@ -9839,6 +9910,7 @@ const MODELOS_BASE = [
       ['Linha com "horas"', 'os espaços "____" recebem, por ordem, o dia, o mês, o ano e a hora (com três espaços: dia, mês e hora).'],
       ['Atleta: ____ Escalão: Sub____ e Diretor Desportivo, Sub ____', 'o nome do atleta e o número do escalão.'],
       ['Contexto, Ocorrência, Exames/ meios diagnóstico, Indicações, Previsão de retoma', 'cada título seguido das linhas "_____" onde entra o texto.'],
+      ['(_______) por cima do departamento', 'a linha da assinatura: sai "(Gerado pela app Mister JP)".'],
     ],
   },
   {
@@ -9859,8 +9931,9 @@ function ModelosBase() {
     <div style={{ marginTop: 28 }}>
       <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Modelos base da app</div>
       <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 12, maxWidth: 640 }}>
-        Para usar documentos com a imagem do clube: descarrega o modelo, muda o logótipo, as cores e a letra à vontade,
-        guarda no mesmo formato (.docx ou .xlsx) e carrega-o aqui em cima. Só tens de manter os nomes dos campos.
+        Para usar documentos com a imagem do clube: descarrega o modelo, põe o logótipo do clube,
+        guarda no mesmo formato (.docx ou .xlsx) e carrega-o aqui em cima. Nos Word, os vermelhos do modelo passam
+        sozinhos para a cor da equipa (a de Gerir equipa). Só tens de manter os nomes dos campos.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {MODELOS_BASE.map(x => (
@@ -9898,7 +9971,7 @@ function ModelosBase() {
           <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginTop: 12 }}>
             {m.tipo === 'Excel'
               ? 'No fim, guarda como Excel (.xlsx), não .xls, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.'
-              : 'No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. A marca ™ Mister JP é acrescentada no rodapé ao gerar.'}
+              : 'No fim, guarda como Word (.docx), não .doc, e carrega-o em Documentos. Ao gerar, os vermelhos do modelo passam para a cor da equipa e a marca ™ Mister JP é acrescentada no rodapé.'}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
             <Btn onClick={() => setComoDe(null)}>Fechar</Btn>
