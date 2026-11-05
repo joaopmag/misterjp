@@ -16068,7 +16068,7 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 const PITCH_TARGET_VH = 86;
 // Altura (px) do que rodeia o campo na janela da apresentação: cabeçalho
 // da janela, etiquetas, descrição e a linha dos controlos por baixo.
-const CHROME_APRESENTACAO_PX = 215;
+const CHROME_APRESENTACAO_PX = 250; // sem scroll na janela
 const APRESENTACAO_BOX_MEIO = { x: -2.5, y: -2.5, w: 75, h: 59.5 };
 const APRESENTACAO_VIEWBOX_MEIO = `${APRESENTACAO_BOX_MEIO.x} ${APRESENTACAO_BOX_MEIO.y} ${APRESENTACAO_BOX_MEIO.w} ${APRESENTACAO_BOX_MEIO.h}`;
 // Altura de tudo o que rodeia o campo no editor (computador): cores,
@@ -21398,12 +21398,13 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           </VistaCampo>
           {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
               inteiro e aparece também quando se guarda a imagem. */}
-          {/* Fora das quatro linhas, na margem de baixo, à direita (antes
-              do canto): por baixo da linha lateral no campo inteiro e da
-              linha do meio-campo no meio-campo. */}
+          {/* Fora das quatro linhas. Campo inteiro: na margem de baixo, à
+              direita (antes do canto). Meio-campo: ao alto, na margem do
+              lado direito, de baixo para cima, em letra mais pequena. */}
           <text
-            x={vistaMeio ? 66 : 103} y={vbNums[1] + vbNums[3] - 0.9}
-            textAnchor="end" fontSize={2}
+            {...(vistaMeio
+              ? { x: vbNums[0] + vbNums[2] - 0.8, y: vbNums[1] + vbNums[3] - 1, transform: `rotate(-90 ${vbNums[0] + vbNums[2] - 0.8} ${vbNums[1] + vbNums[3] - 1})`, textAnchor: 'start', fontSize: 1.5 }
+              : { x: 103, y: vbNums[1] + vbNums[3] - 0.9, textAnchor: 'end', fontSize: 2 })}
             fill="#ffffff55"
             style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.08em', pointerEvents: 'none' }}
           >™ Mister JP</text>
