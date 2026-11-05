@@ -18559,10 +18559,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // VISTA DO CAMPO (ver VistaCampo): gravada no próprio desenho, para a
   // ficha, a impressão, a apresentação e as miniaturas mostrarem igual.
   const vistaCampo = value && value.vista === 'meio' ? 'meio' : 'completo';
-  // Moldura do editor sem os bancos, salvo se houver itens nessa zona.
-  const editorCompacto = !((value && value.elements) || []).some(el => el && typeof el.y === 'number' && (el.y > EDITOR_Y_MAX - 0.5 || el.y < EDITOR_Y_MIN + 0.5
-    // No meio-campo aproximado, um item na metade de baixo que deixa de se ver.
-    || (vistaCampo === 'meio' && typeof el.x === 'number' && el.x >= 49 && el.x < EDITOR_MEIO_X_MIN + 0.5)));
+  // Moldura do editor SEMPRE sem os bancos e fixa: arrastar um jogador
+  // até à borda já não troca o enquadramento (o campo encolhia e apareciam
+  // os bancos de suplentes). Os itens ficam presos dentro desta moldura.
+  const editorCompacto = true;
   const caixaEditor = editorCompacto ? EDITOR_BOX : PITCH_BOX;
   const viewBoxEditor = editorCompacto ? (vistaCampo === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX) : viewBoxDaVista(vistaCampo);
   const gVistaRef = useRef(null);
