@@ -2083,6 +2083,10 @@ function Badge({ number, label }) {
   );
 }
 
+// Largura comum dos botões "Gerar…" em Documentos (cabe o mais comprido,
+// "Gerar estatística e assiduidade"); num ecrã estreito não passa da linha.
+const BTN_GERAR_DOC = { width: 'min(300px, 80vw)', justifyContent: 'center', whiteSpace: 'nowrap' };
+
 function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {}, type = 'button', disabled, title, escuro }) {
   /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
 
@@ -10415,18 +10419,20 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
+                  {/* Todos os botões "Gerar…" com a mesma largura (a do texto mais
+                      comprido), para ficarem alinhados uns por baixo dos outros. */}
                   {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
-                    <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                    <Btn variant="ghost" style={BTN_GERAR_DOC} onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
                       <FileSpreadsheet size={14} /> Gerar estatística e assiduidade
                     </Btn>
                   )}
                   {/\.docx$/i.test(doc.fileName) && (
-                    <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                    <Btn variant="ghost" style={BTN_GERAR_DOC} onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
                       <FileText size={14} /> {doc.tipoWord === 'organizacao' ? 'Gerar organização do plantel' : doc.tipoWord === 'ocorrencia' ? 'Gerar relatório de ocorrência' : 'Gerar fichas dos jogadores'}
                     </Btn>
                   )}
                   {/\.doc$/i.test(doc.fileName) && (
-                    <span title="Abre no Word e guarda como .docx, depois carrega esse ficheiro" style={{ fontSize: 11.5, color: T.warn }}>Guarda como .docx para gerar</span>
+                    <span title="Abre no Word e guarda como .docx, depois carrega esse ficheiro" style={{ fontSize: 11.5, color: T.warn, width: BTN_GERAR_DOC.width, textAlign: 'center' }}>Guarda como .docx para gerar</span>
                   )}
                   <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, flexShrink: 0 }}>
                     <Trash2 size={15} />
