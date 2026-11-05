@@ -3403,6 +3403,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-zA-Z0-9.\-]/g, '_');
       const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
+      // Confirma já que o browser consegue ler o ficheiro (renomeado ou
+      // mexido depois de escolhido, aberto noutro programa, ou só "na
+      // nuvem" do OneDrive/Drive dá "Failed to fetch" sem explicação).
+      // Um vídeo pode ter vários GB, por isso só se lê o primeiro bocado.
+      try { await file.slice(0, 1024).arrayBuffer(); } catch (e) {
+        throw new Error('O computador não deixou ler o vídeo. Fecha-o noutros programas, confirma que está guardado no computador e escolhe-o outra vez.');
+      }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Sessão expirada — sai e entra na app outra vez.');
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -8476,7 +8483,7 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   await forcarRecalculoAoAbrir(zip);
   await carimbarMarcaExcel(zip);
 
-  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
 
@@ -8858,7 +8865,7 @@ async function gerarFichasIndividuais(arrayBuffer, players, epoca) {
   zip.file(relsPath, rels);
   zip.file('[Content_Types].xml', tipos);
   await carimbarMarcaWord(zip);
-  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
 /* QUE MODELO WORD É ESTE? Pelos textos de dentro, não pelo nome do
@@ -9221,7 +9228,7 @@ async function gerarOrganizacaoPlantel(arrayBuffer, players, epoca, estruturas) 
   });
   zip.file('word/document.xml', new XMLSerializer().serializeToString(modelo));
   await carimbarMarcaWord(zip);
-  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
 
 function GerarOrganizacaoPlantelForm({ doc, players, matches, epoca, onClose }) {
@@ -9375,18 +9382,46 @@ const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setD
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-zA-Z0-9.\-]/g, '_');
       const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
-      const { error } = await supabase.storage.from('documentos').upload(caminho, file, { upsert: false });
+      /* "FAILED TO FETCH" AO CARREGAR UM FICHEIRO RENOMEADO.
+
+         O browser só lê o ficheiro do disco no momento do envio. Se ele
+         foi renomeado ou gravado depois de escolhido, ou ainda está aberto
+         no Excel/WPS/Word (no Windows fica bloqueado), ou está numa pasta
+         do OneDrive/Drive só "na nuvem", essa leitura falha e o pedido
+         morre com um "Failed to fetch" que não diz nada. Por isso lê-se
+         o ficheiro TODO para a memória antes de enviar: se falhar, o erro
+         diz o que fazer; se ler, envia-se uma cópia em memória, que já não
+         depende do disco (e pode repetir-se sem voltar a lê-lo). */
+      let bytes;
+      try {
+        bytes = await file.arrayBuffer();
+      } catch (e) {
+        throw new Error('o computador não deixou ler o ficheiro. Fecha-o no Excel ou no Word (ou noutro programa onde esteja aberto), confirma que está mesmo guardado no computador e escolhe-o outra vez');
+      }
+      const tipoMime = file.type
+        || (/\.xlsx$/i.test(file.name) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : /\.docx$/i.test(file.name) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : /\.pdf$/i.test(file.name) ? 'application/pdf' : 'application/octet-stream');
+      const copia = new Blob([bytes], { type: tipoMime });
+      let { error } = await supabase.storage.from('documentos').upload(caminho, copia, { upsert: false, contentType: tipoMime });
+      // Uma falha de rede pontual: tenta-se mais uma vez, com a mesma cópia.
+      if (error && /fetch|network/i.test(String(error.message || error))) {
+        ({ error } = await supabase.storage.from('documentos').upload(caminho, copia, { upsert: true, contentType: tipoMime }));
+      }
       if (error) throw error;
       // Um Word: vê já que modelo é (Ficha Individual ou Organização do Plantel).
       let tipoWord = null;
-      if (/\.docx$/i.test(file.name)) { try { tipoWord = await tipoDoDocumentoWord(await file.arrayBuffer()); } catch (e) { tipoWord = null; } }
+      if (/\.docx$/i.test(file.name)) { try { tipoWord = await tipoDoDocumentoWord(bytes); } catch (e) { tipoWord = null; } }
       setDocumentos(prev => [...(prev || []), {
         id: uid(), nome: file.name.replace(/\.[^.]+$/, ''), fileName: file.name,
         storagePath: caminho, tamanho: file.size, criadoEm: new Date().toISOString(),
         ...(tipoWord ? { tipoWord } : {}),
       }]);
     } catch (e) {
-      setErro(`Não consegui carregar o ficheiro: ${e.message || e}. Confirma que o balde "documentos" existe no Supabase Storage.`);
+      const msg = String((e && e.message) || e || '');
+      setErro(/fetch|network/i.test(msg)
+        ? 'Não consegui enviar o ficheiro (ligação interrompida). Confirma a internet e que o ficheiro não está aberto no Excel ou no Word, e tenta outra vez.'
+        : `Não consegui carregar o ficheiro: ${msg}.${/bucket|not found/i.test(msg) ? ' Confirma que o balde "documentos" existe no Supabase Storage.' : ''}`);
     } finally {
       setACarregar(false);
     }
