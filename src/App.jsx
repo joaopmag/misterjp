@@ -8170,10 +8170,13 @@ async function pintarCorEquipaWord(zip) {
 
    Três desenhos, escolhidos pela imagem de exemplo:
    · "escudo" (imagem quase quadrada): só o logótipo, fundo transparente;
-   · "simples" (exemplo claro, sobre fundo branco): logótipo e nome na cor
-     da equipa, sem caixa nem faixa;
-   · "faixa" (exemplo a cores ou transparente sobre uma faixa): faixa na
-     cor da equipa com o logótipo e o nome a branco. */
+   · "simples" (exemplo cinzento sobre branco): logótipo e nome na cor da
+     equipa, sem caixa nem faixa;
+   · "sobre" (exemplo com riscos claros, por cima de uma faixa de cor):
+     logótipo e nome a branco, sem fundo; a 2.ª destas na mesma página
+     ("OUTROS LOGÓTIPOS") leva só o logótipo ("sobreLogo");
+   · "faixa" (exemplo a cores, ex.: a faixa da ficha): faixa na cor da
+     equipa com o logótipo numa caixa branca e o nome a branco ao centro. */
 const MARCA_CLUBE_DOC = 'MisterJP: logótipo e nome do clube';
 const IMAGENS_EXEMPLO_MODELO = /^n-(cab|rod)\.png$/i;
 
@@ -8225,7 +8228,13 @@ async function analisarImagemModelo(bytes, ext) {
 
 function estiloImagemClube(info, largura, altura) {
   if (altura >= largura * 0.66) return 'escudo';
-  if (info && info.cinzenta && info.clara && !info.transparente) return 'simples';
+  if (info && info.cinzenta) {
+    // Riscos claros sobre transparente: está por cima de uma faixa de cor
+    // (organização) → nome a branco, sem fundo. Cinzento escuro ou fundo
+    // branco (relatório de ocorrência) → nome na cor da equipa, sem fundo.
+    if (info.transparente && info.clara) return 'sobre';
+    return 'simples';
+  }
   return 'faixa';
 }
 
@@ -8253,7 +8262,23 @@ async function desenharImagemClube({ largura, altura, estilo, logo }) {
       do { g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`; if (g.measureText(texto).width <= maxW) break; fs *= 0.94; } while (fs > maxH * 0.3);
       return fs;
     };
-    if (estilo === 'escudo') {
+    if (estilo === 'sobre' || estilo === 'sobreLogo') {
+      // Por cima de uma faixa de cor: sem fundo, logótipo à medida da
+      // altura e o nome a branco, separado dele; tudo ao centro.
+      const lado = H * 0.86;
+      if (estilo === 'sobreLogo' || !nome) {
+        if (temLogo) desenhaLogo((W - lado) / 2, (H - lado) / 2, lado);
+      } else {
+        const espaco = temLogo ? lado * 0.35 : 0;
+        const fs = ajustaLetra(nome.toUpperCase(), W * 0.92 - (temLogo ? lado + espaco : 0), H * 0.3);
+        const larguraNome = g.measureText(nome.toUpperCase()).width;
+        let x = (W - ((temLogo ? lado + espaco : 0) + larguraNome)) / 2;
+        if (temLogo) { desenhaLogo(x, (H - lado) / 2, lado); x += lado + espaco; }
+        g.font = `bold ${Math.round(fs)}px Arial, Helvetica, sans-serif`;
+        g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF'; g.textAlign = 'left'; g.textBaseline = 'middle';
+        g.fillText(nome.toUpperCase(), x, H / 2);
+      }
+    } else if (estilo === 'escudo') {
       // Só o logótipo (sem logótipo: a inicial num círculo da cor da equipa).
       const lado = Math.min(W, H) * 0.96;
       if (temLogo) desenhaLogo((W - lado) / 2, (H - lado) / 2, lado);
@@ -8282,9 +8307,13 @@ async function desenharImagemClube({ largura, altura, estilo, logo }) {
         const larguraTexto = W - xTexto - pad;
         // Letra moderada: no máximo 22% da altura e 6% da largura da faixa.
         ajustaLetra(texto, larguraTexto * 0.9, Math.min(H * 0.22, W * 0.06));
+        // Ao centro da faixa inteira; só se chegaria à caixa do logótipo é
+        // que vai para o centro do espaço que sobra.
+        const meia = g.measureText(texto).width / 2;
+        const centro = W / 2 - meia >= xTexto ? W / 2 : xTexto + larguraTexto / 2;
         g.fillStyle = lum > 0.6 ? '#14301F' : '#FFFFFF';
         g.textAlign = 'center'; g.textBaseline = 'middle';
-        g.fillText(texto, xTexto + larguraTexto / 2, H / 2);
+        g.fillText(texto, centro, H / 2 + H * 0.01);
       }
     } else {
       // Simples: sem caixa nem faixa, logótipo e nome na cor da equipa, ao centro.
@@ -8334,6 +8363,7 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
     const relsRaiz = relsDoc.documentElement;
     const relsLista = () => [...relsRaiz.getElementsByTagNameNS(REL_NS, 'Relationship')];
     let mudou = false;
+    let sobreNaParte = 0;
     for (const pic of [...doc.getElementsByTagNameNS('*', 'pic')]) {
       const blip = pic.getElementsByTagNameNS('*', 'blip')[0];
       const cNvPr = pic.getElementsByTagNameNS('*', 'cNvPr')[0];
@@ -8366,10 +8396,17 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
       if (!rel) continue;
       let estilo = null;
       if (marcado) {
-        const m = /\((escudo|simples|faixa)\)/.exec(descr);
-        // Marcas antigas (sem o desenho escrito): rodapé e cabeçalho estreito
-        // (o do relatório de ocorrência) ficam sem faixa.
-        estilo = m ? m[1] : (/footer/.test(parte.caminho) || (/header/.test(parte.caminho) && cx < 3000000 && cy < cx * 0.66)) ? 'simples' : estiloImagemClube(null, cx, cy);
+        const m = /\[v2:(escudo|simples|sobre|faixa)\]/.exec(descr);
+        if (m) estilo = m[1];
+        else {
+          // Marcas das versões anteriores: rodapé e cabeçalho estreito (o
+          // do relatório de ocorrência) sem faixa; no corpo da página (a
+          // caixa da organização) por cima da faixa; quadradas, escudo.
+          const quadrada = cy >= cx * 0.66;
+          estilo = quadrada ? 'escudo'
+            : (/footer/.test(parte.caminho) || (/header/.test(parte.caminho) && cx < 3000000)) ? 'simples'
+            : /document/.test(parte.caminho) ? 'sobre' : 'faixa';
+        }
       } else {
         const alvo = rel.getAttribute('Target') || '';
         const ficheiro = alvo.startsWith('/') ? alvo.slice(1) : `${prefixoMedia}${alvo.replace(/^(\.\.\/)+/, '').replace(/^media\//, 'media/')}`;
@@ -8386,10 +8423,12 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
       }
       const largura = 1600;
       const altura = Math.max(40, Math.round(largura * cy / cx));
-      const chave = `${largura}x${altura}:${estilo}`;
+      // A 2.ª caixa "sobre" da mesma parte ("OUTROS LOGÓTIPOS") leva só o logótipo.
+      const desenho = estilo === 'sobre' && (sobreNaParte++ > 0) ? 'sobreLogo' : estilo;
+      const chave = `${largura}x${altura}:${desenho}`;
       if (!feitas.has(chave)) {
         if (!carregouLogo) { logo = await carregarLogoEquipaParaDoc(); carregouLogo = true; }
-        const blob = await desenharImagemClube({ largura, altura, estilo, logo });
+        const blob = await desenharImagemClube({ largura, altura, estilo: desenho, logo });
         while (zip.file(`${prefixoMedia}media/mjp-clube-${n}.png`)) n++;
         const nome = `mjp-clube-${n}.png`; n++;
         zip.file(`${prefixoMedia}media/${nome}`, await blob.arrayBuffer());
@@ -8403,7 +8442,10 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
       // Um recorte da imagem de exemplo cortaria a nova.
       const blipFill = blip.parentNode;
       [...blipFill.childNodes].filter(x => x.localName === 'srcRect').forEach(x => blipFill.removeChild(x));
-      if (comDescr) comDescr.setAttribute('descr', `${MARCA_CLUBE_DOC} (${estilo})`);
+      // Efeitos da imagem de exemplo (transparência, brilho, cinzento…)
+      // deixavam a nova esbatida.
+      [...blip.childNodes].filter(x => x.nodeType === 1 && x.localName !== 'extLst').forEach(x => blip.removeChild(x));
+      if (comDescr) comDescr.setAttribute('descr', `${MARCA_CLUBE_DOC} [v2:${estilo}]`);
       mudou = true;
     }
     if (mudou) {
