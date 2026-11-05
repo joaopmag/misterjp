@@ -13391,7 +13391,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                   130px, ícones, descrição 3 linhas), por isso os cartões
                   ficam todos do mesmo tamanho, tenham ou não descrição,
                   anexo ou esquema. */}
-              <div style={{ width: '100%', aspectRatio: CARTAO_ASPECT, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+              <div style={{ width: '100%', aspectRatio: aspetoCartao(x.diagram && x.diagram.vista), borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
                   <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
                 ) : (x.attachment && x.attachment.type === 'image') ? (
@@ -13829,7 +13829,7 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110, fill = false
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
       {mostrarFotograma && frames[idx] ? (
         <svg viewBox={viewBoxCartao(diagram && diagram.vista)} preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
-          style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: CARTAO_ASPECT }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
+          style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: aspetoCartao(diagram && diagram.vista) }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
           dangerouslySetInnerHTML={{ __html: frames[idx].svg }} />
       ) : (
         <DiagramThumb diagram={diagram} space={space} phase={phase} height={height} fill={fill} />
@@ -15990,26 +15990,31 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
 /* SEM BANCOS (impressões, partilhar, ver a sessão): o enquadramento do
    editor e da apresentação — a mesma margem de relvado à volta toda, nas
    duas vistas. Os bancos de suplentes deixaram de existir no campo. */
-// Campo inteiro e meio-campo com a MESMA proporção (a do campo inteiro),
-// para saírem do mesmo tamanho lado a lado (ex.: impressão da sessão). O
-// meio-campo enche a largura: a mesma margem de 3,5 m para lá das linhas
-// laterais e atrás da baliza; como a caixa é mais baixa do que o meio-campo
-// inteiro com margem, o corte fica em baixo, perto da linha do meio-campo.
+/* Meio-campo nas impressões, no partilhar e na vista da sessão: enche a
+   largura (3,5 m para lá das linhas laterais e atrás da baliza) e vai até
+   à linha do meio-campo, com o meio círculo à vista e 1,5 m de folga por
+   baixo. Por isso tem a sua própria proporção (um pouco mais alto que o
+   campo inteiro). */
+const SEM_BANCOS_BOX_MEIO = { x: -2.5, y: -2.5, w: 75, h: 57.5 };
 function viewBoxSemBancos(vista) {
   if (vista !== 'meio') return EDITOR_VIEWBOX;
-  const w = APRESENTACAO_BOX_MEIO.w; // 68 m + 3,5 m de cada lado
-  const h = w * EDITOR_BOX.h / EDITOR_BOX.w;
-  return `${APRESENTACAO_BOX_MEIO.x} ${APRESENTACAO_BOX_MEIO.y} ${w} ${h.toFixed(3)}`;
+  const b = SEM_BANCOS_BOX_MEIO;
+  return `${b.x} ${b.y} ${b.w} ${b.h}`;
 }
-function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
+function aspetoSemBancos(vista) { const b = vista === 'meio' ? SEM_BANCOS_BOX_MEIO : EDITOR_BOX; return `${b.w} / ${b.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
    margem dos lados), para todos os cartões terem a mesma altura. */
 const CARTAO_VIEWBOX = '-2.3 -0.6 111.6 71.2';
-const CARTAO_VIEWBOX_MEIO = '-8.95 -2 87.9 56.4';
+// Meio-campo no cartão: a mesma folga curta do campo inteiro à volta das
+// linhas (laterais u 1–69, baliza em cima, linha do meio-campo v 53,5),
+// para encher a largura; tem a sua própria proporção (mais alto).
+const CARTAO_VIEWBOX_MEIO = '-0.6 -2 71.2 56.2';
 const CARTAO_ASPECT = '111.6 / 71.2';
+const CARTAO_ASPECT_MEIO = '71.2 / 56.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
+function aspetoCartao(vista) { return vista === 'meio' ? CARTAO_ASPECT_MEIO : CARTAO_ASPECT; }
 const VistaCampoCtx = React.createContext('completo');
 function VistaCampo({ vista, gRef, children }) {
   const v = vista === 'meio' ? 'meio' : 'completo';
@@ -20681,7 +20686,7 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
     <svg
       viewBox={viewBoxCartao(diagram && diagram.vista)}
       preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
-      style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: CARTAO_ASPECT }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
+      style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: aspetoCartao(diagram && diagram.vista) }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
     >
       <VistaCampo vista={diagram && diagram.vista}>
       <PitchMarkings cartao />
