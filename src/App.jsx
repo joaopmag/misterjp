@@ -8539,7 +8539,13 @@ async function trocarImagensDoClube(zip, partes, prefixoMedia) {
             const szEl = (runTexto && runTexto.getElementsByTagNameNS(W_NS, 'sz')[0]) || titulo.getElementsByTagNameNS(W_NS, 'sz')[0];
             const pt = szEl ? (Number(szEl.getAttribute('w:val')) || 28) / 2 : 14;
             const alturaTitulo = Math.round(pt * 1.15 * 12700);
-            const y = Math.round((alturaTitulo - cyS) / 2);
+            // O Word mede a posição a partir do topo da célula, sem contar
+            // com o centrar na vertical: com a altura da linha da tabela
+            // definida, centra-se na barra inteira; sem ela, na linha do título.
+            const trPr = filhoDe(tr, 'trPr');
+            const trH = trPr ? filhoDe(trPr, 'trHeight') : null;
+            const alturaBarra = trH ? (Number(trH.getAttribute('w:val')) || 0) * 635 : 0;
+            const y = Math.round(((alturaBarra > alturaTitulo ? alturaBarra : alturaTitulo) - cyS) / 2);
             [esq, dir].forEach(it => {
               const run = acima(it.desenhoWord, 'r');
               if (run && acima(run, 'p') !== titulo) {
