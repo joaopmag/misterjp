@@ -16026,8 +16026,9 @@ const CARTAO_MEIO_V0 = -1.8;
 const CARTAO_MEIO_H = 53.5 + 0.6 - CARTAO_MEIO_V0;
 const CARTAO_MEIO_W = CARTAO_MEIO_H * 111.6 / 71.2;
 const CARTAO_VIEWBOX_MEIO = `${(35 - CARTAO_MEIO_W / 2).toFixed(3)} ${CARTAO_MEIO_V0} ${CARTAO_MEIO_W.toFixed(3)} ${CARTAO_MEIO_H.toFixed(3)}`;
-// Linhas laterais no cartão com a folga do campo inteiro no cartão (1,6).
-const ESTICAR_CARTAO_MEIO = (CARTAO_MEIO_W / 2 - 1.6) / 34;
+// Linhas laterais no cartão com a MESMA margem que o campo inteiro tem dos
+// lados no cartão (fora das linhas de baliza: 1 − (−2,3) = 3,3).
+const ESTICAR_CARTAO_MEIO = (CARTAO_MEIO_W / 2 - 3.3) / 34;
 const CARTAO_ASPECT = '111.6 / 71.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 function aspetoCartao() { return CARTAO_ASPECT; }
