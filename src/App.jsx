@@ -15991,14 +15991,15 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
    editor e da apresentação — a mesma margem de relvado à volta toda, nas
    duas vistas. Os bancos de suplentes deixaram de existir no campo. */
 /* Meio-campo nas impressões, no partilhar e na vista da sessão: a MESMA
-   proporção do campo inteiro (caixas do mesmo tamanho lado a lado) e a
-   encher a largura (3,5 m para lá das linhas laterais e atrás da baliza).
-   O corte fica em baixo, uns metros antes da linha do meio-campo. */
+   proporção do campo inteiro (caixas do mesmo tamanho) e o meio-campo
+   TODO à vista, da rede da baliza (v −1,5) até à linha do meio-campo
+   (v 53,5), com folga mínima em cima e em baixo para o campo ficar o
+   maior possível; a largura que sobra fica dos lados, centrada. */
 function viewBoxSemBancos(vista) {
   if (vista !== 'meio') return EDITOR_VIEWBOX;
-  const w = 75;
-  const h = w * EDITOR_BOX.h / EDITOR_BOX.w;
-  return `-2.5 -2.5 ${w} ${h.toFixed(3)}`;
+  const v0 = -2.1, h = 53.5 + 0.9 - v0;
+  const w = h * EDITOR_BOX.w / EDITOR_BOX.h;
+  return `${(35 - w / 2).toFixed(3)} ${v0} ${w.toFixed(3)} ${h.toFixed(3)}`;
 }
 function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
@@ -16007,10 +16008,12 @@ function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
    margem dos lados), para todos os cartões terem a mesma altura. */
 const CARTAO_VIEWBOX = '-2.3 -0.6 111.6 71.2';
 // Meio-campo no cartão: a MESMA proporção do campo inteiro (cartões todos
-// do mesmo tamanho) e a encher a largura, com a folga curta do campo
-// inteiro à volta das linhas laterais (u 1–69) e da baliza. O corte fica
-// em baixo, uns metros antes da linha do meio-campo.
-const CARTAO_VIEWBOX_MEIO = `-0.6 -2 71.2 ${(71.2 * 71.2 / 111.6).toFixed(2)}`;
+// do mesmo tamanho) e o meio-campo todo à vista, até à linha do meio-campo,
+// com folga mínima em cima e em baixo; a largura que sobra fica dos lados.
+const CARTAO_MEIO_V0 = -1.8;
+const CARTAO_MEIO_H = 53.5 + 0.6 - CARTAO_MEIO_V0;
+const CARTAO_MEIO_W = CARTAO_MEIO_H * 111.6 / 71.2;
+const CARTAO_VIEWBOX_MEIO = `${(35 - CARTAO_MEIO_W / 2).toFixed(3)} ${CARTAO_MEIO_V0} ${CARTAO_MEIO_W.toFixed(3)} ${CARTAO_MEIO_H.toFixed(3)}`;
 const CARTAO_ASPECT = '111.6 / 71.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 function aspetoCartao() { return CARTAO_ASPECT; }
