@@ -13473,7 +13473,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                 elements={printExercise.diagram?.elements || []}
                 arrows={printExercise.diagram?.arrows || []}
                 interactive={false}
-                iconScale={iconScaleForPhase(printExercise.phase)}
+                iconScale={iconScaleForPhase(printExercise.phase, printExercise.diagram)}
                 printMode
               />
               </VistaCampo>
@@ -17153,8 +17153,11 @@ function SpaceZone({ meters, center, label, onPointerDown, onResizeDown, onDelet
    que tinham antes. A Bola Parada mantém a redução própria, aplicada por
    cima desta. */
 const ICON_SCALE_BASE = 0.8;
-function iconScaleForPhase(phase) {
-  return phase === 'Bola Parada' ? ICON_SCALE_BASE * 0.75 : ICON_SCALE_BASE;
+// Bola Parada e o MEIO-CAMPO (o campo aparece aproximado) levam os ícones
+// mais pequenos, na mesma medida. `diagram` é opcional (vê a vista).
+function iconScaleForPhase(phase, diagram) {
+  const meio = !!(diagram && diagram.vista === 'meio');
+  return phase === 'Bola Parada' || meio ? ICON_SCALE_BASE * 0.75 : ICON_SCALE_BASE;
 }
 
 function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode, iconScale = 1 }) {
@@ -18054,7 +18057,7 @@ function stepStaticArrows(step, diagram) {
 // indicado, reconstroem passo a passo a coreografia gravada no editor
 // (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
 function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
-  const iconEscala = iconScaleForPhase(phase);
+  const iconEscala = iconScaleForPhase(phase, diagram);
   const cartao = !!opcoes.cartao; // miniaturas: campo com riscas, sem bancos
   const sequence = diagram.sequence || [];
   const frames = [];
@@ -18262,7 +18265,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   valueRef.current = value;
   // Bola Parada trabalha-se dentro da grande área: ícones a 60% (ver
   // iconScaleForPhase). Reage à fase escolhida no formulário, em direto.
-  const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
+  const iconEscala = iconScaleForPhase(exerciseInfo?.phase, value);
   const isNarrowEditor = useIsMobile(760);
 
   /* ÍCONES MAIORES NO TELEMÓVEL.
@@ -20617,7 +20620,7 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
       ))}
-      <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(phase)} />
+      <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(phase, diagram)} />
       </VistaCampo>
     </svg>
   );
@@ -21038,7 +21041,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const diagram = exercise.diagram || { elements: [], arrows: [] };
   const sequence = diagram.sequence || [];
   const zones = getSpaceZones(diagram, exercise.space);
-  const iconEscala = iconScaleForPhase(exercise.phase);
+  const iconEscala = iconScaleForPhase(exercise.phase, diagram);
   /* Os desenhos fixos deixam de ser fixos: acompanham o passo, para uma
      linha só aparecer a partir do momento em que foi traçada. */
   const [frameArrows, setFrameArrows] = useState(
@@ -26860,7 +26863,7 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
                                 <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
                                 <DiagramElements
                                   elements={d.elements} arrows={d.arrows}
-                                  interactive={false} iconScale={iconScaleForPhase(ex.phase)} printMode
+                                  interactive={false} iconScale={iconScaleForPhase(ex.phase, ex.diagram)} printMode
                                 />
                                 </VistaCampo>
                               </svg>
@@ -27579,7 +27582,7 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
                 elements={d.elements}
                 arrows={d.arrows}
                 interactive={false}
-                iconScale={iconScaleForPhase(ex.phase)}
+                iconScale={iconScaleForPhase(ex.phase, ex.diagram)}
                 printMode
               />
             );
@@ -29187,7 +29190,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         {(() => {
                           const d = diagramaParaImpressao(ex.diagram);
-                          return <DiagramElements elements={d.elements} arrows={d.arrows} interactive={false} iconScale={iconScaleForPhase(ex.phase)} />;
+                          return <DiagramElements elements={d.elements} arrows={d.arrows} interactive={false} iconScale={iconScaleForPhase(ex.phase, ex.diagram)} />;
                         })()}
                         </VistaCampo>
                       </svg>
