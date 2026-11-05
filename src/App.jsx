@@ -16066,6 +16066,9 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 // 86 (antes 70): com o editor mais largo (até 1480 px), o campo cresce e
 // enche mais as laterais; a barra de ferramentas fica logo por cima.
 const PITCH_TARGET_VH = 86;
+// Altura (px) do que rodeia o campo na janela da apresentação: cabeçalho
+// da janela, etiquetas, descrição e a linha dos controlos por baixo.
+const CHROME_APRESENTACAO_PX = 330;
 // Altura de tudo o que rodeia o campo no editor (computador): cores,
 // ferramentas, dica, linha das animações, painel do selecionado e marca.
 // O campo fica com o resto do ecrã: tudo à vista sem scroll.
@@ -21327,6 +21330,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   // (era isso que impedia o segundo "play" logo a seguir ao fim).
   const restart = () => { stop(); setTimeout(start, 30); };
 
+  // Enquadramento da apresentação: o do editor (sem bancos), nas duas vistas.
+  const vbApresentacao = exercise.diagram && exercise.diagram.vista === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX;
+  const vbNums = vbApresentacao.split(' ').map(Number);
   return (
     <Modal title={exercise.name} onClose={onClose} wide xwide fullPage>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -21364,15 +21370,19 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       <div ref={pitchWrapRef} style={
         isFull
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
-          : { position: 'relative', ...PITCH_FIT }
+          /* Sem bancos: o mesmo enquadramento do editor (a mesma margem de
+             relvado à volta toda). A largura sai da altura do ecrã menos o
+             que está à volta (título, etiquetas, descrição e controlos),
+             para o campo e os botões de reproduzir/fechar caberem todos. */
+          : { position: 'relative', ...PITCH_FIT, aspectRatio: `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`, maxWidth: `min(100%, calc((100vh - ${CHROME_APRESENTACAO_PX}px) * ${EDITOR_BOX.w} / ${EDITOR_BOX.h}))` }
       }>
-        <svg viewBox={viewBoxDaVista(exercise.diagram && exercise.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={
+        <svg viewBox={vbApresentacao} preserveAspectRatio="xMidYMid meet" style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
         }>
           <VistaCampo vista={exercise.diagram && exercise.diagram.vista}>
-          <PitchMarkings />
+          <PitchMarkings semBancos />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
@@ -21382,8 +21392,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
               inteiro e aparece também quando se guarda a imagem. */}
           <text
-            x={PITCH_BOX.x + PITCH_BOX.w - 2} y={PITCH_BOX.y + PITCH_BOX.h - 2}
-            textAnchor="end" fontSize="2.6" fill="#ffffff55"
+            x={vbNums[0] + vbNums[2] - vbNums[3] * 0.025} y={vbNums[1] + vbNums[3] - vbNums[3] * 0.025}
+            textAnchor="end" fontSize={(vbNums[3] * 0.031).toFixed(2)} fill="#ffffff55"
             style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.08em', pointerEvents: 'none' }}
           >™ Mister JP</text>
         </svg>
