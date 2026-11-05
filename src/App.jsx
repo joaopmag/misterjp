@@ -15992,13 +15992,14 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
    duas vistas. Os bancos de suplentes deixaram de existir no campo. */
 // Campo inteiro e meio-campo com a MESMA proporção (a do campo inteiro),
 // para saírem do mesmo tamanho lado a lado (ex.: impressão da sessão). O
-// meio-campo fica com a margem de 3,5 m em cima e em baixo e centrado na
-// largura (mais relvado dos lados).
+// meio-campo enche a largura: a mesma margem de 3,5 m para lá das linhas
+// laterais e atrás da baliza; como a caixa é mais baixa do que o meio-campo
+// inteiro com margem, o corte fica em baixo, perto da linha do meio-campo.
 function viewBoxSemBancos(vista) {
   if (vista !== 'meio') return EDITOR_VIEWBOX;
-  const h = APRESENTACAO_BOX_MEIO.h;
-  const w = h * EDITOR_BOX.w / EDITOR_BOX.h;
-  return `${(35 - w / 2).toFixed(3)} ${APRESENTACAO_BOX_MEIO.y} ${w.toFixed(3)} ${h}`;
+  const w = APRESENTACAO_BOX_MEIO.w; // 68 m + 3,5 m de cada lado
+  const h = w * EDITOR_BOX.h / EDITOR_BOX.w;
+  return `${APRESENTACAO_BOX_MEIO.x} ${APRESENTACAO_BOX_MEIO.y} ${w} ${h.toFixed(3)}`;
 }
 function aspetoSemBancos() { return `${EDITOR_BOX.w} / ${EDITOR_BOX.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
@@ -27674,11 +27675,7 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
           </VistaCampo>
         </svg>
       )}
-      {!ex.attachment && (
-        <div style={{ textAlign: 'right', margin: '2px 0 0' }}>
-          <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
-        </div>
-      )}
+      {/* Sem marca por baixo de cada campo: chega a do fundo da página. */}
 
       {/* AS EQUIPAS FICAM COM O EXERCÍCIO A QUE PERTENCEM.
 
