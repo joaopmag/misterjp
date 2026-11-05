@@ -248,6 +248,7 @@ const TAGS = [
 ];
 // As que se podem escolher (sem as antigas).
 const TAGS_ATIVAS = TAGS.filter(t => !t.antiga);
+export { TAGS as TAGS_ANALISE };
 /* CODIFICAR — como a "janela de código" das ferramentas profissionais:
    botões de lance agrupados (momentos do jogo e ações). Um toque cria o
    clipe com X s antes e Y s depois do instante (ajustável por etiqueta). */
@@ -1532,6 +1533,56 @@ function useFecharComEsc(onClose, ativo = true) {
   }, [onClose, ativo]);
 }
 
+/* EQUIPAS DE UM JOGO, PELO TÍTULO DO VÍDEO.
+   "USC Paredes vs AFS - 8a Jornada" → ["USC Paredes", "AFS"]. Só uma
+   sugestão: o treinador confirma ou corrige (ver EquipasDoJogoModal). */
+export function equipasDoTitulo(titulo) {
+  const t = String(titulo || '').replace(/[_]+/g, ' ').trim();
+  const m = t.split(/\s+(?:vs\.?|v\.?|x|contra)\s+/i);
+  if (m.length !== 2) return [];
+  const limpar = (x) => x.replace(/\s+[-–|·]\s+.*$/, '').replace(/\s*\(.*?\)\s*$/, '').trim();
+  const a = limpar(m[0]); const b = limpar(m[1]);
+  return a && b ? [a, b] : [];
+}
+const semAcentosEq = (s0) => String(s0 || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\b(sc|fc|cf|sl|ad|ud|gd|cd|clube|sport|futebol)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+// A nossa equipa? Compara sem acentos e sem siglas (SC, FC…): "Salgueiros" = "SC Salgueiros".
+export function ehNossaEquipa(nome, nossa) {
+  const a = semAcentosEq(nome); const b = semAcentosEq(nossa);
+  return !!a && !!b && (a === b || a.includes(b) || b.includes(a));
+}
+
+/* As duas equipas de um vídeo, para os cortes irem para a ficha certa. */
+function EquipasDoJogoModal({ titulo, equipas, onGuardar, onClose }) {
+  const sugestao = (equipas && equipas.length ? equipas : equipasDoTitulo(titulo));
+  const [a, setA] = useState(sugestao[0] || '');
+  const [b, setB] = useState(sugestao[1] || '');
+  useFecharComEsc(onClose);
+  const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>Equipas do jogo</div>
+          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+        </div>
+        <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>{titulo}. Os cortes de cada equipa vão para a ficha dela em Scouting › Adversários.</div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+          Equipa A
+          <input value={a} onChange={e => setA(e.target.value)} maxLength={60} style={campo} placeholder="Ex.: USC Paredes" />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+          Equipa B
+          <input value={b} onChange={e => setB(e.target.value)} maxLength={60} style={campo} placeholder="Ex.: AFS" />
+        </label>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+          <Btn variant="solid" disabled={!a.trim() && !b.trim()} onClick={() => onGuardar([a.trim(), b.trim()].filter(Boolean))}><Check size={14} /> Guardar</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ENVIAR UM CLIPE PARA A SALA DE VÍDEO (Canal da Biblioteca).
    Dois destinos: um ADVERSÁRIO (por omissão) ou um JOGO nosso. Temas
    ficou de fora: um corte de jogo não faz sentido numa pasta de temas.
@@ -1650,7 +1701,7 @@ function estudioForaDaVista(el) {
   return r.bottom < 80 || r.top > window.innerHeight - 80;
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, embutido, onEcraInteiro, ecraInteiroExterno }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, embutido, onEcraInteiro, ecraInteiroExterno, equipasDoClipe, onChangeEquipa, nomeNossaEquipa = '', aMudarEquipa }) {
   // Ecrã estreito (telemóvel): o painel vai para baixo do vídeo.
   const [estreitoPlayer, setEstreitoPlayer] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   useEffect(() => {
@@ -2014,6 +2065,31 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
                   </button>
                 ))}
               </div>
+              {/* EQUIPA DO CORTE: corrigir um engano. Mudar aqui muda a ficha
+                  de adversário onde o corte está (sai de uma, entra na outra). */}
+              {onChangeEquipa && (equipasDoClipe || []).length > 0 && (
+                <>
+                  <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: TV.mutedDim, margin: '14px 0 8px', ...body }}>Equipa da ação · ficha do adversário</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+                    {[...(equipasDoClipe || []).slice(0, 2), ''].map((nome, i) => {
+                      const nossa = nome && ehNossaEquipa(nome, nomeNossaEquipa);
+                      const on = nome ? clip.equipa === nome : !clip.equipa;
+                      return (
+                        <button key={i} type="button" disabled={aMudarEquipa} onClick={() => onChangeEquipa(nome)}
+                          title={nossa ? 'A nossa equipa: o corte fica só aqui' : (nome ? `Pôr na ficha de ${nome}` : 'Tirar da ficha do adversário')}
+                          style={{
+                            padding: '5px 4px', borderRadius: 999, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', ...body,
+                            width: '100%', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            border: `1px solid ${on ? TV.gold : TV.line}`, background: on ? `${TV.gold}26` : 'transparent', color: on ? TV.gold : TV.cream,
+                          }}>{nome || 'Nenhuma'}{nossa ? ' (nós)' : ''}</button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ height: 16, marginTop: 5, fontSize: 11, color: TV.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
+                    {aMudarEquipa ? 'A preparar a ficha do adversário…' : (clip.equipa ? <>Está na ficha de <b style={{ color: TV.cream }}>{clip.equipa}</b>.</> : 'Não está em nenhuma ficha de adversário.')}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
@@ -2668,7 +2744,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -2996,6 +3072,29 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [cartaoPainel, setCartaoPainel] = useState(null); // { chave, left, width, top } — onde abrir a coluna
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
+  /* EQUIPA DOS CORTES. O vídeo guarda as duas equipas do jogo (ou
+     sugerem-se pelo título) e a equipa escolhida para os cortes; cada
+     corte novo leva essa equipa e vai sozinho para a ficha dela em
+     Scouting › Adversários. Fica escolhida para os cortes seguintes. */
+  const equipasDoAtivo = originalAtivo
+    ? ((originalAtivo.equipas && originalAtivo.equipas.length) ? originalAtivo.equipas : equipasDoTitulo(originalAtivo.titulo))
+    : [];
+  const equipaDosCortes = originalAtivo && originalAtivo.equipaCortes && equipasDoAtivo.includes(originalAtivo.equipaCortes) ? originalAtivo.equipaCortes : '';
+  const [editarEquipas, setEditarEquipas] = useState(false);
+  const [aGarantirFicha, setAGarantirFicha] = useState(false);
+  const escolherEquipaCortes = async (nome) => {
+    if (!originalAtivo || aGarantirFicha) return;
+    const id = originalAtivo.id;
+    const guardar = (extra) => setVideosOriginais(prev => prev.map(v => (v.id === id ? { ...v, ...extra } : v)));
+    if (!nome || ehNossaEquipa(nome, nomeNossaEquipa) || !garantirFichaAdversario) { guardar({ equipaCortes: nome || '', equipas: equipasDoAtivo }); return; }
+    // Sem ficha para esta equipa: a app pede para a criar (ou associar) uma vez.
+    setAGarantirFicha(true);
+    let r = null;
+    try { r = await garantirFichaAdversario({ equipa: nome, equipas: equipasDoAtivo, titulo: originalAtivo.titulo }); } finally { setAGarantirFicha(false); }
+    if (!r) return;
+    const eqs = (r.equipas && r.equipas.length) ? r.equipas : equipasDoAtivo;
+    guardar({ equipaCortes: eqs.includes(r.equipa) ? r.equipa : nome, equipas: eqs });
+  };
   const desenhosDoOriginalAtivo = () => {
     const o = videosOriginais.find(v => v.id === originalAtivoId);
     // Sem os desenhos acidentais (toques sem arrastar) que tenham ficado
@@ -3359,6 +3458,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           duracao: fim - ini,
         } : null,
         originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
+        // De que equipa é a ação: o corte vai sozinho para a ficha dela em
+        // Scouting (ver a sincronização em App). A nossa equipa não vai.
+        equipa: equipaDosCortes && !ehNossaEquipa(equipaDosCortes, nomeNossaEquipa) ? equipaDosCortes : null,
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
       if (avisoCodifTimer.current) clearTimeout(avisoCodifTimer.current);
@@ -3403,6 +3505,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   // Muda (ou atribui pela primeira vez) a etiqueta de um clipe já guardado.
+  /* Equipas possíveis para um corte: as do vídeo de onde saiu (ou as do
+     título), mais a que o corte já tem, se for outra. */
+  const equipasDoClipeDe = (clip) => {
+    if (!clip) return [];
+    const o = originalDoClipe(clip);
+    const base = o ? ((o.equipas && o.equipas.length) ? o.equipas : equipasDoTitulo(o.titulo)) : equipasDoTitulo(clip.originalTitulo);
+    const lista = [...base];
+    if (clip.equipa && !lista.includes(clip.equipa)) lista.unshift(clip.equipa);
+    return lista.slice(0, 2);
+  };
+  // Corrigir a equipa de um corte (sai de uma ficha e entra na outra).
+  const mudarEquipaClipe = async (clip, nome) => {
+    if (!clip || aGarantirFicha) return;
+    let equipa = nome || null;
+    if (equipa && ehNossaEquipa(equipa, nomeNossaEquipa)) equipa = null;
+    if (equipa && garantirFichaAdversario) {
+      setAGarantirFicha(true);
+      let r = null;
+      try { r = await garantirFichaAdversario({ equipa, equipas: equipasDoClipeDe(clip), titulo: clip.originalTitulo || '' }); } finally { setAGarantirFicha(false); }
+      if (!r) return;
+      equipa = r.equipa || equipa;
+    }
+    // Sem a marca do envio anterior: escolhido de novo à mão, volta a entrar
+    // na ficha mesmo que lá tenha sido apagado antes.
+    const novo = { ...clip, equipa, envioFicha: null };
+    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, equipa, envioFicha: null } : c)));
+    setClipeAReproduzir(prev => (prev && prev.id === clip.id ? novo : prev));
+  };
   const mudarTagClipe = (clip, novoTagId) => {
     setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, tagId: novoTagId } : c)));
     setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, tagId: novoTagId } : prev));
@@ -3450,7 +3580,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       setClipes(prev => prev.filter(c => c.id !== clip.id));
       onRemovido?.();
     };
-    const notaSala = naSala ? 'Este clipe foi enviado para a Sala de Vídeo: sai da Análise de Vídeo, mas continua na Sala de Vídeo (o ficheiro não é apagado). Para o tirar de lá, apaga-o também na Sala de Vídeo.' : undefined;
+    const notaSala = naSala ? 'Este clipe foi enviado para a Sala de Vídeo: sai da Análise de Vídeo, mas continua na Sala de Vídeo (o ficheiro não é apagado). Para o tirar de lá, apaga-o também na Sala de Vídeo.'
+      : (clip.equipa ? `Sai também da ficha do adversário (${clip.equipa}) em Scouting.` : undefined);
     if (askConfirm) {
       askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executar, note: notaSala });
     } else if (window.confirm('Apagar este clipe?')) {
@@ -4770,6 +4901,52 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
               {abaAtiva === 'codificar' && (
                 <>
+                  {originalAtivo && (() => {
+                    const eqs = equipasDoAtivo;
+                    const alvo = equipaDosCortes && !ehNossaEquipa(equipaDosCortes, nomeNossaEquipa) ? equipaDosCortes : '';
+                    const semEquipa = clipesDoVideo.filter(c => !c.equipa);
+                    const chip = (nome, i) => {
+                      const on = nome ? equipaDosCortes === nome : !equipaDosCortes;
+                      const nossa = nome && ehNossaEquipa(nome, nomeNossaEquipa);
+                      const texto = nome || (i < 2 ? `Equipa ${i === 0 ? 'A' : 'B'}` : 'Nenhuma');
+                      return (
+                        <button key={i} type="button" disabled={aGarantirFicha}
+                          onClick={() => (i < 2 && !nome ? setEditarEquipas(true) : escolherEquipaCortes(nome))}
+                          title={i < 2 && !nome ? 'Escrever as equipas do jogo' : (nossa ? 'A nossa equipa: os cortes ficam só aqui' : (nome ? `Cortes para a ficha de ${nome}` : 'Os cortes ficam só na Análise'))}
+                          style={{
+                            padding: '5px 4px', borderRadius: 999, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+                            overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center',
+                            border: `1px solid ${on ? TV.gold : TV.line}`, background: on ? `${TV.gold}26` : 'transparent',
+                            color: on ? TV.gold : (i < 2 && !nome ? TV.mutedDim : TV.cream),
+                          }}>{texto}{nossa ? ' (nós)' : ''}</button>
+                      );
+                    };
+                    return (
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 }}>
+                          {tituloSecao('Equipa da ação · vai para a ficha')}
+                          <button type="button" onClick={() => setEditarEquipas(true)} title="Equipas do jogo" style={{ background: 'none', border: 'none', color: TV.gold, cursor: 'pointer', padding: 0, fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, ...body }}>
+                            <Pencil size={11} /> Equipas
+                          </button>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
+                          {chip(eqs[0] || '', 0)}{chip(eqs[1] || '', 1)}{chip('', 2)}
+                        </div>
+                        {/* Altura fixa: o texto muda e nada à volta se mexe. */}
+                        <div style={{ height: 16, marginTop: 5, fontSize: 11, color: TV.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
+                          {aGarantirFicha ? 'A preparar a ficha do adversário…'
+                            : alvo
+                              ? (semEquipa.length
+                                ? <button type="button" onClick={() => { const ids = new Set(semEquipa.map(c => c.id)); setClipes(prev => prev.map(c => (ids.has(c.id) ? { ...c, equipa: alvo, envioFicha: null } : c))); }}
+                                  style={{ background: 'none', border: 'none', color: TV.gold, cursor: 'pointer', padding: 0, fontSize: 11, ...body }}>
+                                  Enviar {semEquipa.length === 1 ? 'o corte' : `os ${semEquipa.length} cortes`} já feitos para {alvo}
+                                </button>
+                                : <>Os cortes vão para a ficha de <b style={{ color: TV.cream }}>{alvo}</b>.</>)
+                              : (equipaDosCortes ? 'A nossa equipa: os cortes ficam só aqui.' : 'Os cortes ficam só na Análise de Vídeo.')}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {tituloSecao('Codificar · um toque cria o clipe')}
                   {GRUPOS_CODIFICAR.map(g => (
                     <div key={g.titulo} style={{ marginBottom: 8 }}>
@@ -5207,6 +5384,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           originalSugeridoId={(originalDoClipe(clipeAReproduzir) || {}).id || null}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
+          equipasDoClipe={equipasDoClipeDe(clipeAReproduzir)}
+          onChangeEquipa={ehClipeAtleta(clipeAReproduzir) ? undefined : (nome => mudarEquipaClipe(clipeAReproduzir, nome))}
+          nomeNossaEquipa={nomeNossaEquipa}
+          aMudarEquipa={aGarantirFicha}
           onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
           onEnviarSala={enviarParaSala ? () => { sairDoEcraInteiro(); setClipeParaSala(clipeAReproduzir); } : undefined}
           onDesenhar={() => desenharNoClipe(clipeAReproduzir)}
@@ -5215,6 +5396,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           ecraInteiroExterno={fullscreen}
         />
         ); return estudioEl ? createPortal(el, estudioEl) : el; })()
+      )}
+      {editarEquipas && originalAtivo && (
+        <EquipasDoJogoModal
+          titulo={originalAtivo.titulo}
+          equipas={originalAtivo.equipas}
+          onClose={() => setEditarEquipas(false)}
+          onGuardar={(eqs) => {
+            const id = originalAtivo.id;
+            setVideosOriginais(prev => prev.map(v => (v.id === id ? { ...v, equipas: eqs, equipaCortes: eqs.includes(v.equipaCortes) ? v.equipaCortes : '' } : v)));
+            setEditarEquipas(false);
+          }}
+        />
       )}
       {clipeParaSala && enviarParaSala && (
         <EnviarSalaModal

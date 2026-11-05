@@ -14,6 +14,7 @@ import AnalisadorVideo, {
   validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
+  TAGS_ANALISE, ehNossaEquipa,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -3098,6 +3099,45 @@ function BotaoTopo({ alvoRef, isMobile, onFechar, soAlvo }) {
   );
 }
 
+/* Plano da sincronização Análise de Vídeo → fichas (ver o efeito em App). */
+function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) {
+  const autos = (videos || []).filter(v => v && v.origemAnalise && v.origemAnalise.auto && v.origemAnalise.clipeId);
+  const autoPorClipe = new Map();
+  const remover = new Set();
+  autos.forEach(v => { if (autoPorClipe.has(v.origemAnalise.clipeId)) remover.add(v.id); else autoPorClipe.set(v.origemAnalise.clipeId, v); });
+  const clipesPorId = new Map((clipes || []).filter(Boolean).map(c => [c.id, c]));
+  const criar = [];
+  const atualizar = new Map();
+  const marcar = new Map();
+  const CAMPOS = ['title', 'dataUrl', 'thumbUrl', 'clipInicio', 'clipFim', 'clipOrigemTitulo', 'adversarioId', 'equipa'];
+  (clipes || []).forEach(c => {
+    if (!c || c.origem === 'atleta' || !c.publicUrl) return;
+    const atual = autoPorClipe.get(c.id);
+    const ficha = c.equipa && !ehNossaEquipa(c.equipa, nomeNossaEquipa) ? fichaDaEquipa(c.equipa, adversarios) : null;
+    if (!ficha) { if (atual) remover.add(atual.id); return; }
+    const tag = (TAGS_ANALISE || []).find(t => t.id === c.tagId);
+    const titulo = (c.note || '').trim() || (tag && tag.label) || 'Clipe';
+    const desejado = {
+      title: titulo, kind: 'video', dataUrl: c.publicUrl, thumbUrl: c.thumbUrl || null, fileName: `${titulo}.mp4`,
+      clipInicio: typeof c.origemInicio === 'number' ? c.origemInicio : 0,
+      clipFim: typeof c.origemFim === 'number' ? c.origemFim : (c.duracao || 0),
+      clipOrigemTitulo: c.originalTitulo || '',
+      adversarioId: ficha.id, equipa: ficha.equipaCompeticao || ficha.nome || c.equipa, pasta: '',
+    };
+    if (atual) {
+      if (CAMPOS.some(k => (atual[k] ?? null) !== (desejado[k] ?? null))) atualizar.set(atual.id, { ...atual, ...desejado });
+      if (!c.envioFicha || c.envioFicha.adversarioId !== ficha.id) marcar.set(c.id, { itemId: atual.id, adversarioId: ficha.id });
+      return;
+    }
+    if (c.envioFicha && c.envioFicha.adversarioId === ficha.id) return; // apagado à mão na ficha: não volta
+    const id = uid();
+    criar.push({ id, ...desejado, origemAnalise: { clipeId: c.id, auto: true, em: new Date().toISOString() } });
+    marcar.set(c.id, { itemId: id, adversarioId: ficha.id });
+  });
+  autos.forEach(v => { if (!clipesPorId.has(v.origemAnalise.clipeId)) remover.add(v.id); });
+  return { criar, atualizar, remover, marcar };
+}
+
 function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMudaram }) {
   const userId = session.user.id;
   const userEmail = session.user.email;
@@ -3225,7 +3265,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady, documentosMeta] = useCollectionSync('documentos', notifyEdit, teamId);
   const [videosOriginais, setVideosOriginais, , videosOriginaisMeta] = useCollectionSync('video_originais', notifyEdit, teamId);
-  const [clipes, setClipes, , clipesMeta] = useCollectionSync('video_clips', notifyEdit, teamId);
+  const [clipes, setClipes, clipesReady, clipesMeta] = useCollectionSync('video_clips', notifyEdit, teamId);
 
   // Upload de vídeo definido aqui (não dentro de AnalisadorVideo) de propósito:
   // este componente nunca desmonta ao trocar de separador, por isso o
@@ -3911,8 +3951,66 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [videos, matches, adversarios]);
   // Clipes da Análise que estão a ser usados na Sala de Vídeo (para não
   // se apagar o ficheiro deles quando são apagados na Análise).
+  // Os enviados sozinhos para a ficha (origemAnalise.auto) não contam: esses
+  // acompanham o clipe, e saem da ficha quando o clipe é apagado.
   const clipesUsadosNaSala = React.useMemo(() => new Set((videos || [])
-    .map(v => v && v.origemAnalise && v.origemAnalise.clipeId).filter(Boolean)), [videos]);
+    .filter(v => v && v.origemAnalise && !v.origemAnalise.auto)
+    .map(v => v.origemAnalise.clipeId).filter(Boolean)), [videos]);
+
+  /* CORTES DA ANÁLISE DE VÍDEO → FICHA DO ADVERSÁRIO, SOZINHOS.
+
+     Cada corte com uma equipa (escolhida na Análise ao cortar) tem na
+     ficha dessa equipa um vídeo que aponta para o mesmo MP4, marcado
+     `origemAnalise.auto`. Esta sincronização mantém os dois iguais:
+     corte novo → entra na ficha; corte editado (texto, tempos, etiqueta,
+     equipa) → a ficha atualiza; corte apagado → sai da ficha. Se alguém
+     apagar o vídeo diretamente na ficha, não volta a ser criado
+     (`envioFicha` no clipe lembra-se de que já lá esteve).
+     Só corre com as três listas carregadas, para nunca apagar nada por
+     causa de uma lista que ainda não chegou. */
+  const nomeNossaEquipa = String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim();
+  useEffect(() => {
+    if (!videosReady || !clipesReady || !adversariosReady) return;
+    const { criar, atualizar, remover, marcar } = planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa);
+    if (!criar.length && !atualizar.size && !remover.size) {
+      if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, envioFicha: marcar.get(c.id) } : c)));
+      return;
+    }
+    setVideos(prev => [...criar, ...(prev || []).filter(v => !remover.has(v.id)).map(v => atualizar.get(v.id) || v)]);
+    if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, envioFicha: marcar.get(c.id) } : c)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videos, clipes, adversarios, videosReady, clipesReady, adversariosReady, nomeNossaEquipa]);
+
+  /* Pedido da Análise de Vídeo: "esta equipa tem ficha?". Se tiver,
+     responde logo; se não, abre a mesma janela da Sala de Vídeo para a
+     criar ou associar a uma ficha com outro nome. */
+  const [pedidoFichaAnalise, setPedidoFichaAnalise] = useState(null); // { equipa, equipas, titulo, resolver }
+  const garantirFichaAdversario = useCallback(({ equipa, equipas, titulo }) => new Promise((resolver) => {
+    if (fichaDaEquipa(equipa, adversarios)) { resolver({ equipa, equipas }); return; }
+    setPedidoFichaAnalise({ equipa, equipas, titulo, resolver });
+  }), [adversarios]);
+  const confirmarFichaAnalise = ({ equipas: eqs, equipa, fichaExistenteId, nova }) => {
+    const pedido = pedidoFichaAnalise;
+    if (!pedido || !equipa) return;
+    let ficha = fichaDaEquipa(equipa, adversarios);
+    const existente = !ficha && fichaExistenteId ? (adversarios || []).find(a => a.id === fichaExistenteId) : null;
+    if (existente) {
+      ficha = { ...existente, equipaCompeticao: equipa };
+      setAdversarios(prev => (prev || []).map(a => (a.id === existente.id ? { ...a, equipaCompeticao: equipa } : a)));
+    }
+    if (!ficha && nova) {
+      ficha = {
+        id: idFichaAutomatica(teamId, equipa), nome: equipa, equipaCompeticao: equipa,
+        escalao: (nova.escalao || '').trim(), prova: (nova.prova || '').trim(),
+        pontosFortes: '', pontosFracos: '', notas: '',
+        jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
+      };
+      const nova0 = ficha;
+      setAdversarios(prev => ((prev || []).some(a => a.id === nova0.id || fichaRepetida(nova0.nome, [a])) ? prev : [...(prev || []), nova0]));
+    }
+    setPedidoFichaAnalise(null);
+    pedido.resolver(ficha ? { equipa, equipas: eqs } : null);
+  };
   const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId }) => {
     if (!clip || !clip.publicUrl) throw new Error('Este clipe não tem vídeo guardado.');
     const base = {
@@ -4478,7 +4576,18 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} />
+            {pedidoFichaAnalise && (
+              <FichaAdversarioRapida
+                adversarios={adversarios}
+                equipasCompeticao={nomesEquipasCompeticao(standings)}
+                equipasIniciais={pedidoFichaAnalise.equipas}
+                equipaInicial={pedidoFichaAnalise.equipa}
+                video={{ title: pedidoFichaAnalise.titulo }}
+                onClose={() => { const p0 = pedidoFichaAnalise; setPedidoFichaAnalise(null); p0.resolver(null); }}
+                onConfirm={confirmarFichaAnalise}
+              />
+            )}
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} clinico={clinico} />}
           <NecessidadesLigacao key={teamId || 'sem-equipa'} teamId={teamId} onApi={setNecApiRaiz} />
