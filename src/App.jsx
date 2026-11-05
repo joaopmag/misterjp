@@ -13471,9 +13471,9 @@ function Exercicios({ exercises, setExercises, meta }) {
               style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
           ) : (
-            <svg viewBox={viewBoxDaVista(printExercise.diagram && printExercise.diagram.vista)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <svg viewBox={viewBoxSemBancos(printExercise.diagram && printExercise.diagram.vista)} style={{ width: '100%', aspectRatio: aspetoSemBancos(printExercise.diagram && printExercise.diagram.vista), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
               <VistaCampo vista={printExercise.diagram && printExercise.diagram.vista}>
-              <PitchMarkings printMode />
+              <PitchMarkings printMode semBancos />
               <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
                 elements={printExercise.diagram?.elements || []}
@@ -13589,14 +13589,14 @@ function IdeiaNoDossier({ ideia, numero }) {
         {passos.map((p, i) => (
           <div key={i} style={{ width: largura, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
             <svg
-              viewBox={viewBoxDaVista(ideia.diagram && ideia.diagram.vista)}
+              viewBox={viewBoxSemBancos(ideia.diagram && ideia.diagram.vista)}
               style={{
-                width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
+                width: '100%', aspectRatio: aspetoSemBancos(ideia.diagram && ideia.diagram.vista), display: 'block',
                 background: '#fff', border: '1px solid #ccc', borderRadius: 6,
               }}
             >
               <VistaCampo vista={ideia.diagram && ideia.diagram.vista}>
-              <PitchMarkings printMode />
+              <PitchMarkings printMode semBancos />
               <SpaceZonesReadOnly diagram={ideia.diagram} printMode />
               <DiagramElements elements={p.elements} arrows={p.arrows} interactive={false} printMode />
               </VistaCampo>
@@ -14609,9 +14609,9 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
           <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
             <strong>Fase de jogo:</strong> {momentoTexto(printIdeia)}
           </div>
-          <svg viewBox={viewBoxDaVista(printIdeia.diagram && printIdeia.diagram.vista)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={viewBoxSemBancos(printIdeia.diagram && printIdeia.diagram.vista)} style={{ width: '100%', aspectRatio: aspetoSemBancos(printIdeia.diagram && printIdeia.diagram.vista), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <VistaCampo vista={printIdeia.diagram && printIdeia.diagram.vista}>
-            <PitchMarkings printMode />
+            <PitchMarkings printMode semBancos />
             <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
             <DiagramElements
               elements={printIdeia.diagram?.elements || []}
@@ -15987,6 +15987,11 @@ const EDITOR_VIEWBOX_MEIO = `${EDITOR_MEIO_U0} ${EDITOR_MEIO_V0} ${EDITOR_MEIO_W
 const EDITOR_MEIO_X_MIN = 107 - (EDITOR_MEIO_V0 + EDITOR_MEIO_H);
 const EDITOR_MEIO_X_MAX = 107 - EDITOR_MEIO_V0;
 function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : PITCH_VIEWBOX; }
+/* SEM BANCOS (impressões, partilhar, ver a sessão): o enquadramento do
+   editor e da apresentação — a mesma margem de relvado à volta toda, nas
+   duas vistas. Os bancos de suplentes deixaram de existir no campo. */
+function viewBoxSemBancos(vista) { return vista === 'meio' ? APRESENTACAO_VIEWBOX_MEIO : EDITOR_VIEWBOX; }
+function aspetoSemBancos(vista) { const b = vista === 'meio' ? APRESENTACAO_BOX_MEIO : EDITOR_BOX; return `${b.w} / ${b.h}`; }
 /* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
@@ -18077,7 +18082,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
     frames.push({
       svg: ReactDOMServer.renderToStaticMarkup(
         <VistaCampo vista={diagram.vista}>
-          <PitchMarkings cartao={cartao} />
+          <PitchMarkings cartao={cartao} semBancos={!cartao} />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
@@ -18121,8 +18126,8 @@ function buildDiagramBlockHtml(diagram, space, blockId, phase) {
   const zones = getSpaceZones(diagram, space);
   const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones, phase);
   const html = `
-    <div class="pitch-wrap">
-      <svg id="pitch-${blockId}" viewBox="${viewBoxDaVista(diagram && diagram.vista)}" preserveAspectRatio="xMidYMid meet">${frames[0] ? frames[0].svg : ''}</svg>
+    <div class="pitch-wrap" style="aspect-ratio:${aspetoSemBancos(diagram && diagram.vista).replace(/ /g, '')}">
+      <svg id="pitch-${blockId}" viewBox="${viewBoxSemBancos(diagram && diagram.vista)}" preserveAspectRatio="xMidYMid meet">${frames[0] ? frames[0].svg : ''}</svg>
     </div>
     ${hasAnimation ? `
     <div class="controls">
@@ -20559,9 +20564,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
-          <svg viewBox={viewBoxDaVista(vistaCampo)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={viewBoxSemBancos(vistaCampo)} style={{ width: '100%', aspectRatio: aspetoSemBancos(vistaCampo), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <VistaCampo vista={vistaCampo}>
-            <PitchMarkings printMode />
+            <PitchMarkings printMode semBancos />
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
             ))}
@@ -26922,14 +26927,14 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
                                 {i + 1}. {ex.name}
                               </div>
                               <svg
-                                viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)}
+                                viewBox={viewBoxSemBancos(ex.diagram && ex.diagram.vista)}
                                 style={{
-                                  width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
+                                  width: '100%', aspectRatio: aspetoSemBancos(ex.diagram && ex.diagram.vista), display: 'block',
                                   background: '#fff', border: '1px solid #ccc', borderRadius: 6,
                                 }}
                               >
                                 <VistaCampo vista={ex.diagram && ex.diagram.vista}>
-                                <PitchMarkings printMode />
+                                <PitchMarkings printMode semBancos />
                                 <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
                                 <DiagramElements
                                   elements={d.elements} arrows={d.arrows}
@@ -27641,9 +27646,9 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
         // pequenos demais para se perceber o desenho. Os outros sítios
         // que usam este mesmo diagrama (Ficha de Jogador, Prancheta)
         // ficam exatamente como estavam.
-        <svg viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)} style={{ width: '82%', aspectRatio: PITCH_ASPECT, display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+        <svg viewBox={viewBoxSemBancos(ex.diagram && ex.diagram.vista)} style={{ width: '82%', aspectRatio: aspetoSemBancos(ex.diagram && ex.diagram.vista), display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <VistaCampo vista={ex.diagram && ex.diagram.vista}>
-          <PitchMarkings printMode />
+          <PitchMarkings printMode semBancos />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           {(() => {
             const d = diagramaParaImpressao(ex.diagram);
@@ -29250,13 +29255,13 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                         )}
                       </div>
                     )}
-                    <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
-                      <svg viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={{
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: aspetoSemBancos(ex.diagram && ex.diagram.vista) }}>
+                      <svg viewBox={viewBoxSemBancos(ex.diagram && ex.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
                         <VistaCampo vista={ex.diagram && ex.diagram.vista}>
-                        <PitchMarkings />
+                        <PitchMarkings semBancos />
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         {(() => {
                           const d = diagramaParaImpressao(ex.diagram);
