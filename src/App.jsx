@@ -22542,7 +22542,6 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
   const ecraApp = useIsMobile();
   const topoFases = (ecraApp ? MOBILE_BAR_H : 0) + 56;
   const faseFixa = { position: 'sticky', top: topoFases, zIndex: 5, background: T.bg, padding: '0 0 10px', marginBottom: 2 };
-  const [fichas, setFichas] = useState(false);
 
   const mudar = (p, campo, valor) => {
     setPlayers(prev => prev.map(x => {
@@ -22568,9 +22567,6 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
 
   const contagem = [1, 2, 3, 4, 5].map(n => ativos.filter(p => Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel) === n).length);
   const porAvaliar = ativos.filter(p => !Number(((avaliacaoBaseDoJogador(p, chaveEpoca))[fase] || {}).nivel)).length;
-  const modelos = (documentos || []).filter(d => d && /\.docx$/i.test(d.fileName || '') && d.tipoWord !== 'organizacao');
-  const [modeloId, setModeloId] = useState(null);
-  const modelo = modelos.find(d => d.id === modeloId) || modelos[0] || null;
 
   const sel = { ...inputStyle, height: 28, lineHeight: '26px', fontSize: 12, padding: '0 6px' };
   const opcoes = (
@@ -22712,27 +22708,8 @@ function EstatutoDaEpoca({ players, setPlayers, desenvolvimento, documentos }) {
         </div>
       )}
 
-      {/* Word com as fichas: o mesmo de Documentos, à mão de quem avalia. */}
-      <div style={{ ...card, marginTop: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <FileText size={16} color={T.muted} />
-          <span style={{ fontSize: 12.5, color: T.cream }}>Fichas individuais em Word</span>
-          {modelos.length > 1 && (
-            <select value={modelo ? modelo.id : ''} onChange={e => setModeloId(e.target.value)} style={{ ...sel, width: 'auto', minWidth: 200 }}>
-              {modelos.map(d => <option key={d.id} value={d.id}>{d.nome || d.fileName}</option>)}
-            </select>
-          )}
-          <span style={{ flex: 1 }} />
-          {modelo ? (
-            <Btn variant="ghost" onClick={() => setFichas(v => !v)}><FileText size={14} /> Gerar fichas dos jogadores</Btn>
-          ) : (
-            <span style={{ fontSize: 12, color: T.mutedDim }}>Carrega o modelo .docx em Documentos para gerar daqui.</span>
-          )}
-        </div>
-        {fichas && modelo && (
-          <GerarFichasIndividuaisForm doc={modelo} players={players} epoca={epoca} onClose={() => setFichas(false)} />
-        )}
-      </div>
+      {/* Os documentos (fichas em Word…) geram-se só em Documentos, o sítio
+          próprio — já não aqui. */}
 
       {obsDe && (() => {
         const p = (players || []).find(x => x.id === obsDe.playerId);
