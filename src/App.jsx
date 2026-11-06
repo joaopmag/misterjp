@@ -34158,6 +34158,24 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   const [alvo, setAlvo] = useState(null);
   const estadoRef = useRef(null);
   const raizRef = useRef(null);
+  /* CAMPO DA MESMA ALTURA QUE AS LISTAS (no computador): a largura do
+     campo acompanha a altura das caixas ao lado (Suplentes, Não
+     convocados, Indisponíveis), para os dois lados acabarem à mesma
+     altura. Entre 260 e 440 px; só se mexe com diferenças de mais de 4 px. */
+  const zonasRef = useRef(null);
+  const [alturaZonas, setAlturaZonas] = useState(0);
+  useEffect(() => {
+    if (isMobile) return undefined;
+    const el = zonasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver((entradas) => {
+      const h = Math.round(entradas[0].contentRect.height);
+      setAlturaZonas(prev => (Math.abs(prev - h) > 4 ? h : prev));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile]);
+  const larguraCampo = alturaZonas ? Math.max(260, Math.min(440, Math.round((alturaZonas - 2) * 68 / 105))) : 320;
 
   const porId = new Map(players.map(p => [p.id, p]));
   const naEscalacao = new Set([...slots.filter(Boolean), ...banco]);
@@ -34380,11 +34398,12 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         <Select value={formacao} onChange={e => onFormacao(e.target.value)} style={{ width: 110 }}>
           {Object.keys(FORMACOES).map(fm => <option key={fm} value={fm}>{fm}</option>)}
         </Select>
-        <span style={{ fontSize: 12, color: nTitulares === lugares.length ? T.good : T.warn, ...body }}>
+        {/* Largura fixa e números de largura igual: "1/11" ou "10/11" não
+            empurram nada; a frase da direita ocupa o resto numa só linha. */}
+        <span style={{ fontSize: 12, color: nTitulares === lugares.length ? T.good : T.warn, minWidth: '15.5em', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', ...body }}>
           {nTitulares}/{lugares.length} titulares · {banco.length}{maxBanco != null ? `/${maxBanco}` : ''} suplentes
         </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>
+        <span style={{ fontSize: 11.5, color: T.mutedDim, flex: '1 1 0', minWidth: 0, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
           {sel
             ? <span style={{ color: T.gold }}>Toca no lugar, no banco ou em "Não convocados" para onde vai {porId.get(sel.id) ? shortPlayerName(porId.get(sel.id), players) : 'o jogador'}.</span>
             : (isMobile ? 'Toca num jogador e depois no sítio para onde vai.' : 'Arrasta os jogadores (ou clica num e depois no sítio).')}
@@ -34392,10 +34411,10 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         {acao}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 320px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : `${larguraCampo}px minmax(0, 1fr)`, gap: 14, alignItems: 'start' }}>
         {/* CAMPO VERTICAL (ataque para cima). */}
         <div style={{
-          position: 'relative', width: '100%', maxWidth: 320, margin: isMobile ? '0 auto' : 0, aspectRatio: '68 / 105', borderRadius: 10, overflow: 'hidden',
+          position: 'relative', width: '100%', maxWidth: isMobile ? 320 : larguraCampo, margin: isMobile ? '0 auto' : 0, aspectRatio: '68 / 105', borderRadius: 10, overflow: 'hidden',
           background: 'repeating-linear-gradient(180deg, #2b5a33 0 7.5%, #275230 7.5% 15%)', border: `1px solid ${T.line}`,
         }}>
           <svg viewBox="0 0 68 105" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -34448,7 +34467,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         </div>
 
         {/* ZONAS À VOLTA DO CAMPO */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+        <div ref={zonasRef} style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
           {(() => {
             const noBanco = sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id }));
             const reserva = maxBanco != null ? maxBanco : 9;
