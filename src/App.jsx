@@ -34322,6 +34322,36 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
       </button>
     );
   };
+  /* LISTAS QUE NÃO MEXEM. Antes, cada jogador que ia para o campo (ou
+     para o banco) saía da lista e os outros escorregavam para o lugar
+     dele — e as caixas mudavam de altura, empurrando a página. Agora:
+     · quem está na escalação deixa o seu cartão "fantasma" (esbatido, com
+       contorno tracejado) no mesmo sítio da lista — nada escorrega;
+     · o banco reserva sempre os lugares todos (9), com vagas vazias.
+     As caixas ficam sempre com a mesma altura. */
+  const cartaoFantasma = (p) => (
+    <div key={`f-${p.id}`} aria-hidden="true" title={`${p.name} — na escalação`}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0,
+        border: `1px dashed ${T.line}`, borderRadius: 8, opacity: 0.32, pointerEvents: 'none', ...body,
+      }}>
+      <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, border: `1px dashed ${T.mutedDim}` }} />
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ display: 'block', fontSize: 12, lineHeight: '15px', color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortPlayerName(p, players)}</span>
+        <span style={{ display: 'block', fontSize: 10, lineHeight: '13px', color: T.mutedDim, ...mono }}>na escalação</span>
+      </span>
+    </div>
+  );
+  const vagaVazia = (k) => (
+    <div key={`v-${k}`} aria-hidden="true"
+      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0, border: `1px dashed ${T.line}`, borderRadius: 8, opacity: 0.45, pointerEvents: 'none', ...body }}>
+      <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, border: `1px dashed ${T.mutedDim}` }} />
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span style={{ display: 'block', fontSize: 12, lineHeight: '15px', color: T.mutedDim }}>Vaga</span>
+        <span style={{ display: 'block', fontSize: 10, lineHeight: '13px' }}>&nbsp;</span>
+      </span>
+    </div>
+  );
   const caixa = (zona, titulo, conteudo, vazio, opcoes = {}) => {
     const ativo = alvo === `${zona}:` || (sel && !opcoes.semToque);
     return (
@@ -34419,15 +34449,28 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
 
         {/* ZONAS À VOLTA DO CAMPO */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-          {caixa('banco', `Suplentes · ${banco.length}${maxBanco != null ? `/${maxBanco}` : ''}`,
-            sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id })),
-            bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 })}
-          {caixa('fora', `Não convocados · ${foraDisp.length}`,
-            foraDisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id })),
-            'Todos os jogadores disponíveis estão na escalação.', { altura: 190 })}
-          {foraIndisp.length > 0 && caixa('indisp', `Indisponíveis · ${foraIndisp.length}`,
-            foraIndisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id }, (estado(p) || {}).curto || 'Indisponível')),
-            '', { altura: 80, cor: T.bad, semZona: true, semToque: true })}
+          {(() => {
+            const noBanco = sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id }));
+            const reserva = maxBanco != null ? maxBanco : 9;
+            const vagas = Array.from({ length: Math.max(0, reserva - noBanco.length) }, (_, k) => vagaVazia(k));
+            return caixa('banco', `Suplentes · ${banco.length}${maxBanco != null ? `/${maxBanco}` : ''}`,
+              [...noBanco, ...vagas],
+              bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 });
+          })()}
+          {(() => {
+            // Ordem fixa com TODOS os disponíveis; quem está na escalação fica como fantasma.
+            const todosDisp = sortByPosition(players.filter(p => !indisponivel(p)));
+            return caixa('fora', `Não convocados · ${foraDisp.length}`,
+              todosDisp.map(p => (naEscalacao.has(p.id) ? cartaoFantasma(p) : cartaoJogador(p, { de: 'fora', id: p.id }))),
+              'Todos os jogadores disponíveis estão na escalação.', { altura: 190 });
+          })()}
+          {(() => {
+            const todosIndisp = sortByPosition(players.filter(p => indisponivel(p)));
+            if (!todosIndisp.length) return null;
+            return caixa('indisp', `Indisponíveis · ${foraIndisp.length}`,
+              todosIndisp.map(p => (naEscalacao.has(p.id) ? cartaoFantasma(p) : cartaoJogador(p, { de: 'fora', id: p.id }, (estado(p) || {}).curto || 'Indisponível'))),
+              '', { altura: 80, cor: T.bad, semZona: true, semToque: true });
+          })()}
         </div>
       </div>
 
