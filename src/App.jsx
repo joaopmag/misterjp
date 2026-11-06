@@ -4928,7 +4928,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
-            <WellnessLoadMatrix players={playersAtivos} monitoring={monitoring} />
+            <WellnessLoadMatrix players={players} monitoring={monitoring} />
           )}
         </Panel>
 
@@ -4947,7 +4947,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
             <div onClick={() => setStatusOpen(true)} title="Ver jogador a jogador" style={{ cursor: 'pointer' }}>
-              <PlantelStatusSummary players={playersAtivos} compacto />
+              <PlantelStatusSummary players={players} compacto />
             </div>
           )}
         </Panel>
@@ -4970,7 +4970,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
 
       {sessionModal && (
         <SessionModal
-          session={sessionModal} exercises={exercises} players={playersAtivos}
+          session={sessionModal} exercises={exercises} players={players}
           setExercises={setExercises} exercisesMeta={exercisesMeta}
           sessions={sessions} setSessions={setSessions} matches={matches}
           onClose={() => setSessionModal(null)}
@@ -4979,7 +4979,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       )}
       {matchModal && (
         <MatchModal matches={matches}
-          match={matchModal} players={playersAtivos} standings={standings} season={season}
+          match={matchModal} players={players} standings={standings} season={season}
           onClose={() => setMatchModal(null)}
           onSave={(data) => {
             const registo = podarPresencasForaDosConvocados(data);
@@ -4991,7 +4991,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       )}
       {relatoOpen && (
         <RelatoPagina
-          teamId={teamId} players={playersAtivos} membros={membros} euId={euId} lastEdits={lastEdits}
+          teamId={teamId} players={players} membros={membros} euId={euId} lastEdits={lastEdits}
           tarefas={tarefas} clipes={clipes}
           onClose={() => setRelatoOpen(false)} onIr={onIr}
         />
@@ -5030,7 +5030,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       )}
       {statusOpen && (
         <PlantelStatusModal
-          players={playersAtivos}
+          players={players}
           onClose={() => setStatusOpen(false)}
           onEditPlayer={setPlayers ? (p) => trocarJanela(() => setStatusOpen(false), () => setPlayerModal(p)) : null}
         />
