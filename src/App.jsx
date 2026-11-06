@@ -34161,7 +34161,9 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   /* CAMPO DA MESMA ALTURA QUE AS LISTAS (no computador): a largura do
      campo acompanha a altura das caixas ao lado (Suplentes, Não
      convocados, Indisponíveis), para os dois lados acabarem à mesma
-     altura. Entre 260 e 440 px; só se mexe com diferenças de mais de 4 px. */
+     altura. Entre 260 e 400 px; só se mexe com diferenças de mais de 4 px.
+     As caixas têm sempre 5 colunas (ver `caixa`), por isso a altura delas
+     não muda quando o campo alarga — não há efeito bola de neve. */
   const zonasRef = useRef(null);
   const [alturaZonas, setAlturaZonas] = useState(0);
   useEffect(() => {
@@ -34175,7 +34177,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
     ro.observe(el);
     return () => ro.disconnect();
   }, [isMobile]);
-  const larguraCampo = alturaZonas ? Math.max(260, Math.min(440, Math.round((alturaZonas - 2) * 68 / 105))) : 320;
+  const larguraCampo = alturaZonas ? Math.max(260, Math.min(400, Math.round((alturaZonas - 2) * 68 / 105))) : 320;
 
   const porId = new Map(players.map(p => [p.id, p]));
   const naEscalacao = new Set([...slots.filter(Boolean), ...banco]);
@@ -34383,7 +34385,10 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         {/* Sem deslizar por dentro: a caixa cresce com os jogadores. */}
         {conteudo.length === 0
           ? <div style={{ color: T.mutedDim, fontSize: 12, padding: '8px 4px', textAlign: 'center', ...body }}>{vazio}</div>
-          : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))', gap: 5 }}>{conteudo}</div>}
+          // No computador, sempre 5 colunas: o nº de linhas (e a altura da
+          // caixa) não depende da largura — senão alargar o campo estreitava
+          // as caixas, criava linhas novas e o campo voltava a crescer.
+          : <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(132px, 1fr))' : 'repeat(5, minmax(0, 1fr))', gap: 5 }}>{conteudo}</div>}
       </div>
     );
   };
