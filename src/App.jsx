@@ -26918,6 +26918,9 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
         if (!atual) return null;
         // Mexer no onze na ficha grava no jogo E na convocatória (ver Jogos).
         const mudarJogoNaFicha = (jogo, patch) => {
+          // Lugares e titulares andam sempre juntos: os titulares são quem
+          // está nos lugares.
+          if (Array.isArray(patch.alinhamento) && !patch.starters) patch = { ...patch, starters: patch.alinhamento.filter(Boolean) };
           const novo = podarPresencasForaDosConvocados({ ...jogo, ...patch });
           setMatches(prev => prev.map(m => (m.id === jogo.id ? { ...m, ...patch } : m)));
           if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(novo, prev, season));
@@ -31294,11 +31297,16 @@ function FichaJogo({ match, players: playersAtivosDoJogo, season, onClose, onEdi
                     const jaOnde = ids.indexOf(p.id);
                     if (jaOnde >= 0) ids[jaOnde] = anterior;   // trocam de lugar
                     ids[trocar] = p.id;
-                    onAlinhamento(ids);
-                    // Se veio do banco, passa a titular e o outro sai do onze.
-                    if (jaOnde < 0 && onStarters) {
+                    // Lugares e titulares numa SÓ gravação. Eram duas seguidas
+                    // (lugares, depois titulares), e a 2.ª levava para a
+                    // convocatória os lugares ANTIGOS — o onze trocava
+                    // sozinho (ex.: Cadilhe ↔ Cardoso).
+                    if (jaOnde < 0 && onEscalacao) {
                       const titulares = ids.filter(Boolean);
-                      onStarters(titulares);
+                      const banco = (match.convocados || []).filter(id => !titulares.includes(id));
+                      onEscalacao({ alinhamento: ids, starters: titulares, convocados: [...titulares, ...banco] });
+                    } else {
+                      onAlinhamento(ids);
                     }
                     setTrocar(null);
                   }}
@@ -34103,6 +34111,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
            janela "Editar jogo". Antes só mudava o jogo: a convocatória
            ficava com o onze antigo. */
         const mudarJogoNaFicha = (jogo, patch) => {
+          // Lugares e titulares andam sempre juntos: os titulares são quem
+          // está nos lugares.
+          if (Array.isArray(patch.alinhamento) && !patch.starters) patch = { ...patch, starters: patch.alinhamento.filter(Boolean) };
           const novo = podarPresencasForaDosConvocados({ ...jogo, ...patch });
           setMatches(prev => prev.map(m => (m.id === jogo.id ? { ...m, ...patch } : m)));
           if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(novo, prev, season));
@@ -34548,6 +34559,17 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
 function escalacaoDoJogo(f, players) {
   const formacao = f.formacao || '4-3-3';
   const porId = new Map(players.map(p => [p.id, p]));
+  /* Lugares gravados (um por lugar) mandam — como na convocatória. Assim o
+     jogo e a convocatória mostram sempre o mesmo onze, mesmo que a lista
+     de titulares tenha ficado desencontrada dos lugares. */
+  const nLugares = tamanhoDaFormacao(formacao) || 11;
+  if (Array.isArray(f.alinhamento) && f.alinhamento.length === nLugares && f.alinhamento.some(Boolean)) {
+    const valido = new Set([...(f.convocados || []), ...(f.starters || [])].filter(id => porId.has(id)));
+    const slots = f.alinhamento.map(id => (id && valido.has(id) ? id : null));
+    const usados = new Set(slots.filter(Boolean));
+    const banco = [...(f.starters || []), ...(f.convocados || [])].filter(id => porId.has(id) && !usados.has(id));
+    return { formacao, slots, banco: [...new Set(banco)] };
+  }
   const titulares = (f.starters || []).map(id => porId.get(id)).filter(Boolean);
   const { colocados, sobram } = distribuirOnzeNoCampo(titulares, formacao, f.alinhamento);
   const slots = colocados.map(p => (p ? p.id : null));
