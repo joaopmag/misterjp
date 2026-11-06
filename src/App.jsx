@@ -55602,7 +55602,23 @@ function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season,
   const TITULARES = 11;
   const MAX_CONVOCADOS = 20;
   // Escalação no campo (formação + lugares + banco até 9).
-  const escConv = escalacaoDaConvocatoria(f, players);
+  /* ONZE VERDADEIRO DE UMA CONVOCATÓRIA ANTIGA. As convocatórias antigas
+     não guardam o onze lugar a lugar ("alinhamento"): a app calculava-o na
+     hora com os 11 primeiros convocados e as posições da ficha — e um
+     extremo que jogou a lateral ficava num lugar de extremo, deixando o de
+     lateral "livre". O jogo ligado a esta convocatória guarda o onze tal
+     como foi (lugar a lugar): sem onze próprio, mostra-se o do jogo. */
+  const jogoLigado = (matches || []).find(m => m && (
+    (convocatoria && m.sourceConvocatoriaId === convocatoria.id)
+    || (f.jogoId && m.id === f.jogoId)
+    || (m.date === f.data && f.adversario && m.opponent === f.adversario))) || null;
+  const fParaCampo = (() => {
+    if (Array.isArray(f.alinhamento) || !jogoLigado || !Array.isArray(jogoLigado.alinhamento)) return f;
+    const fm = jogoLigado.formacao || f.formacao || '4-3-3';
+    if (jogoLigado.alinhamento.length !== (tamanhoDaFormacao(fm) || 11)) return f;
+    return { ...f, formacao: fm, alinhamento: jogoLigado.alinhamento };
+  })();
+  const escConv = escalacaoDaConvocatoria(fParaCampo, players);
   const aplicarConv = ({ slots, banco }) => setF(prev => {
     const convocados = [...slots.filter(Boolean), ...banco];
     const ficam = new Set(convocados);
@@ -55613,7 +55629,7 @@ function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season,
     };
   });
   const formacaoConv = (fm) => setF(prev => {
-    const e = escalacaoNovaFormacao(escalacaoDaConvocatoria(prev, players), fm, players);
+    const e = escalacaoNovaFormacao(escalacaoDaConvocatoria(Array.isArray(prev.alinhamento) ? prev : fParaCampo, players), fm, players);
     return { ...prev, formacao: fm, alinhamento: e.slots, convocados: [...e.slots.filter(Boolean), ...e.banco] };
   });
   // O jogo desta convocatória (mesma data e adversário), para o cartão do plano.
