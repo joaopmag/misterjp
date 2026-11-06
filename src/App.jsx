@@ -26916,6 +26916,12 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
       {ficha && (() => {
         const atual = (matches || []).find(m => m.id === ficha.id);
         if (!atual) return null;
+        // Mexer no onze na ficha grava no jogo E na convocatória (ver Jogos).
+        const mudarJogoNaFicha = (jogo, patch) => {
+          const novo = podarPresencasForaDosConvocados({ ...jogo, ...patch });
+          setMatches(prev => prev.map(m => (m.id === jogo.id ? { ...m, ...patch } : m)));
+          if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(novo, prev, season));
+        };
         return (
           <FichaJogo
             match={atual}
@@ -26925,10 +26931,10 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
             onEdit={() => { setMatchModalVoltarFicha(true); trocarJanela(() => setFicha(null), () => setMatchModal(atual)); }}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
-            onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
-            onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
-            onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
-            onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
+            onFormacao={(f) => mudarJogoNaFicha(atual, { formacao: f, alinhamento: null })}
+            onAlinhamento={(lista) => mudarJogoNaFicha(atual, { alinhamento: lista })}
+            onStarters={(lista) => mudarJogoNaFicha(atual, { starters: lista })}
+            onEscalacao={(patch) => mudarJogoNaFicha(atual, patch)}
             onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
             clinico={clinico}
             matches={matches}
@@ -34092,6 +34098,15 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       {ficha && (() => {
         const atual = matches.find(m => m.id === ficha.id);
         if (!atual) return null;
+        /* Mexer no onze NA FICHA DO JOGO grava logo no jogo E na
+           convocatória (o mesmo onze nos dois sítios), tal como gravar na
+           janela "Editar jogo". Antes só mudava o jogo: a convocatória
+           ficava com o onze antigo. */
+        const mudarJogoNaFicha = (jogo, patch) => {
+          const novo = podarPresencasForaDosConvocados({ ...jogo, ...patch });
+          setMatches(prev => prev.map(m => (m.id === jogo.id ? { ...m, ...patch } : m)));
+          if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(novo, prev, season));
+        };
         return (
           <FichaJogo
             match={atual}
@@ -34104,10 +34119,10 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
               /* Mudar de formação limpa o alinhamento manual: os lugares
                passam a ser outros e as posições antigas deixam de fazer
                sentido. A equipa é recolocada pela sugestão automática. */
-            onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
-            onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
-            onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
-            onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
+            onFormacao={(f) => mudarJogoNaFicha(atual, { formacao: f, alinhamento: null })}
+            onAlinhamento={(lista) => mudarJogoNaFicha(atual, { alinhamento: lista })}
+            onStarters={(lista) => mudarJogoNaFicha(atual, { starters: lista })}
+            onEscalacao={(patch) => mudarJogoNaFicha(atual, patch)}
             onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
             clinico={clinico}
             matches={matches}
@@ -34348,7 +34363,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
       <button key={p.id} type="button" {...props(origem)} data-jogador={`${origem.de}|${p.id}`}
         title={`${p.name}${p.position ? ` · ${p.position}` : ''}`}
         style={{
-          display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0, textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 7, padding: '2px 7px', minWidth: 0, textAlign: 'left',
           background: escolhido ? `${T.gold}22` : T.surfaceRaise, border: `1px solid ${escolhido ? T.gold : T.line}`, borderRadius: 8,
           color: T.cream, cursor: 'pointer', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation', ...body,
         }}>
@@ -34372,7 +34387,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   const cartaoFantasma = (p) => (
     <div key={`f-${p.id}`} aria-hidden="true" title={`${p.name} — na escalação`}
       style={{
-        display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0,
+        display: 'flex', alignItems: 'center', gap: 7, padding: '2px 7px', minWidth: 0,
         border: `1px dashed ${T.line}`, borderRadius: 8, opacity: 0.32, pointerEvents: 'none', ...body,
       }}>
       <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, border: `1px dashed ${T.mutedDim}` }} />
@@ -34384,7 +34399,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   );
   const vagaVazia = (k) => (
     <div key={`v-${k}`} aria-hidden="true"
-      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0, border: `1px dashed ${T.line}`, borderRadius: 8, opacity: 0.45, pointerEvents: 'none', ...body }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 7px', minWidth: 0, border: `1px dashed ${T.line}`, borderRadius: 8, opacity: 0.45, pointerEvents: 'none', ...body }}>
       <span style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, border: `1px dashed ${T.mutedDim}` }} />
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{ display: 'block', fontSize: 12, lineHeight: '15px', color: T.mutedDim }}>Vaga</span>
@@ -34408,7 +34423,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
           // No computador, sempre 5 colunas: o nº de linhas (e a altura da
           // caixa) não depende da largura — senão alargar o campo estreitava
           // as caixas, criava linhas novas e o campo voltava a crescer.
-          : <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(132px, 1fr))' : 'repeat(5, minmax(0, 1fr))', gap: 5 }}>{conteudo}</div>}
+          : <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(132px, 1fr))' : 'repeat(5, minmax(0, 1fr))', gap: 4 }}>{conteudo}</div>}
       </div>
     );
   };
@@ -55304,12 +55319,18 @@ function syncMatchConvocatoria(match, convocatorias, season) {
      as duas mostrarem sempre o mesmo onze, seja qual for o sítio onde se
      mexeu por último. */
   const nJogo = tamanhoDaFormacao(match.formacao || '4-3-3') || 11;
+  // Sem lugares arrumados no jogo, a convocatória também fica sem eles
+  // (o seu onze sai dos 11 primeiros convocados — por isso os titulares do
+  // jogo vão à frente na lista), com o mesmo sistema.
   const onzeDoJogo = Array.isArray(match.alinhamento) && match.alinhamento.length === nJogo
     ? { alinhamento: [...match.alinhamento], formacao: match.formacao || '4-3-3' }
-    : {};
+    : (match.formacao ? { alinhamento: null, formacao: match.formacao } : {});
+  const convJogo = match.convocados || [];
+  const titJogo = (match.starters || []).filter(id => convJogo.includes(id));
+  const convocadosOrdem = titJogo.length ? [...titJogo, ...convJogo.filter(id => !titJogo.includes(id))] : [...convJogo];
   return lista.map((c, i) => {
     if (i !== idx) return c;
-    return { ...c, ...base, ...onzeDoJogo, convocados: [...(match.convocados || [])] };
+    return { ...c, ...base, ...onzeDoJogo, convocados: convocadosOrdem };
   });
 }
 
