@@ -34166,6 +34166,17 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
      não muda quando o campo alarga — não há efeito bola de neve. */
   const zonasRef = useRef(null);
   const [alturaZonas, setAlturaZonas] = useState(0);
+  // Primeira medida ANTES de pintar (useLayoutEffect): ao abrir a janela o
+  // campo já aparece com a largura certa, sem "saltar" para a direita.
+  React.useLayoutEffect(() => {
+    if (isMobile) return;
+    const el = zonasRef.current;
+    if (!el) return;
+    // offsetHeight (e não getBoundingClientRect): não é afetado pela
+    // animação de abrir da janela (escala), que dava uma medida errada.
+    const h = el.offsetHeight;
+    if (h) setAlturaZonas(h);
+  }, [isMobile]);
   useEffect(() => {
     if (isMobile) return undefined;
     const el = zonasRef.current;
