@@ -55204,7 +55204,9 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
     else setConvocatorias(prev => [...prev, registo]);
     // Cria/atualiza o jogo correspondente, para a convocatória alimentar o
     // Planeamento, os Jogos e a tabela de presenças.
-    if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches, players));
+    // Com TODOS os jogadores (também quem saiu): o onze do jogo sai das
+    // posições deles; só com os ativos, quem saiu caía do onze ao gravar.
+    if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches, (TODOS_OS_JOGADORES.lista && TODOS_OS_JOGADORES.lista.length) ? TODOS_OS_JOGADORES.lista : players));
     setModal(null);
   };
   const remove = (id) => removeWithUndo(convocatorias, setConvocatorias, id, itemLabel(convocatorias.find(x => x.id === id), 'Convocatória'));
@@ -55577,7 +55579,9 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
   );
 }
 
-function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave, clinico, matches = [] }) {
+function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season, standings, onClose, onSave, clinico, matches = [] }) {
+  // Convocatória passada: mostra também quem lá esteve e já saiu do clube.
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDaConv, convocatoria), [playersAtivosDaConv, convocatoria]);
   const [f, setF] = useState(convocatoria || {
     epoca: season?.name || '', competicao: FRIENDLY, escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
     jornada: '', data: '', horaJogo: '', localJogo: '', horaConcentracao: '',
