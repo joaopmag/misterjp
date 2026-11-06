@@ -3301,6 +3301,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      presenças, avaliações, convocatórias, jogos, monitorização, clínico,
      desenvolvimento, tarefas, documentos, Portal… — passa-se esta lista.
      O histórico dele fica gravado nos registos (não se apaga nada). */
+  // Todos (com quem saiu), para os jogos/treinos passados mostrarem quem
+  // lá esteve de verdade (ver `comQuemLaEsteve`).
+  TODOS_OS_JOGADORES.lista = players || [];
   const playersAtivos = React.useMemo(() => {
     const hoje = todayStr();
     return (players || []).filter(p => p && !(p.exitDate && p.exitDate <= hoje));
@@ -28891,7 +28894,8 @@ function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions, matches }) {
+function SessionModal({ session, presetDate, exercises, players: playersAtivosDoTreino, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions, matches }) {
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoTreino, session), [playersAtivosDoTreino, session]);
   const [f, setF] = useState(session || {
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
@@ -30711,7 +30715,8 @@ function EquipaEmColunasPrint({ titulares, suplentes, capitaoId, subcapitaoId })
    caixas de "Destaques" e "Números" aparece aqui colado a cada nome, em
    símbolo: numa folha, ler "1 substituição" em baixo obriga a procurar
    quem foi; uma seta ao lado do nome responde de imediato. */
-function PrintFichaJogo({ match, players, season }) {
+function PrintFichaJogo({ match, players: playersAtivosDoJogo, season }) {
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
   /* Campo, titulares e suplentes saem todos da MESMA função que a folha
      do Planeamento usa. Sem isto as duas folhas voltavam a divergir — na
@@ -30840,7 +30845,8 @@ function escalacaoComFotosHtml(match, players) {
     + `</div>`;
 }
 
-function buildMatchShareHtml({ match, players, season }) {
+function buildMatchShareHtml({ match, players: playersAtivosDoJogo, season }) {
+  const players = comQuemLaEsteve(playersAtivosDoJogo, match);
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
   const eventos = eventosDoJogo(match, players);
   const resumo = resumoDoJogo(eventos);
@@ -30889,7 +30895,8 @@ function buildMatchShareHtml({ match, players, season }) {
   };
 }
 
-function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters, onEscalacao, onIdeias, clinico = [], matches = [] }) {
+function FichaJogo({ match, players: playersAtivosDoJogo, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters, onEscalacao, onIdeias, clinico = [], matches = [] }) {
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const isNarrow = useIsMobile(760);
   const formacao = match.formacao || '4-3-3';
   /* JOGO POR JOGAR (sem resultado e de hoje para a frente): em vez da ficha
@@ -33690,7 +33697,8 @@ function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar 
   );
 }
 
-function RelatorioJogoModal({ match, players, season, onClose, onSave }) {
+function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season, onClose, onSave }) {
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const estreito = useIsMobile(760);
   const [f, setF] = useState(() => ({
     ...match,
@@ -34242,6 +34250,11 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   };
   const aoPrimir = (origem) => (e) => {
     if (e.pointerType !== 'mouse' || e.button !== 0) return; // no toque, só o clique
+    // Sem isto, arrastar com o rato começava a SELECIONAR texto e o browser
+    // fazia deslizar a janela para acompanhar a seleção — a página mexia.
+    e.preventDefault();
+    try { window.getSelection && window.getSelection().removeAllRanges(); } catch (err) { /* nada */ }
+    document.body.style.userSelect = 'none';
     estadoRef.current = { origem, x0: e.clientX, y0: e.clientY, moveu: false };
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
   };
@@ -34257,6 +34270,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   const aoLargar = (e) => {
     const st = estadoRef.current;
     estadoRef.current = null;
+    document.body.style.userSelect = '';
     setArrasto(null);
     setAlvo(null);
     if (!st || !st.moveu) return;
@@ -34678,7 +34692,23 @@ function withConvocadosInAttendance(f) {
   return { ...f, attendance: [...convocados], ratings };
 }
 
-function MatchModal({ match, players, standings, season, onClose, onSave, clinico, onIntegrarConvidado, matches = [] }) {
+/* JOGOS E TREINOS PASSADOS COM OS DADOS VERDADEIROS. Quem saiu do clube
+   não aparece na app, MAS um jogo ou treino em que ele esteve tem de se
+   ver como foi: lugar no onze, banco, convocatória, minutos, avaliações.
+   Junta-se à lista dos ativos quem saiu e está referido neste registo. */
+const TODOS_OS_JOGADORES = { lista: [] };
+function comQuemLaEsteve(ativos, registo) {
+  const base = ativos || [];
+  if (!registo) return base;
+  const ids = new Set(base.map(p => p.id));
+  let txt = '';
+  try { txt = JSON.stringify(registo); } catch (e) { return base; }
+  const extra = (TODOS_OS_JOGADORES.lista || []).filter(p => p && !ids.has(p.id) && p.id && txt.includes(`"${p.id}"`));
+  return extra.length ? [...base, ...extra] : base;
+}
+
+function MatchModal({ match, players: playersAtivosDoJogo, standings, season, onClose, onSave, clinico, onIntegrarConvidado, matches = [] }) {
+  const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   // Só para o Relatório de jogo: no telemóvel, 8 colunas espremidas ficam
   // ilegíveis (nomes cortados, campos com um dígito de largura) — ver a
   // nota junto da tabela, mais abaixo.
