@@ -34930,8 +34930,10 @@ function MatchModal({ match, players: playersAtivosDoJogo, standings, season, on
           presenças mostra P/NP em vez de C/NC (ver isFriendlyMatch). */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-            {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
+          {/* Largura fixa e números de largura igual: escolher ou limpar
+              convocados já não empurra os botões e a caixa ao lado. */}
+          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', minWidth: '13.5em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            {eAmigavel ? 'Presenças' : 'Convocados'} · {f.convocados.length}/{players.length}
           </span>
           {players.length > 0 && (
             <SelectAllBar
@@ -55744,8 +55746,9 @@ function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season,
 
       <div style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
-          <span style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-            Lista de convocados {f.convocados.length ? `· ${f.convocados.length}` : ''}
+          {/* Largura fixa: o número a mudar não empurra os botões ao lado. */}
+          <span style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', minWidth: '15em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+            Lista de convocados · {f.convocados.length}
           </span>
           {players.length > 0 && (
             <SelectAllBar
