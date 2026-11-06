@@ -26934,7 +26934,14 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
             onEdit={() => { setMatchModalVoltarFicha(true); trocarJanela(() => setFicha(null), () => setMatchModal(atual)); }}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
-            onFormacao={(f) => mudarJogoNaFicha(atual, { formacao: f, alinhamento: null })}
+            onFormacao={(fm) => {
+              // Mudar o sistema mantém os mesmos titulares (reencaixados), nunca
+              // os troca nem os tira do onze.
+              const e = escalacaoNovaFormacao(escalacaoDoJogo(atual, comQuemLaEsteve(players, atual)), fm, comQuemLaEsteve(players, atual));
+              const titulares = e.slots.filter(Boolean);
+              const banco = (atual.convocados || []).filter(id => !titulares.includes(id));
+              mudarJogoNaFicha(atual, { formacao: fm, alinhamento: e.slots, starters: titulares, convocados: [...titulares, ...banco] });
+            }}
             onAlinhamento={(lista) => mudarJogoNaFicha(atual, { alinhamento: lista })}
             onStarters={(lista) => mudarJogoNaFicha(atual, { starters: lista })}
             onEscalacao={(patch) => mudarJogoNaFicha(atual, patch)}
@@ -34130,7 +34137,14 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
               /* Mudar de formação limpa o alinhamento manual: os lugares
                passam a ser outros e as posições antigas deixam de fazer
                sentido. A equipa é recolocada pela sugestão automática. */
-            onFormacao={(f) => mudarJogoNaFicha(atual, { formacao: f, alinhamento: null })}
+            onFormacao={(fm) => {
+              // Mudar o sistema mantém os mesmos titulares (reencaixados), nunca
+              // os troca nem os tira do onze.
+              const e = escalacaoNovaFormacao(escalacaoDoJogo(atual, comQuemLaEsteve(players, atual)), fm, comQuemLaEsteve(players, atual));
+              const titulares = e.slots.filter(Boolean);
+              const banco = (atual.convocados || []).filter(id => !titulares.includes(id));
+              mudarJogoNaFicha(atual, { formacao: fm, alinhamento: e.slots, starters: titulares, convocados: [...titulares, ...banco] });
+            }}
             onAlinhamento={(lista) => mudarJogoNaFicha(atual, { alinhamento: lista })}
             onStarters={(lista) => mudarJogoNaFicha(atual, { starters: lista })}
             onEscalacao={(patch) => mudarJogoNaFicha(atual, patch)}
@@ -55256,9 +55270,41 @@ function syncConvocatoriaMatch(conv, matches, players) {
    Chamada sempre que um jogo é gravado — cobre tanto editar os
    convocados diretamente no jogo como a sincronização vinda da
    convocatória (as duas acabam por passar por aqui). */
+/* LUGARES SEMPRE IGUAIS AOS TITULARES. Quando os titulares mudam fora do
+   campo (ex.: no relatório do jogo), os lugares acompanham: quem deixou de
+   ser titular sai do seu lugar e quem passou a titular entra num lugar
+   vazio (da sua posição, se houver). Quem continua titular NUNCA muda de
+   lugar. Sem lugares gravados não se mexe em nada. */
+function alinharLugaresComTitulares(match) {
+  const fm = match.formacao || '4-3-3';
+  const n = tamanhoDaFormacao(fm) || 11;
+  if (!Array.isArray(match.alinhamento) || match.alinhamento.length !== n) return match;
+  const titulares = (match.starters || []).filter(Boolean);
+  const eTitular = new Set(titulares);
+  const slots = match.alinhamento.map(id => (id && eTitular.has(id) ? id : null));
+  const faltam = titulares.filter(id => !slots.includes(id));
+  if (faltam.length) {
+    const porId = new Map((TODOS_OS_JOGADORES.lista || []).map(p => [p.id, p]));
+    const lugares = FORMACOES[fm] || FORMACOES['4-3-3'];
+    const vazios = slots.map((v, i) => (v ? null : { lugar: lugares[i], i })).filter(Boolean);
+    const porColocar = faltam.map(id => porId.get(id)).filter(Boolean);
+    const colocados = slots.map(id => (id ? porId.get(id) || { id } : null));
+    preencherPorFamilia(vazios, porColocar, colocados);
+    colocados.forEach((p, i) => { if (p && !slots[i]) slots[i] = p.id; });
+    // Quem ainda sobrar (sem ficha ou sem posição) vai para o 1.º lugar vazio.
+    faltam.forEach(id => { if (!slots.includes(id)) { const i = slots.indexOf(null); if (i >= 0) slots[i] = id; } });
+  }
+  if (slots.every((x, i) => x === match.alinhamento[i])) return match;
+  return { ...match, alinhamento: slots };
+}
+
 function podarPresencasForaDosConvocados(match) {
   const validos = new Set(match.convocados || []);
-  const podado = { ...match };
+  // Titular tem de estar convocado; e os lugares acompanham os titulares.
+  const base0 = Array.isArray(match.starters) && (match.convocados || []).length
+    ? { ...match, starters: match.starters.filter(id => validos.has(id)) }
+    : match;
+  const podado = { ...alinharLugaresComTitulares(base0) };
   ['attendance', 'faltas', 'lesionados', 'escalao'].forEach(campo => {
     if (Array.isArray(podado[campo])) {
       podado[campo] = podado[campo].filter(id => validos.has(id));
