@@ -34472,12 +34472,20 @@ function escalacaoDaConvocatoria(f, players) {
   const banco = [...sobram.map(p => p.id), ...(f.convocados || []).slice(n)].filter(id => porId.has(id));
   return { formacao, slots, banco };
 }
-/* Trocar de formação mantém os titulares (reencaixados nos novos lugares). */
+/* Trocar de formação mantém TODOS os titulares no campo: primeiro cada um
+   no lugar da sua posição; quem não tiver lugar da sua posição na nova
+   formação fica num dos lugares que sobram, mesmo fora da posição
+   principal. Ninguém sai do onze por mudar o sistema. */
 function escalacaoNovaFormacao(esc, novaFormacao, players) {
   const porId = new Map(players.map(p => [p.id, p]));
   const titulares = esc.slots.filter(Boolean).map(id => porId.get(id)).filter(Boolean);
   const { colocados, sobram } = distribuirOnzeNoCampo(titulares, novaFormacao, null);
-  return { formacao: novaFormacao, slots: colocados.map(p => (p ? p.id : null)), banco: [...sobram.map(p => p.id), ...esc.banco] };
+  const slots = colocados.map(p => (p ? p.id : null));
+  const resto = [...sobram];
+  for (let i = 0; i < slots.length && resto.length; i++) {
+    if (!slots[i]) slots[i] = resto.shift().id;
+  }
+  return { formacao: novaFormacao, slots, banco: [...resto.map(p => p.id), ...esc.banco] };
 }
 
 
@@ -55623,7 +55631,10 @@ function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season,
     const convocados = [...slots.filter(Boolean), ...banco];
     const ficam = new Set(convocados);
     return {
-      ...prev, convocados, alinhamento: slots,
+      // Grava também o sistema que está no campo: sem ele, uma convocatória
+      // que mostrava o sistema do jogo (ex.: 4-2-3-1) voltava ao 4-3-3 por
+      // omissão ao mexer num jogador, e a estrutura trocava.
+      ...prev, convocados, alinhamento: slots, formacao: escConv.formacao,
       capitao: ficam.has(prev.capitao) ? prev.capitao : undefined,
       subcapitao: ficam.has(prev.subcapitao) ? prev.subcapitao : undefined,
     };
