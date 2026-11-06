@@ -55861,19 +55861,36 @@ function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, season,
               castigados={castigadosParaJogo(matches, f.data, jogoDaConvocatoria && jogoDaConvocatoria.id)}
             />
 
-            {f.convocados.length > 0 && (
+            {/* LISTAS QUE NÃO MEXEM: o Onze inicial reserva sempre as 11
+                linhas e os Suplentes as 9 (linhas vazias "—" até serem
+                preenchidas). Antes, as listas só apareciam com o 1.º
+                convocado e cresciam a cada jogador, empurrando tudo o que
+                está por baixo (Responsáveis…) para baixo. */}
+            {(
               <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {[
-                  { titulo: `Onze inicial · ${titulares.length}/${TITULARES}`, ids: titulares, cor: T.gold },
-                  { titulo: `Suplentes · ${suplentes.length}/9`, ids: suplentes, cor: T.muted },
-                  { titulo: `A mais — não entram na ficha · ${excedentes.length}`, ids: excedentes, cor: T.bad },
-                ].filter(g => g.ids.length > 0).map(grupo => (
-                  <div key={grupo.titulo}>
-                    <div style={{ fontSize: 10.5, color: grupo.cor, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{grupo.titulo}</div>
+                  { titulo: `Onze inicial · ${titulares.length}/${TITULARES}`, ids: titulares, cor: T.gold, reserva: TITULARES },
+                  { titulo: `Suplentes · ${suplentes.length}/9`, ids: suplentes, cor: T.muted, reserva: 9 },
+                  { titulo: `A mais — não entram na ficha · ${excedentes.length}`, ids: excedentes, cor: T.bad, reserva: 0 },
+                ].filter(g => g.reserva > 0 || g.ids.length > 0).map(grupo => (
+                  <div key={grupo.titulo.split(' · ')[0]}>
+                    <div style={{ fontSize: 10.5, color: grupo.cor, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6, fontVariantNumeric: 'tabular-nums' }}>{grupo.titulo}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {grupo.ids.map((pid, i) => {
-                        const jog = players.find(x => x.id === pid);
-                        if (!jog) return null;
+                      {Array.from({ length: Math.max(grupo.reserva, grupo.ids.length) }, (_, i) => grupo.ids[i] || null).map((pid, i) => {
+                        const jog = pid ? players.find(x => x.id === pid) : null;
+                        if (!jog) {
+                          // Linha vazia com a MESMA altura de uma linha preenchida.
+                          return (
+                            <div key={`vazio-${i}`} aria-hidden="true" style={{
+                              display: 'flex', alignItems: 'center', gap: 8, padding: '5px 9px',
+                              border: `1px dashed ${T.line}`, borderRadius: 7, opacity: 0.5,
+                            }}>
+                              <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, width: 16 }}>{grupo.reserva === TITULARES ? i + 1 : ''}</span>
+                              <span style={{ flex: 1, fontSize: 12.5, color: T.mutedDim }}>—</span>
+                              <span style={{ padding: '2px 8px', fontSize: 10.5, border: '1px solid transparent', visibility: 'hidden', ...mono }}>C</span>
+                            </div>
+                          );
+                        }
                         const eCapitao = f.capitao === pid;
                         const eSub = f.subcapitao === pid;
                         return (
