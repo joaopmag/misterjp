@@ -12199,6 +12199,35 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
      ficha e o histórico. Em tudo o resto da app já não aparece (ver
      `playersAtivos` no App). */
   const [mostrarSaidos, setMostrarSaidos] = useState(false);
+  /* FECHAR "SAÍRAM DO CLUBE" SEM MEXER NA PÁGINA. Ao fechar, a página
+     ficava mais curta e o browser puxava o scroll para cima — os cartões
+     de cima mexiam. Agora, ao fechar, fica por baixo um espaço vazio com a
+     altura do que se fechou (medido antes de pintar, por isso nada salta);
+     esse espaço sai sozinho quando deixa de estar à vista. */
+  const gridPlantelRef = useRef(null);
+  const reservaPlantelRef = useRef(null);
+  const alturaAntesDeFecharRef = useRef(null);
+  const [reservaPlantel, setReservaPlantel] = useState(0);
+  const alternarSaidos = () => {
+    if (mostrarSaidos && gridPlantelRef.current) alturaAntesDeFecharRef.current = gridPlantelRef.current.offsetHeight;
+    else setReservaPlantel(0);
+    setMostrarSaidos(v => !v);
+  };
+  React.useLayoutEffect(() => {
+    const antes = alturaAntesDeFecharRef.current;
+    alturaAntesDeFecharRef.current = null;
+    if (antes == null || !gridPlantelRef.current) return;
+    setReservaPlantel(Math.max(0, antes - gridPlantelRef.current.offsetHeight));
+  }, [mostrarSaidos]);
+  useEffect(() => {
+    if (!reservaPlantel) return undefined;
+    const verificar = () => {
+      const el = reservaPlantelRef.current;
+      if (el && el.getBoundingClientRect().top > window.innerHeight) setReservaPlantel(0);
+    };
+    window.addEventListener('scroll', verificar, true);
+    return () => window.removeEventListener('scroll', verificar, true);
+  }, [reservaPlantel]);
   const hojePlantel = todayStr();
   const saiuDoClube = (p) => !!(p && p.exitDate && p.exitDate <= hojePlantel);
   const ativosPlantel = players.filter(p => !saiuDoClube(p));
@@ -12345,11 +12374,12 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
       {players.length === 0 ? (
         <EmptyState text="O plantel está vazio." action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+        <>
+        <div ref={gridPlantelRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {listaPlantel.map(p => {
             if (p === SEP_SAIDOS) {
               return (
-                <button key={SEP_SAIDOS} type="button" onClick={() => setMostrarSaidos(v => !v)}
+                <button key={SEP_SAIDOS} type="button" onClick={alternarSaidos}
                   style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: '10px 2px', background: 'none', border: 'none', borderTop: `1px solid ${T.line}`, color: T.muted, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'left' }}>
                   {mostrarSaidos ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   Saíram do clube ({saidosPlantel.length})
@@ -12418,6 +12448,8 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
             );
           })}
         </div>
+        {reservaPlantel > 0 && <div ref={reservaPlantelRef} aria-hidden="true" style={{ height: reservaPlantel }} />}
+        </>
       )}
 
       {modal && (
