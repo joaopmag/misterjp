@@ -55171,10 +55171,23 @@ function syncConvocatoriaMatch(conv, matches, players) {
        tinha o efeito de travar a sincronização assim que alguém marcava
        UMA presença, mesmo sem intenção de fixar a lista para sempre. */
     next.convocados = [...(conv.convocados || [])];
-    /* Os titulares só são reescritos enquanto ninguém os tiver mexido na
-       ficha do jogo: a partir daí manda o que o treinador registou no
-       relatório, que reflete o que aconteceu mesmo em campo. */
-    if ((m.starters || []).length > 0) next.starters = m.starters;
+    /* O ONZE É UM SÓ, NOS DOIS SÍTIOS. Se a convocatória tem o onze
+       arrumado no campo (lugar a lugar), foi o treinador que o definiu
+       ali — é a última gravação e passa para o jogo tal e qual: titulares,
+       lugares e sistema. Antes, o jogo ficava com os titulares antigos e,
+       ao reabrir, o onze aparecia trocado (ex.: um titular escolhido na
+       convocatória voltava ao banco no jogo). */
+    const nConv = tamanhoDaFormacao(conv.formacao || '4-3-3') || 11;
+    if (Array.isArray(conv.alinhamento) && conv.alinhamento.length === nConv) {
+      const conv11 = new Set(conv.convocados || []);
+      next.alinhamento = conv.alinhamento.map(id => (id && conv11.has(id) ? id : null));
+      next.starters = next.alinhamento.filter(Boolean);
+      next.formacao = conv.formacao || '4-3-3';
+    } else if ((m.starters || []).length > 0) {
+      /* Sem onze arrumado na convocatória: os titulares do jogo mantêm-se
+         (o que se registou na ficha do jogo e no relatório manda). */
+      next.starters = m.starters;
+    }
     // Quem saiu dos convocados sai também da Presenças (attendance,
     // faltas, lesionados, escalão) — sem isto ficava marcado como "C"
     // numa grelha que já nem devia mostrá-lo.
@@ -55275,6 +55288,8 @@ function syncMatchConvocatoria(match, convocatorias, season) {
       localJogo: '', horaJogo: '', horaConcentracao: '', localConcentracao: '', outrasInfo: '',
       convocados: [...(match.convocados || [])],
       ...base,
+      ...(Array.isArray(match.alinhamento) && match.alinhamento.length === (tamanhoDaFormacao(match.formacao || '4-3-3') || 11)
+        ? { alinhamento: [...match.alinhamento], formacao: match.formacao || '4-3-3' } : {}),
     }];
   }
   /* Os convocados acompanham sempre o jogo, tal como já acontece com o
@@ -55285,9 +55300,16 @@ function syncMatchConvocatoria(match, convocatorias, season) {
      copiava quando a lista do jogo tinha alguém, por isso esvaziar no
      Planeamento não se refletia em Jogos, e a convocatória ficava
      presa no número antigo. */
+  /* E o onze do jogo passa para a convocatória (lugares + sistema), para
+     as duas mostrarem sempre o mesmo onze, seja qual for o sítio onde se
+     mexeu por último. */
+  const nJogo = tamanhoDaFormacao(match.formacao || '4-3-3') || 11;
+  const onzeDoJogo = Array.isArray(match.alinhamento) && match.alinhamento.length === nJogo
+    ? { alinhamento: [...match.alinhamento], formacao: match.formacao || '4-3-3' }
+    : {};
   return lista.map((c, i) => {
     if (i !== idx) return c;
-    return { ...c, ...base, convocados: [...(match.convocados || [])] };
+    return { ...c, ...base, ...onzeDoJogo, convocados: [...(match.convocados || [])] };
   });
 }
 
