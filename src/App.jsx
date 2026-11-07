@@ -37704,22 +37704,48 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const jogoDoCalendario = (c) => {
     const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim();
     const palavras = (x) => norm(x).split(/\s+/).filter(w => w.length >= 4 && !['clube', 'futebol', 'sport', 'sporting', 'grupo', 'desportivo', 'associacao', 'uniao'].includes(w));
+    /* ADVERSÁRIOS DE NOME CURTO. Só contavam palavras com 4+ letras, e um
+       nome como "AFS SAD (B)" não tem nenhuma: o jogo nunca era reconhecido
+       como oficial e o ecrã de dia de jogo não abria (com ?testejogo abria,
+       porque o teste não verifica isto). Agora: palavras longas, se houver;
+       senão, todas as palavras do nome (2+ letras) têm de lá estar; e, em
+       último caso, basta haver um jogo nosso no calendário nesse dia (numa
+       competição não há dois jogos nossos no mesmo dia). */
     const adv = palavras(c.adversario);
-    if (!adv.length || !c.data) return null;
+    const advCurto = norm(c.adversario).split(/\s+/).filter(w => w.length >= 2);
+    if (!c.data) return null;
     const { competitions } = normalizeStandings(dadosCompJogo && dadosCompJogo.standings);
+    const daJornada = (rounds, k) => {
+      const lbl = String(rounds[k].label || '').trim();
+      const num = (/(\d+)/.exec(lbl) || [])[1] || (!lbl ? String(k + 1) : '');
+      return { jornada: num ? `${num}.ª jornada` : lbl };
+    };
+    const nesseDia = (g) => g && String(g.date || '').slice(0, 10) === c.data;
     for (const comp of (competitions || [])) {
       const rounds = comp.rounds || [];
       for (let k = 0; k < rounds.length; k++) {
         const achou = (rounds[k].games || []).some(g => {
-          if (!g || String(g.date || '').slice(0, 10) !== c.data) return false;
-          const lados = `${norm(g.home)} ${norm(g.away)}`;
-          return adv.some(w => lados.includes(w));
+          if (!nesseDia(g)) return false;
+          const lados = ` ${norm(g.home)} ${norm(g.away)} `;
+          if (adv.length) return adv.some(w => lados.includes(w));
+          if (advCurto.length) return advCurto.every(w => lados.includes(` ${w} `) || lados.includes(w));
+          return false;
         });
-        if (achou) {
-          const lbl = String(rounds[k].label || '').trim();
-          const num = (/(\d+)/.exec(lbl) || [])[1] || (!lbl ? String(k + 1) : '');
-          return { jornada: num ? `${num}.ª jornada` : lbl };
-        }
+        if (achou) return daJornada(rounds, k);
+      }
+    }
+    // Último recurso: um jogo do calendário nesse dia com a nossa equipa.
+    const nosso = norm((dadosConvJogo && dadosConvJogo.clube) || '').split(/\s+/).filter(w => w.length >= 4);
+    for (const comp of (competitions || [])) {
+      const rounds = comp.rounds || [];
+      for (let k = 0; k < rounds.length; k++) {
+        const achou = (rounds[k].games || []).some(g => {
+          if (!nesseDia(g)) return false;
+          if (!nosso.length) return true;
+          const lados = `${norm(g.home)} ${norm(g.away)}`;
+          return nosso.some(w => lados.includes(w));
+        });
+        if (achou) return daJornada(rounds, k);
       }
     }
     return null;
@@ -55392,13 +55418,19 @@ function syncMatchConvocatoria(match, convocatorias, season) {
   // jogo vão à frente na lista), com o mesmo sistema.
   const onzeDoJogo = Array.isArray(match.alinhamento) && match.alinhamento.length === nJogo
     ? { alinhamento: [...match.alinhamento], formacao: match.formacao || '4-3-3' }
-    : (match.formacao ? { alinhamento: null, formacao: match.formacao } : {});
+    : (match.formacao ? { formacao: match.formacao } : {});
+  // Sem lugares no jogo: a convocatória fica SEM o campo "alinhamento" (a
+  // chave sai), em vez de "alinhamento: null" — um null aqui pode partir
+  // quem lê a convocatória no servidor (Portal).
+  const semLugares = !onzeDoJogo.alinhamento && !!match.formacao;
   const convJogo = match.convocados || [];
   const titJogo = (match.starters || []).filter(id => convJogo.includes(id));
   const convocadosOrdem = titJogo.length ? [...titJogo, ...convJogo.filter(id => !titJogo.includes(id))] : [...convJogo];
   return lista.map((c, i) => {
     if (i !== idx) return c;
-    return { ...c, ...base, ...onzeDoJogo, convocados: convocadosOrdem };
+    const novo = { ...c, ...base, ...onzeDoJogo, convocados: convocadosOrdem };
+    if (semLugares) delete novo.alinhamento;
+    return novo;
   });
 }
 
