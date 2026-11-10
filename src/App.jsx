@@ -51675,33 +51675,39 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      - ao chegar ao fim A TOCAR NORMALMENTE, volta ao início e continua —
        o ciclo contínuo de sempre. */
   const tempoAnteriorClipeRef = React.useRef(null);
+  /* FIM DE CORTE COMO NA ANÁLISE INDIVIDUAL: ao chegar ao fim, o corte
+     PÁRA no último instante e aparece "Repetir" / "Corte seguinte" —
+     avança-se à mão (antes: um corte sozinho repetia sem parar e, em
+     "Ver cortes em seguida", passava sozinho ao seguinte). */
+  const [fimCorte, setFimCorte] = useState(null); // id do corte que chegou ao fim
+  useEffect(() => { setFimCorte(null); }, [activeId]);
   useEffect(() => {
     if (!ativoEClipe) { tempoAnteriorClipeRef.current = null; return; }
     const anterior = tempoAnteriorClipeRef.current;
     tempoAnteriorClipeRef.current = liveTime;
     if (anterior == null) return; // primeira leitura deste corte — sem nada para comparar ainda
 
-    const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
-    // Em "Ver cortes em seguida", o fim de um corte passa ao seguinte
-    // em vez de o repetir; no último, volta ao início dele e pára.
-    if (aTocarNormalmente && liveTime >= clipFimEf && sequencia && sequencia.includes(active.id) && !gravacaoBibRef.current) {
-      const i = sequencia.indexOf(active.id);
-      if (i < sequencia.length - 1) {
-        setActiveId(sequencia[i + 1]);
-      } else {
-        enviarComandoYoutube('pauseVideo');
+    // Parado no fim à espera de "Repetir"/"Seguinte": se carregarem no
+    // play do próprio leitor, recomeça o corte do início.
+    if (fimCorte === active.id) {
+      if (ytATocarRef.current && liveTime >= clipFimEf - 0.05) {
+        setFimCorte(null);
         enviarComandoYoutube('seekTo', [clipIni, true]);
-        setSequencia(null);
+        tempoAnteriorClipeRef.current = clipIni;
       }
-      tempoAnteriorClipeRef.current = null;
-    } else if (aTocarNormalmente && liveTime >= clipFimEf) {
+      return;
+    }
+
+    const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
+    if (aTocarNormalmente && liveTime >= clipFimEf) {
       // Uma paragem com desenhos a decorrer mesmo no fim: deixa-a acabar.
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
       if (gravacaoBibRef.current) return;
-      enviarComandoYoutube('seekTo', [clipIni, true]);
-      enviarComandoYoutube('playVideo');
-      tempoAnteriorClipeRef.current = clipIni;
+      enviarComandoYoutube('pauseVideo');
+      enviarComandoYoutube('seekTo', [Math.max(clipIni, clipFimEf - 0.1), true]);
+      setFimCorte(active.id);
+      tempoAnteriorClipeRef.current = null;
     } else if (liveTime < clipIni - 1.25 || liveTime > clipFimEf + 0.75) {
       // A gravar, os segundos ANTES do corte são de propósito (ver `gravarCorteBib`).
       if (gravacaoBibRef.current && gravacaoBibRef.current.preRoll) return;
@@ -51709,7 +51715,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       tempoAnteriorClipeRef.current = clipIni;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveTime, active && active.id]);
+  }, [liveTime, active && active.id, fimCorte]);
 
   // BARRA DO CLIPE — enquanto se arrasta, mostra a posição do dedo/rato
   // (e não a do leitor, que chega com atraso e faria o cursor saltar).
@@ -52496,6 +52502,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (g && g.itens[0]) setActiveId(g.itens[0].id);
   };
   const cortesDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => ehClipe(v) && v.youtubeId) : [];
+  // Tudo o que se reproduz neste jogo/tema, por ordem: cortes do YouTube e
+  // clipes em vídeo (MP4, ex.: os enviados da Análise de Vídeo). É a lista
+  // do "Corte seguinte" no fim de cada um.
+  const eMp4Sala = (v) => !!(v && v.kind === 'video' && !v.youtubeId && /^https?:/.test(String(v.dataUrl || '')));
+  const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && v.youtubeId) || eMp4Sala(v)) : [];
+  const seguinteNaSala = (id) => {
+    const lista = (sequencia && sequencia.includes(id)) ? sequencia : reproduziveisDoGrupo.map(v => v.id);
+    const i = lista.indexOf(id);
+    return { lista, i, seguinteId: i >= 0 && i < lista.length - 1 ? lista[i + 1] : null };
+  };
   const iniciarSequencia = () => {
     if (!cortesDoGrupo.length) return;
     const ids = cortesDoGrupo.map(v => v.id);
@@ -53089,6 +53105,38 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
+                      {/* Fim do corte: Repetir / Corte seguinte (como na
+                          Análise individual em clipes). */}
+                      {!isBlocked && ativoEClipe && fimCorte === active.id && (() => {
+                        const { lista, i, seguinteId } = seguinteNaSala(active.id);
+                        const repetir = () => {
+                          setFimCorte(null);
+                          enviarComandoYoutube('seekTo', [clipIni, true]);
+                          enviarComandoYoutube('playVideo');
+                          tempoAnteriorClipeRef.current = clipIni;
+                        };
+                        const seguinte = () => {
+                          if (!seguinteId) return;
+                          setFimCorte(null);
+                          // O corte seguinte arranca já a tocar (mesmo leitor).
+                          ytATocarRef.current = true;
+                          setActiveId(seguinteId);
+                        };
+                        return (
+                          <div style={{
+                            position: 'absolute', inset: 0, zIndex: 4, display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center', gap: 12, background: 'rgba(0,0,0,.55)',
+                          }}>
+                            {i >= 0 && lista.length > 1 && (
+                              <div style={{ color: '#fff', fontSize: 12.5, opacity: 0.85, ...mono }}>Corte {i + 1} de {lista.length}</div>
+                            )}
+                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                              <Btn variant="ghost" onClick={repetir}><RotateCcw size={15} /> Repetir</Btn>
+                              {seguinteId && <Btn onClick={seguinte}><SkipForward size={15} /> Corte seguinte</Btn>}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {/* Zonas laterais do toque duplo (±10 s) — só nos vídeos
                           completos; deixam livres o centro, o topo (título,
                           definições) e TODA a metade de baixo (barra do
@@ -53779,6 +53827,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       </div>
                     </div>
                   </div>
+                ) : eMp4Sala(active) ? (
+                  (() => {
+                    const { lista, i, seguinteId } = seguinteNaSala(active.id);
+                    return (
+                      <LeitorClipeSala key={active.id} item={active}
+                        posicao={i >= 0 && lista.length > 1 ? { indice: i, total: lista.length } : null}
+                        onSeguinte={seguinteId ? () => { ytATocarRef.current = true; setActiveId(seguinteId); } : null} />
+                    );
+                  })()
                 ) : (
                   <AttachmentPreview item={active} />
                 )}
@@ -54910,6 +54967,38 @@ function VideoSemPiscar({ item, proporcao }) {
         );
       })}
     </>
+  );
+}
+
+/* CLIPE EM VÍDEO (MP4) NA SALA DE VÍDEO — como na Análise individual em
+   clipes: começa a tocar, ao chegar ao fim PÁRA na última imagem e
+   aparece "Repetir" / "Clipe seguinte" (avança-se à mão). */
+function LeitorClipeSala({ item, posicao, onSeguinte }) {
+  const ref = useRef(null);
+  const [noFim, setNoFim] = useState(false);
+  const repetir = () => {
+    const v = ref.current; if (!v) return;
+    setNoFim(false);
+    try { v.currentTime = 0; v.play(); } catch (e) { /* nada */ }
+  };
+  return (
+    <div style={{ position: 'relative', width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
+      <video ref={ref} src={item.dataUrl} controls autoPlay playsInline
+        onEnded={() => setNoFim(true)} onPlay={() => setNoFim(false)}
+        style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
+      {noFim && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 12, background: 'rgba(0,0,0,.55)',
+        }}>
+          {posicao && <div style={{ color: '#fff', fontSize: 12.5, opacity: 0.85, ...mono }}>Clipe {posicao.indice + 1} de {posicao.total}</div>}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <Btn variant="ghost" onClick={repetir}><RotateCcw size={15} /> Repetir</Btn>
+            {onSeguinte && <Btn onClick={onSeguinte}><SkipForward size={15} /> Clipe seguinte</Btn>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
