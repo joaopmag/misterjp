@@ -52525,7 +52525,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!cortesDoGrupo.length) return;
     const ids = cortesDoGrupo.map(v => v.id);
     setSequencia(ids);
-    setActiveId(ids[0]);
+    setFimCorte(null);
+    // Arranca LOGO a tocar no 1.º corte. Se ele já estava aberto, antes não
+    // acontecia nada (o corte não mudava e ninguém mandava tocar).
+    if (active && active.id === ids[0]) {
+      enviarComandoYoutube('seekTo', [cortesDoGrupo[0].clipInicio || 0, true]);
+      enviarComandoYoutube('playVideo');
+    } else {
+      ytATocarRef.current = true;
+      setActiveId(ids[0]);
+    }
   };
   const posSeq = sequencia && active ? sequencia.indexOf(active.id) : -1;
 
@@ -52830,16 +52839,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           {/* O botão "Ver cortes em seguida" passou para junto da secção
              dos cortes (na lista). Aqui em cima fica só o controlo da
              sequência enquanto ela está a correr. */}
-          {cortesDoGrupo.length > 0 && (
-            posSeq >= 0 ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 700 }}>Clipe {posSeq + 1} de {sequencia.length}</span>
-                <button title="Clipe anterior" disabled={posSeq === 0} onClick={() => setActiveId(sequencia[posSeq - 1])} style={{ ...btnIcone, opacity: posSeq === 0 ? 0.4 : 1 }}><SkipBack size={14} /></button>
-                <button title="Clipe seguinte" disabled={posSeq === sequencia.length - 1} onClick={() => setActiveId(sequencia[posSeq + 1])} style={{ ...btnIcone, opacity: posSeq === sequencia.length - 1 ? 0.4 : 1 }}><SkipForward size={14} /></button>
-                <Btn variant="ghost" onClick={() => setSequencia(null)}><X size={14} /> Parar</Btn>
-              </div>
-            ) : null
-          )}
+          {/* O "Clipe X de N" e o ⏮ ⏭ estão na barra de cima do leitor
+              (como na Análise). Aqui não aparece nada a meio — isto fazia
+              a página mexer ao começar "Ver cortes em seguida". */}
         </div>
         {!eJogos && !soLeitura && (
           <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 8 }}>
@@ -53972,7 +53974,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       // PRIMEIRA secção que tem cortes ("Cortes" numa jornada;
                       // o primeiro jogo com cortes nos Amigáveis/adversários).
                       const iPrimeiraComCortes = grupoAtual.secoes.findIndex(x => x.itens.some(v => ehClipe(v) && v.youtubeId));
-                      const comBotao = si === iPrimeiraComCortes && cortesDoGrupo.length > 0 && posSeq < 0;
+                      // O botão fica SEMPRE (não desaparece ao começar): nada mexe na página.
+                      const comBotao = si === iPrimeiraComCortes && cortesDoGrupo.length > 0;
                       return [
                       <div key={`h-${s.key}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: si ? '8px 0 0' : 0 }}>
                         <span style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>{s.titulo}</span>
@@ -55013,15 +55016,22 @@ function VideoSemPiscar({ item, proporcao }) {
    "Clipe seguinte"; no último, só "Repetir". Usado na Sala de Vídeo
    (cortes do YouTube e clipes em vídeo). */
 function FimDoClipe({ onRepetir, onSeguinte }) {
+  // Botões com o estilo EXATO do Btn "ghost" do AnalisadorVideo
+  // (transparente, contorno fino, texto claro, cantos de 7 px).
+  const estilo = (desligado) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 7, padding: '8px 12px',
+    fontSize: 13, fontWeight: 500, cursor: desligado ? 'not-allowed' : 'pointer', opacity: desligado ? 0.45 : 1,
+    background: 'transparent', color: T.cream, border: `1px solid ${T.line}`, ...body,
+  });
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: 12 }}>
-        <Btn variant="ghost" onClick={onRepetir} style={{ background: 'rgba(0,0,0,0.6)' }}>
+        <button type="button" onClick={onRepetir} style={{ ...estilo(false), background: 'rgba(0,0,0,0.6)' }}>
           <RotateCcw size={15} /> Repetir
-        </Btn>
+        </button>
         {onSeguinte
-          ? <Btn onClick={onSeguinte}><SkipForward size={15} /> Clipe seguinte</Btn>
-          : <Btn variant="ghost" disabled style={{ background: 'rgba(0,0,0,0.6)' }}><Check size={15} /> Último clipe</Btn>}
+          ? <button type="button" onClick={onSeguinte} style={estilo(false)}><SkipForward size={15} /> Clipe seguinte</button>
+          : <button type="button" disabled style={{ ...estilo(true), background: 'rgba(0,0,0,0.6)' }}><Check size={15} /> Último clipe</button>}
       </div>
     </div>
   );
