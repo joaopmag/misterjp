@@ -53335,7 +53335,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         dedos, também a 100%), o arrastar e a roda; um toque
                         pausa/retoma. Nos jogos completos, a 100% deixa livre a
                         faixa de baixo, onde está a barra do próprio YouTube. */}
-                    {ytFull && !modoDesenhoBib && !isBlocked && (
+                    {/* Com o "Repetir / Corte seguinte" no ecrã (fim do corte),
+                        esta camada sai: estava POR CIMA dos botões e um toque
+                        neles era apanhado aqui como "retomar" — o corte
+                        recomeçava em vez de passar ao seguinte. */}
+                    {ytFull && !modoDesenhoBib && !isBlocked && !(ativoEClipe && fimCorte === active.id) && (
                       <div {...lupaBib.handlers(alternarLupaBib)} style={{
                         position: 'absolute', top: 0, left: 0, right: 0,
                         bottom: !ativoEClipe && lupaBib.lupa.z <= 1 ? '18%' : 0,
