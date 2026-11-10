@@ -51704,6 +51704,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
       if (gravacaoBibRef.current) return;
+      // Como na Análise individual: corte SOZINHO repete sem parar; numa
+      // lista (vários cortes do jogo/tema, ou "em seguida") pára no fim e
+      // pergunta "Repetir / Clipe seguinte".
+      if (seguinteNaSala(active.id).lista.length <= 1) {
+        enviarComandoYoutube('seekTo', [clipIni, true]);
+        enviarComandoYoutube('playVideo');
+        tempoAnteriorClipeRef.current = clipIni;
+        return;
+      }
       enviarComandoYoutube('pauseVideo');
       enviarComandoYoutube('seekTo', [Math.max(clipIni, clipFimEf - 0.1), true]);
       setFimCorte(active.id);
@@ -52824,9 +52833,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           {cortesDoGrupo.length > 0 && (
             posSeq >= 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: T.warn, ...mono }}>Corte {posSeq + 1}/{sequencia.length}</span>
-                <button title="Corte anterior" disabled={posSeq === 0} onClick={() => setActiveId(sequencia[posSeq - 1])} style={{ ...btnIcone, opacity: posSeq === 0 ? 0.4 : 1 }}><SkipBack size={14} /></button>
-                <button title="Corte seguinte" disabled={posSeq === sequencia.length - 1} onClick={() => setActiveId(sequencia[posSeq + 1])} style={{ ...btnIcone, opacity: posSeq === sequencia.length - 1 ? 0.4 : 1 }}><SkipForward size={14} /></button>
+                <span style={{ fontSize: 12.5, color: T.gold, fontWeight: 700 }}>Clipe {posSeq + 1} de {sequencia.length}</span>
+                <button title="Clipe anterior" disabled={posSeq === 0} onClick={() => setActiveId(sequencia[posSeq - 1])} style={{ ...btnIcone, opacity: posSeq === 0 ? 0.4 : 1 }}><SkipBack size={14} /></button>
+                <button title="Clipe seguinte" disabled={posSeq === sequencia.length - 1} onClick={() => setActiveId(sequencia[posSeq + 1])} style={{ ...btnIcone, opacity: posSeq === sequencia.length - 1 ? 0.4 : 1 }}><SkipForward size={14} /></button>
                 <Btn variant="ghost" onClick={() => setSequencia(null)}><X size={14} /> Parar</Btn>
               </div>
             ) : null
@@ -53038,6 +53047,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         : { borderRadius: 10, border: `1px solid ${T.line}` }),
                     }}
                   >
+                    {/* BARRA DE CIMA DO CLIPE — a mesma do leitor da Análise
+                        individual em clipes: "Clipe X de N · título ·
+                        início–fim (duração)" e ⏮ ⏭. Fica também em ecrã
+                        inteiro. Só nos clipes que estão numa lista. */}
+                    {!isBlocked && ativoEClipe && (() => {
+                      const { lista, i } = seguinteNaSala(active.id);
+                      if (i < 0 || lista.length < 2) return null;
+                      const irPara = (id) => { if (!id) return; setFimCorte(null); ytATocarRef.current = true; setActiveId(id); };
+                      const btnTopo = { padding: '6px 10px' };
+                      return (
+                        <div style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+                          padding: '8px 12px', background: T.surface, borderBottom: `1px solid ${T.line}`, flexShrink: 0,
+                        }}>
+                          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>
+                            {active.title || 'Clipe'} · {fmtMMSS(clipIni)}–{fmtMMSS(clipFimEf)} ({Math.round(clipFimEf - clipIni)}s)
+                          </span>
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                            <Btn escuro variant="ghost" onClick={() => irPara(lista[i - 1])} disabled={i === 0} style={btnTopo} title="Clipe anterior"><SkipBack size={14} /></Btn>
+                            <Btn escuro variant="ghost" onClick={() => irPara(lista[i + 1])} disabled={i >= lista.length - 1} style={btnTopo} title="Clipe seguinte"><SkipForward size={14} /></Btn>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {/* A estrutura é SEMPRE a mesma dentro e fora do ecrã
                         inteiro — só mudam as medidas — para o React nunca
                         voltar a montar o iframe (o vídeo recomeçaria). */}
@@ -53122,19 +53156,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           ytATocarRef.current = true;
                           setActiveId(seguinteId);
                         };
+                        // Igual ao leitor da Análise individual em clipes.
                         return (
-                          <div style={{
-                            position: 'absolute', inset: 0, zIndex: 4, display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center', gap: 12, background: 'rgba(0,0,0,.55)',
-                          }}>
-                            {i >= 0 && lista.length > 1 && (
-                              <div style={{ color: '#fff', fontSize: 12.5, opacity: 0.85, ...mono }}>Corte {i + 1} de {lista.length}</div>
-                            )}
-                            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-                              <Btn variant="ghost" onClick={repetir}><RotateCcw size={15} /> Repetir</Btn>
-                              {seguinteId && <Btn onClick={seguinte}><SkipForward size={15} /> Corte seguinte</Btn>}
-                            </div>
-                          </div>
+                          <FimDoClipe onRepetir={repetir} onSeguinte={seguinteId ? seguinte : null} />
                         );
                       })()}
                       {/* Zonas laterais do toque duplo (±10 s) — só nos vídeos
@@ -53578,10 +53602,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       return (
                         <div style={{
                           display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10,
-                          padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                          padding: '8px 12px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                         }}>
                           <button
-                            onClick={() => enviarComandoYoutube(ytATocar ? 'pauseVideo' : 'playVideo')}
+                            onClick={() => {
+                              // No fim (à espera de Repetir/Seguinte), o play recomeça o clipe.
+                              if (fimCorte === active.id) { setFimCorte(null); procurarNoClipe(clipIni); enviarComandoYoutube('playVideo'); return; }
+                              enviarComandoYoutube(ytATocar ? 'pauseVideo' : 'playVideo');
+                            }}
                             title={ytATocar ? 'Pausar' : 'Reproduzir'}
                             style={btn}
                           >{ytATocar ? <Pause size={16} /> : <Play size={16} />}</button>
@@ -53604,9 +53632,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {!isNarrow && (
                             <button onClick={() => recuarClipe(2)} title="Avançar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>+2s</button>
                           )}
-                          <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
+                          <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
                             {fmtMMSS(agora - clipIni)} / {fmtMMSS(dur)}
                           </span>
+                          {/* Ecrã inteiro no fim da barra, como na Análise. */}
+                          <button onClick={toggleYtFull} title={ytFull ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'} style={btn}>
+                            {ytFull ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                          </button>
                         </div>
                       );
                     })()}
@@ -53834,9 +53866,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 ) : eMp4Sala(active) ? (
                   (() => {
                     const { lista, i, seguinteId } = seguinteNaSala(active.id);
+                    const anteriorId = i > 0 ? lista[i - 1] : null;
                     return (
                       <LeitorClipeSala key={active.id} item={active}
                         posicao={i >= 0 && lista.length > 1 ? { indice: i, total: lista.length } : null}
+                        onAnterior={anteriorId ? () => { ytATocarRef.current = true; setActiveId(anteriorId); } : null}
                         onSeguinte={seguinteId ? () => { ytATocarRef.current = true; setActiveId(seguinteId); } : null} />
                     );
                   })()
@@ -54974,34 +55008,59 @@ function VideoSemPiscar({ item, proporcao }) {
   );
 }
 
+/* FIM DO CLIPE — o MESMO aspeto do leitor da Análise individual em
+   clipes (AnalisadorVideo › ClipAtletaModal): véu escuro, "Repetir" e
+   "Clipe seguinte"; no último, só "Repetir". Usado na Sala de Vídeo
+   (cortes do YouTube e clipes em vídeo). */
+function FimDoClipe({ onRepetir, onSeguinte }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: 12 }}>
+        <Btn variant="ghost" onClick={onRepetir} style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <RotateCcw size={15} /> Repetir
+        </Btn>
+        {onSeguinte
+          ? <Btn onClick={onSeguinte}><SkipForward size={15} /> Clipe seguinte</Btn>
+          : <Btn variant="ghost" disabled style={{ background: 'rgba(0,0,0,0.6)' }}><Check size={15} /> Último clipe</Btn>}
+      </div>
+    </div>
+  );
+}
+
 /* CLIPE EM VÍDEO (MP4) NA SALA DE VÍDEO — como na Análise individual em
    clipes: começa a tocar, ao chegar ao fim PÁRA na última imagem e
    aparece "Repetir" / "Clipe seguinte" (avança-se à mão). */
-function LeitorClipeSala({ item, posicao, onSeguinte }) {
+function LeitorClipeSala({ item, posicao, onAnterior, onSeguinte }) {
   const ref = useRef(null);
   const [noFim, setNoFim] = useState(false);
+  // Sozinho (sem lista) repete sem parar, como na Análise individual.
+  const emLista = !!posicao;
   const repetir = () => {
     const v = ref.current; if (!v) return;
     setNoFim(false);
     try { v.currentTime = 0; v.play(); } catch (e) { /* nada */ }
   };
   return (
-    <div style={{ position: 'relative', width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
-      <video ref={ref} src={item.dataUrl} controls autoPlay playsInline
-        onEnded={() => setNoFim(true)} onPlay={() => setNoFim(false)}
-        style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
-      {noFim && (
-        <div style={{
-          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          gap: 12, background: 'rgba(0,0,0,.55)',
-        }}>
-          {posicao && <div style={{ color: '#fff', fontSize: 12.5, opacity: 0.85, ...mono }}>Clipe {posicao.indice + 1} de {posicao.total}</div>}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Btn variant="ghost" onClick={repetir}><RotateCcw size={15} /> Repetir</Btn>
-            {onSeguinte && <Btn onClick={onSeguinte}><SkipForward size={15} /> Clipe seguinte</Btn>}
+    <div style={{ width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
+      {/* A mesma barra de cima do leitor da Análise individual em clipes. */}
+      {posicao && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 12px', background: T.surface, borderBottom: `1px solid ${T.line}` }}>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {posicao.indice + 1} de {posicao.total} · </strong>
+            {item.title || 'Clipe'}
+          </span>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <Btn escuro variant="ghost" onClick={onAnterior || undefined} disabled={!onAnterior} style={{ padding: '6px 10px' }} title="Clipe anterior"><SkipBack size={14} /></Btn>
+            <Btn escuro variant="ghost" onClick={onSeguinte || undefined} disabled={!onSeguinte} style={{ padding: '6px 10px' }} title="Clipe seguinte"><SkipForward size={14} /></Btn>
           </div>
         </div>
       )}
+      <div style={{ position: 'relative' }}>
+      <video ref={ref} src={item.dataUrl} controls autoPlay playsInline loop={!emLista}
+        onEnded={() => setNoFim(true)} onPlay={() => setNoFim(false)}
+        style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
+      {noFim && posicao && <FimDoClipe onRepetir={repetir} onSeguinte={onSeguinte} />}
+      </div>
     </div>
   );
 }
