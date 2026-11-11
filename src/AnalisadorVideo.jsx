@@ -155,8 +155,18 @@ async function seguirJogadorAssincrono(pedido) {
     headers: await cabecalhosComSessao(),
     body: JSON.stringify(pedido),
   });
-  const json = await resp.json();
-  if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+  /* Quando o servidor desiste por tempo (a Vercel corta a função ao fim
+     de 5 minutos), a resposta não é JSON: antes isso dava um erro técnico
+     ("Unexpected token…"). Agora diz o que aconteceu e o que fazer. */
+  const texto = await resp.text();
+  let json = null;
+  try { json = JSON.parse(texto); } catch (e) { /* resposta que não é JSON */ }
+  if (!resp.ok || !json) {
+    if (resp.status === 504 || /FUNCTION_INVOCATION_TIMEOUT/.test(texto)) {
+      throw new Error('demorou mais do que o servidor permite. Experimenta seguir um troço mais curto.');
+    }
+    throw new Error((json && json.error) || `o servidor respondeu com erro ${resp.status}.`);
+  }
   return json; // { pontos, duracao }
 }
 

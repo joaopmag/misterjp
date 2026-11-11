@@ -8,5 +8,13 @@
       "source": "/portal/:path*",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/seguir-jogador.js": {
+      "maxDuration": 300
+    },
+    "api/cortar-clipe.js": {
+      "maxDuration": 60
+    }
+  }
 }
