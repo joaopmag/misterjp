@@ -55,8 +55,37 @@ export default async function handler(req, res) {
   if (!token) return res.status(401).json({ error: 'Sessão em falta. Sai e entra na app outra vez.' });
   const { data: quem, error: erroUser } = await supabaseAdmin.auth.getUser(token);
   if (erroUser || !quem || !quem.user) return res.status(401).json({ error: 'Sessão inválida ou expirada. Sai e entra na app outra vez.' });
-  const { data: equipas } = await supabaseAdmin.from('team_members').select('team_id').eq('user_id', quem.user.id).limit(1);
+  // A equipa vem no pedido (app atual); uma app antiga em cache não a
+  // manda, e aí usa-se a primeira equipa da pessoa, como antes.
+  const { team_id: equipaPedida, ...pedidoModal } = req.body || {};
+  let consulta = supabaseAdmin.from('team_members').select('team_id').eq('user_id', quem.user.id);
+  if (equipaPedida) consulta = consulta.eq('team_id', equipaPedida);
+  const { data: equipas } = await consulta.limit(1);
   if (!equipas || !equipas.length) return res.status(403).json({ error: 'Sem acesso.' });
+  const teamId = equipas[0].team_id;
+
+  /* LIMITE POR PLANO (preparado para a versão comercial). Cada
+     seguimento gasta no Modal. Se a equipa tiver um limite mensal em
+     `planos_equipa.limites.seguir_jogador_mes`, conta-se o uso deste mês
+     em `uso_servicos` e recusa-se acima dele. Sem plano, sem limite, ou
+     se as tabelas ainda não existirem: segue como sempre (nunca bloqueia
+     por um erro de contagem). */
+  try {
+    const { data: plano } = await supabaseAdmin.from('planos_equipa').select('limites').eq('team_id', teamId).maybeSingle();
+    const limite = plano && plano.limites ? Number(plano.limites.seguir_jogador_mes) : NaN;
+    if (Number.isFinite(limite)) {
+      const agora = new Date();
+      const inicioMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
+      const { count, error: erroContagem } = await supabaseAdmin.from('uso_servicos')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId).eq('servico', 'seguir_jogador').gte('em', inicioMes);
+      if (!erroContagem && (count || 0) >= limite) {
+        return res.status(429).json({ error: `A tua equipa já usou os ${limite} seguimentos incluídos no plano este mês.` });
+      }
+    }
+  } catch (e) {
+    console.warn('seguir-jogador: não consegui verificar o limite do plano', e && e.message);
+  }
 
   try {
     const resposta = await fetch(MODAL_SEGUIDOR_URL, {
@@ -66,11 +95,22 @@ export default async function handler(req, res) {
         'Modal-Key': MODAL_PROXY_KEY_ID,
         'Modal-Secret': MODAL_PROXY_KEY_SECRET,
       },
-      body: JSON.stringify(req.body || {}),
+      body: JSON.stringify(pedidoModal),
     });
     const texto = await resposta.text();
     let json;
     try { json = JSON.parse(texto); } catch { json = { error: texto || 'Resposta vazia do serviço de seguimento.' }; }
+    // Regista o uso (só quando o seguimento correu bem). Um erro aqui não
+    // estraga a resposta.
+    if (resposta.ok) {
+      const inicio = Number(pedidoModal.t_inicial) || 0;
+      const fim = Number(pedidoModal.t_fim);
+      await supabaseAdmin.from('uso_servicos').insert({
+        team_id: teamId, servico: 'seguir_jogador', user_id: quem.user.id,
+        detalhe: { segundos: Number.isFinite(fim) ? Math.max(0, fim - inicio) : null },
+      }).then(({ error }) => { if (error) console.warn('seguir-jogador: uso não registado', error.message); },
+        (e) => console.warn('seguir-jogador: uso não registado', e && e.message));
+    }
     return res.status(resposta.status).json(json);
   } catch (e) {
     console.error('seguir-jogador: falha a chamar o Modal', e);

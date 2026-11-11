@@ -149,11 +149,15 @@ async function cabecalhosComSessao() {
   return h;
 }
 
+/* A equipa ativa vai no pedido: o servidor confirma que a pessoa é
+   membro dela e conta o seguimento no uso dessa equipa (limites por
+   plano, ver api/seguir-jogador.js). */
+let EQUIPA_DO_ANALISADOR = '';
 async function seguirJogadorAssincrono(pedido) {
   const resp = await fetch('/api/seguir-jogador', {
     method: 'POST',
     headers: await cabecalhosComSessao(),
-    body: JSON.stringify(pedido),
+    body: JSON.stringify({ ...pedido, ...(EQUIPA_DO_ANALISADOR ? { team_id: EQUIPA_DO_ANALISADOR } : {}) }),
   });
   /* Quando o servidor desiste por tempo (a Vercel corta a função ao fim
      de 5 minutos), a resposta não é JSON: antes isso dava um erro técnico
@@ -2821,6 +2825,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
 }
 
 export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario }) {
+  EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -4645,17 +4650,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: TV.muted, gap: 10, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
                   <span style={{ fontSize: 12.5, ...body, maxWidth: 460, lineHeight: 1.5 }}>
-                    A preparar este vídeo para arrancar depressa e não encravar ao saltar (só acontece uma vez) — pode demorar alguns minutos, dependendo do tamanho.
+                    A preparar o vídeo…
                   </span>
                   <button type="button"
                     onPointerDown={e => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); setAbrirSemEsperar(prev => new Set(prev).add(originalAtivo.id)); }}
                     style={{ marginTop: 4, background: 'none', border: `1px solid ${TV.muted}`, color: '#fff', borderRadius: 16, padding: '6px 14px', cursor: 'pointer', fontSize: 12.5, ...body }}>
-                    Abrir já, sem esperar
+                    Abrir já
                   </button>
-                  <span style={{ fontSize: 11, ...body, maxWidth: 420, opacity: 0.8 }}>
-                    Abre tal como foi carregado: pode demorar a arrancar e encravar ao saltar. Se ao fim de 3 horas continuar por preparar, fica disponível sozinho.
-                  </span>
                 </div>
               ) : signedUrl ? (
                 <>
