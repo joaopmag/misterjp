@@ -3283,7 +3283,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const [season, setSeason] = useState({ name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
+  const [season, setSeason] = useState({ name: '2026/2027', start: '', end: '', club: '' });
   const [seasonReady, setSeasonReady] = useState(false);
   const [previewKiosk, setPreviewKiosk] = useState(false);
   // Quem editou cada secção pela última vez (resumo para a Visão Geral).
@@ -4473,7 +4473,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             {equipaAtiva && equipaAtiva.logo ? (
               <img data-mjp-logo-equipa="" src={equipaAtiva.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />
             ) : null}
-            <span style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600 }}>SC Salgueiros U19</span>
+            {/* Nome da equipa ativa (era o texto fixo "SC Salgueiros U19", que
+                aparecia em todas as equipas). Mesma regra da barra lateral. */}
+            <span style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {(equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || 'MisterJP'}
+            </span>
           </div>
         )}
 
@@ -4647,7 +4651,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           <TreinosParaEditorCtx.Provider value={{ sessions, players, matches, epoca: season && season.name }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={playersAtivos} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={playersAtivos} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} setExercises={setExercises} exercisesMeta={exercisesMeta} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} nomeEquipa={equipaAtiva ? (equipaAtiva.clube ? [equipaAtiva.clube, equipaAtiva.escalao].filter(Boolean).join(' · ') : (equipaAtiva.nome || '')) : ''} />}
           {tab === 'plantel' && (
             <Plantel
               players={players} setPlayers={setPlayers}
@@ -4821,8 +4825,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, setExercises, exercisesMeta, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr, clipes }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, setExercises, exercisesMeta, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr, clipes, nomeEquipa }) {
   const [relatoOpen, setRelatoOpen] = useState(false);
+  // Nome da equipa no cabeçalho (clube · escalão de Gerir equipa; sem isso, o clube da Época).
+  const nomeEquipaCabecalho = String(nomeEquipa || (season && season.club) || '').trim();
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
   const [sessionModal, setSessionModal] = useState(null);
@@ -4880,7 +4886,14 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       }}>
         <div style={{ minWidth: 0 }}>
           <h1 style={{ ...display, color: textoCabecalho, fontSize: 26, fontWeight: 600, margin: 0, lineHeight: 1.1 }}>Visão Geral</h1>
-          <p style={{ color: textoCabecalho, opacity: 0.75, fontSize: 13.5, margin: '4px 0 0' }}>O estado da época, num único lugar.</p>
+          {/* Nome da equipa ativa no lugar do antigo subtítulo ("O estado da
+              época, num único lugar."). Vem do clube e escalão da equipa
+              (Gerir equipa); sem eles, usa o clube guardado na Época. */}
+          {nomeEquipaCabecalho ? (
+            <p style={{ color: textoCabecalho, opacity: 0.9, fontSize: 13.5, fontWeight: 500, margin: '4px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {nomeEquipaCabecalho}
+            </p>
+          ) : null}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <div style={{ textAlign: 'right' }}>
