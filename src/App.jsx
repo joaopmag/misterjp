@@ -52526,7 +52526,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && v.youtubeId) || eMp4Sala(v)) : [];
   // Para o ⏮ ⏭ da barra de cima: TUDO o que se vê no jogo/tema, pela ordem
   // da lista — jogos completos, cortes e clipes em vídeo.
-  const navegaveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => v.youtubeId || eMp4Sala(v)) : [];
+  // Pela ordem em que aparecem na lista: primeiro "Jogo completo", depois
+  // "Cortes" (antes ficava na ordem interna e não passava dos jogos
+  // completos para os cortes).
+  const navegaveisDoGrupo = grupoAtual
+    ? (grupoAtual.secoes && grupoAtual.secoes.length ? grupoAtual.secoes.flatMap(sc => sc.itens || []) : grupoAtual.itens)
+      .filter(v => v && (v.youtubeId || eMp4Sala(v)))
+    : [];
   const seguinteNaSala = (id) => {
     const lista = (sequencia && sequencia.includes(id)) ? sequencia : reproduziveisDoGrupo.map(v => v.id);
     const i = lista.indexOf(id);
@@ -53078,7 +53084,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {!isBlocked && (() => {
                       const { lista, i } = ativoEClipe ? seguinteNaSala(active.id) : { lista: [], i: -1 };
                       const emLista = ativoEClipe && i >= 0 && lista.length >= 2;
-                      const irPara = (id) => { if (!id) return; setFimCorte(null); ytATocarRef.current = true; setActiveId(id); };
+                      const irPara = (id) => {
+                        if (!id) return;
+                        setFimCorte(null);
+                        // Só se diz "a tocar" quando o destino é um corte do MESMO
+                        // vídeo (o leitor é o mesmo e continua). Para um jogo
+                        // completo/outro vídeo abre um leitor novo, parado — antes
+                        // ficava marcado "a tocar" e o 1.º toque no play mandava
+                        // PAUSAR (em ecrã inteiro não arrancava).
+                        const alvo = (items || []).find(v => v.id === id);
+                        ytATocarRef.current = !!(alvo && ehClipe(alvo) && alvo.youtubeId && active && active.youtubeId === alvo.youtubeId);
+                        setActiveId(id);
+                      };
                       // Nos cortes, ⏮ ⏭ andam entre os cortes (ou a sequência);
                       // no jogo completo, entre tudo o que está na lista do jogo
                       // (outra parte do jogo, os cortes…).
@@ -53669,7 +53686,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     })()}
                     {!isBlocked && ativoEClipe && (() => {
                       const dur = Math.max(0.1, clipFimEf - clipIni);
-                      const agora = Math.min(Math.max(arrastoClipe != null ? arrastoClipe : liveTime, clipIni), clipFimEf);
+                      // Parado no fim do corte: a barra fica MESMO no fim.
+                      const agora = fimCorte === active.id && arrastoClipe == null
+                        ? clipFimEf
+                        : Math.min(Math.max(arrastoClipe != null ? arrastoClipe : liveTime, clipIni), clipFimEf);
                       const btn = {
                         background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
                         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0,
