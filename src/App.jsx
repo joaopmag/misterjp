@@ -51741,8 +51741,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         tempoAnteriorClipeRef.current = clipIni;
         return;
       }
+      // Só PÁRA, na imagem em que está (como na Análise). O salto para trás
+      // que havia aqui (para 0,1 s antes do fim) fazia a imagem recuar um
+      // bocadinho depois de parar — o "soluço" no fim de cada clipe.
       enviarComandoYoutube('pauseVideo');
-      enviarComandoYoutube('seekTo', [Math.max(clipIni, clipFimEf - 0.1), true]);
       setFimCorte(active.id);
       tempoAnteriorClipeRef.current = null;
     } else if (liveTime < clipIni - 1.25 || liveTime > clipFimEf + 0.75) {
