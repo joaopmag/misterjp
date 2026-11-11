@@ -881,12 +881,19 @@ function hrefDescarga(url, nome) {
 function esperarImagensDoStorage(limiteMs = 5000) {
   const pendentes = Array.from(document.images || []).filter(img =>
     !img.complete && /\/storage\/v1\/object\//.test(img.currentSrc || img.src || ''));
-  if (!pendentes.length) return Promise.resolve();
+  // PDFs anexados que ainda estão a ser desenhados como imagem (ver
+  // `PdfComoImagens`). Sem nenhum, não há espera nenhuma.
+  const pdfsPendentes = () => document.querySelector('[data-pdf-a-preparar]');
+  if (!pendentes.length && !pdfsPendentes()) return Promise.resolve();
   const todas = Promise.all(pendentes.map(img => new Promise(r => {
     img.addEventListener('load', r, { once: true });
     img.addEventListener('error', r, { once: true });
   })));
-  return Promise.race([todas, new Promise(r => setTimeout(r, limiteMs))]);
+  const pdfs = new Promise(r => {
+    const ver = () => (pdfsPendentes() ? setTimeout(ver, 120) : r());
+    ver();
+  });
+  return Promise.race([Promise.all([todas, pdfs]), new Promise(r => setTimeout(r, Math.max(limiteMs, 10000)))]);
 }
 
 /* PSE DE TREINO vs PSE DE JOGO
@@ -13590,18 +13597,8 @@ function Exercicios({ exercises, setExercises, meta }) {
   };
   const remove = (id) => removeWithUndo(exercises, setExercises, id, itemLabel(exercises.find(x => x.id === id), 'Exercício'));
   const doPrint = (x) => {
-    // Um PDF anexado é o próprio documento a imprimir — abre-o numa nova
-    // aba e deixa o visualizador de PDF do browser tratar da impressão,
-    // em vez de tentar embutir o PDF na folha de impressão da app.
-    if (x.attachment && x.attachment.type === 'pdf') {
-      const w = window.open(x.attachment.dataUrl, '_blank');
-      if (w) {
-        const tryPrint = () => { try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ } };
-        w.onload = () => setTimeout(tryPrint, 300);
-        setTimeout(tryPrint, 800);
-      }
-      return;
-    }
+    // Um PDF anexado sai na própria folha, desenhado como imagem (ver
+    // `PdfComoImagens`); a impressão espera que as páginas fiquem prontas.
     setPrintExercise(x);
     imprimirComNome(x.name);
   };
@@ -13660,6 +13657,16 @@ function Exercicios({ exercises, setExercises, meta }) {
                   <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
                 ) : (x.attachment && x.attachment.type === 'image') ? (
                   <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                ) : (x.attachment && x.attachment.type === 'pdf' && x.attachment.dataUrl) ? (
+                  <div style={{ width: '100%', height: '100%', background: '#fff' }}>
+                    <PdfComoImagens url={x.attachment.dataUrl} so1 largura={600}
+                      estiloImg={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+                      vazio={(
+                        <div style={{ width: '100%', height: '100%', background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px', boxSizing: 'border-box', fontSize: 11.5, color: T_ESCURO.mutedDim }}>
+                          <BookOpen size={13} style={{ flexShrink: 0 }} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.attachment.name}</span>
+                        </div>
+                      )} />
+                  </div>
                 ) : (
                   <div style={{
                     width: '100%', aspectRatio: CARTAO_ASPECT, background: '#1e3a24',
@@ -13734,6 +13741,9 @@ function Exercicios({ exercises, setExercises, meta }) {
               alt={printExercise.attachment.name}
               style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
+          ) : (printExercise.attachment && printExercise.attachment.type === 'pdf' && printExercise.attachment.dataUrl) ? (
+            <PdfComoImagens url={printExercise.attachment.dataUrl}
+              estiloImg={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8, marginBottom: 8, breakInside: 'avoid' }} />
           ) : (
             <svg viewBox={viewBoxSemBancos(printExercise.diagram && printExercise.diagram.vista)} style={{ width: '100%', aspectRatio: aspetoSemBancos(printExercise.diagram && printExercise.diagram.vista), display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
               <VistaCampo esticar={ESTICAR_IMPRESSAO_MEIO} vista={printExercise.diagram && printExercise.diagram.vista}>
@@ -26490,7 +26500,6 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
     setTimeout(() => {
       esperarImagensDoStorage().then(() => {
         window.print();
-        openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
       });
     }, 80);
   };
@@ -26505,7 +26514,6 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
     setTimeout(() => {
       esperarImagensDoStorage().then(() => {
         window.print();
-        openAndPrintPdfSequential(collectPdfAttachments(daySessions, exercises));
       });
     }, 80);
   };
@@ -27944,14 +27952,11 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
       {ex.description && (
         <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
       )}
-      {ex.attachment && ex.attachment.type === 'pdf' && (
-        <p style={{ margin: '0 0 8px', fontSize: 11, color: '#555' }}>
-          📄 PDF anexado ({ex.attachment.name}) — impresso à parte, numa aba própria.
-        </p>
-      )}
+
       {/* COM PDF ANEXADO, A PRANCHETA NÃO SAI.
 
-          O PDF é o documento que interessa e é impresso à parte. Manter a
+          O PDF é o documento que interessa e sai na própria folha,
+          desenhado como imagem (ver `PdfComoImagens`). Manter a
           prancheta aqui punha dois desenhos a competir pela mesma
           explicação — e, quase sempre, uma prancheta vazia ou por acabar,
           porque quem anexa um PDF já lá tem o exercício desenhado.
@@ -27964,7 +27969,12 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
           alt={ex.attachment.name}
           style={{ width: '82%', display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
         />
-      ) : (ex.attachment && ex.attachment.type === 'pdf') ? null : (
+      ) : (ex.attachment && ex.attachment.type === 'pdf') ? (
+        ex.attachment.dataUrl ? (
+          <PdfComoImagens url={ex.attachment.dataUrl}
+            estiloImg={{ width: '82%', display: 'block', margin: '0 auto 8px', background: '#fff', border: '1px solid #ccc', borderRadius: 8, breakInside: 'avoid' }} />
+        ) : null
+      ) : (
         // Só aqui, na ficha do treino — reduzido de 100% para 82% da
         // largura para caber mais exercícios por folha, sem ficarem
         // pequenos demais para se perceber o desenho. Os outros sítios
@@ -29570,12 +29580,20 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                         {ex.attachment.type === 'image' ? (
                           <img src={ex.attachment.dataUrl} alt={ex.attachment.name} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 6, border: `1px solid ${T.line}`, background: '#000' }} />
                         ) : (
-                          <a href={ex.attachment.dataUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.gold, textDecoration: 'none' }}>
-                            <BookOpen size={13} /> {ex.attachment.name} (PDF anexado — abre numa aba)
-                          </a>
+                          <>
+                            <a href={ex.attachment.dataUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.gold, textDecoration: 'none', marginBottom: 6 }}>
+                              <BookOpen size={13} /> {ex.attachment.name}
+                            </a>
+                            {ex.attachment.dataUrl && (
+                              <PdfComoImagens url={ex.attachment.dataUrl}
+                                estiloImg={{ width: '100%', display: 'block', borderRadius: 6, border: `1px solid ${T.line}`, background: '#fff', marginBottom: 6 }} />
+                            )}
+                          </>
                         )}
                       </div>
                     )}
+                    {/* Com anexo, o campo só aparece se tiver alguma coisa desenhada. */}
+                    {(!ex.attachment || (ex.diagram && ((ex.diagram.elements || []).length || (ex.diagram.arrows || []).length))) && (
                     <div style={{ position: 'relative', width: '100%', aspectRatio: aspetoSemBancos(ex.diagram && ex.diagram.vista) }}>
                       <svg viewBox={viewBoxSemBancos(ex.diagram && ex.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -29591,6 +29609,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                         </VistaCampo>
                       </svg>
                     </div>
+                    )}
                     <div style={{ textAlign: 'right', marginTop: 4 }}>
                       <span style={{ fontSize: 10.5, color: T.mutedDim, letterSpacing: '.04em' }}>™ Mister JP</span>
                     </div>
@@ -55143,6 +55162,67 @@ function loadPdfJs() {
 // apresentação/ecrã inteiro, com navegação por setas do teclado (←/→,
 // PageUp/PageDown, espaço) e botões, útil sobretudo quando não há mais
 // nada em que interagir (ecrã inteiro).
+/* PDF ANEXADO COMO IMAGEM. Desenha as páginas de um PDF (anexo de
+   exercício) como imagens, para poderem aparecer no cartão do exercício,
+   na sessão e nas folhas impressas, em vez de o PDF abrir sozinho numa
+   aba. Usa o mesmo pdf.js do leitor. Fica guardado em memória, por isso
+   cada PDF só é desenhado uma vez por visita. */
+const PDF_IMAGENS = new Map();
+function pdfParaImagens(url, maxPaginas = 10, largura = 1400) {
+  const chave = `${url.length}:${url.slice(0, 200)}:${url.slice(-200)}:${maxPaginas}:${largura}`;
+  if (PDF_IMAGENS.has(chave)) return PDF_IMAGENS.get(chave);
+  const promessa = (async () => {
+    const pdfjsLib = await loadPdfJs();
+    let fonte = url;
+    if (/^data:/.test(url)) {
+      const b64 = url.split(',')[1] || '';
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      fonte = { data: bytes };
+    }
+    const doc = await pdfjsLib.getDocument(fonte).promise;
+    const n = Math.min(doc.numPages, maxPaginas);
+    const imagens = [];
+    for (let i = 1; i <= n; i++) {
+      const pagina = await doc.getPage(i);
+      const v1 = pagina.getViewport({ scale: 1 });
+      const viewport = pagina.getViewport({ scale: largura / v1.width });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pagina.render({ canvasContext: ctx, viewport }).promise;
+      imagens.push(canvas.toDataURL('image/jpeg', 0.88));
+    }
+    return imagens;
+  })();
+  promessa.catch(() => PDF_IMAGENS.delete(chave));
+  PDF_IMAGENS.set(chave, promessa);
+  return promessa;
+}
+function PdfComoImagens({ url, so1 = false, largura = 1400, estiloImg, vazio = null }) {
+  const [imagens, setImagens] = useState(null); // null = a preparar; [] = falhou
+  useEffect(() => {
+    if (!url) { setImagens([]); return undefined; }
+    let vivo = true;
+    setImagens(null);
+    pdfParaImagens(url, so1 ? 1 : 10, largura)
+      .then(lista => { if (vivo) setImagens(lista); })
+      .catch(() => { if (vivo) setImagens([]); });
+    return () => { vivo = false; };
+  }, [url, so1, largura]);
+  if (imagens === null) return <div data-pdf-a-preparar="1" style={{ width: '100%', height: '100%' }} />;
+  if (!imagens.length) return vazio;
+  return (
+    <>
+      {imagens.map((src, i) => <img key={i} src={src} alt="" style={estiloImg} />)}
+    </>
+  );
+}
+
 function PdfCanvasViewer({ dataUrl }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -55277,7 +55357,7 @@ function PdfCanvasViewer({ dataUrl }) {
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       style={{
-        position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#525659',
+        position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#000',
         display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'pan-y',
       }}
     >
