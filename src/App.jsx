@@ -51910,7 +51910,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const Icon = kindIcon[v.kind] || FileText;
     const naFicha = modoCanal && !!v.adversarioId;
     return (
-        <div key={v.id} style={{
+        <div key={v.id}
+          // O CARTÃO TODO abre o item (não só a zona do título); os
+          // controlos lá dentro (mover, editar, partilhar, apagar…) fazem
+          // o que já faziam.
+          onClick={(e) => { if (e.target.closest && e.target.closest('button, select, input, a, textarea, label')) return; selectItem(v.id); }}
+          style={{
+          cursor: 'pointer',
           display: 'flex', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
           background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
           // No telemóvel a linha parte-se em duas: o item em cima e
@@ -53131,7 +53137,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       // Nos cortes, ⏮ ⏭ andam entre os cortes (ou a sequência);
                       // no jogo completo, entre tudo o que está na lista do jogo
                       // (outra parte do jogo, os cortes…).
-                      const navLista = emLista ? lista : navegaveisDoGrupo.map(v => v.id);
+                      // Jogo completo e clipes são coisas diferentes: no jogo
+                      // completo, ⏮ ⏭ andam SÓ entre as partes do jogo.
+                      const navLista = emLista ? lista : navegaveisDoGrupo.filter(v => !ehClipe(v)).map(v => v.id);
                       const iNav = navLista.indexOf(active.id);
                       const temNav = iNav >= 0 && navLista.length >= 2;
                       const btnTopo = { padding: '6px 10px' };
@@ -53682,6 +53690,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* BARRA DO CLIPE — só nos clipes. Vai do início ao fim
                         do corte, e nada mais: não há como ver o resto do
                         jogo a partir de um clipe. */}
+                    {/* Em ecrã inteiro o painel fica POR CIMA do fundo do vídeo
+                        (sem encolher a imagem nem a puxar para cima). */}
+                    {ytFull && clipMode && podeCriarClipe && !isBlocked && (
+                      <div style={{ position: 'relative', height: 0, flexShrink: 0 }}>
+                        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 8 }}>
+                          {renderPainelClipe(true)}
+                        </div>
+                      </div>
+                    )}
                     {/* JOGO COMPLETO — a MESMA barra (mesma altura e aspeto),
                         sobre o vídeo todo: trocar entre jogo completo e cortes
                         já não mexe na caixa. ±10 s em vez de ±2 s. */}
@@ -53860,7 +53877,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* Criar clipe EM ECRÃ INTEIRO — o mesmo painel, em
                         versão escura e compacta, dentro da caixa que está
                         em ecrã inteiro (fora dela não se veria). */}
-                    {ytFull && clipMode && podeCriarClipe && !isBlocked && renderPainelClipe(true)}
+
                   </div>
                   {/* O painel de criar clipe fica POR CIMA do que está por
                       baixo do leitor (título, descrição), sem empurrar nada:
