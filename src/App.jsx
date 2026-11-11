@@ -49764,10 +49764,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      corte brusco (mexer na barra a meio) volta ao normal sem animação. */
   const [zoomVisivelBib, setZoomVisivelBib] = useState(null); // ampliação que está de facto no ecrã
   const saidaSuaveZoomRef = useRef(true);
+  // Até quando dura a animação de SAÍDA do zoom (0,75 s). Ver o fim do
+  // corte: não se pára o vídeo a meio dela.
+  const zoomSaiAteRef = useRef(0);
   const zoomAlvoF = zoomBib ? zoomBib.f : 0;
   useEffect(() => {
     if (zoomAlvoF > 1) { saidaSuaveZoomRef.current = true; setZoomVisivelBib(zoomAlvoF); return; }
-    setZoomVisivelBib(null);
+    setZoomVisivelBib(prev => { if (prev) zoomSaiAteRef.current = Date.now() + 900; return null; });
   }, [zoomAlvoF]);
   if (circuloZoom) {
     const c = circuloZoom.points[0];
@@ -51732,6 +51735,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
       if (gravacaoBibRef.current) return;
+      /* ZOOM DE UM CÍRCULO ainda no ecrã ou a sair: espera que acabe. Parar
+         o vídeo (ou saltar) a meio da animação de saída fazia o browser
+         mostrar um fotograma estragado — a imagem encolhida num quadrado
+         com fundo preto — e a imagem "piscava" no fim do clipe. */
+      if (zoomVisivelBib || Date.now() < zoomSaiAteRef.current) return;
       // Como na Análise individual: corte SOZINHO repete sem parar; numa
       // lista (vários cortes do jogo/tema) pára no fim e pergunta
       // "Repetir / Clipe seguinte".
