@@ -194,9 +194,11 @@ function imprimirComNome(nome) {
   const repor = () => { document.title = antes; window.removeEventListener('afterprint', repor); };
   window.addEventListener('afterprint', repor);
   setTimeout(() => {
-    window.print();
-    // Safari e alguns telemóveis não disparam "afterprint": repõe na mesma.
-    setTimeout(repor, 1500);
+    esperarImagensDoStorage().then(() => {
+      window.print();
+      // Safari e alguns telemóveis não disparam "afterprint": repõe na mesma.
+      setTimeout(repor, 1500);
+    });
   }, 80);
 }
 
@@ -747,6 +749,144 @@ function fileToPhotoDataUrl(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+
+/* ANEXOS NO STORAGE (versão comercial, ponto 4).
+
+   Até aqui, os anexos dos Exercícios, do Diário e os ficheiros carregados
+   na Sala de Vídeo (Canal e Apresentações) iam em base64 DENTRO do
+   registo: um vídeo de 60 MB ficava com ~80 MB numa linha da tabela,
+   com tempo limite ao gravar e descarregado inteiro sempre que alguém
+   abria o separador. Agora o ficheiro vai para o Storage e o registo
+   guarda só a referência.
+
+   - Sala de Vídeo e Exercícios → bucket "anexos" (leitura por link
+     longo e aleatório, como os clipes da Análise). O Portal do Atleta
+     mostra o Canal sem sessão, por isso precisa de um link direto. O
+     link fica em `dataUrl`, o mesmo campo de sempre: todo o código que
+     mostra, descarrega ou imprime continua igual.
+   - Diário → bucket "anexos-privados" (pode ter documentos sensíveis de
+     atletas). O registo não guarda link nenhum, só o caminho; a app pede
+     um link temporário quando precisa de mostrar (ver `useUrlAnexo`).
+
+   COMPATIBILIDADE: o que já existe em base64 continua a funcionar tal e
+   qual. E se o envio para o Storage falhar (sem rede, bucket ainda por
+   criar), cai para o comportamento antigo (base64) em vez de perder o
+   anexo. */
+const BUCKET_ANEXOS = 'anexos';
+const BUCKET_ANEXOS_PRIVADOS = 'anexos-privados';
+const ENVIO_SIMPLES_MAX = 6 * 1024 * 1024; // acima disto, envio retomável (tus), como recomenda a Supabase
+function idAleatorioLongo() {
+  try { if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID(); } catch (e) { /* segue */ }
+  return `${uid()}${uid()}${uid()}${uid()}`;
+}
+function nomeFicheiroSeguro(nome) {
+  return String(nome || 'ficheiro')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9.\-]/g, '_')
+    .slice(-80);
+}
+async function enviarPorTusParaBucket(file, bucket, caminho, contentType) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('sem sessão');
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace('.supabase.co', '.storage.supabase.co');
+  await new Promise((resolve, reject) => {
+    const envio = new tus.Upload(file, {
+      endpoint: `${base}/storage/v1/upload/resumable`,
+      retryDelays: [0, 1000, 3000, 5000, 10000],
+      headers: { 'x-upsert': 'false' },
+      onBeforeRequest: async (req) => {
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (s?.access_token) req.setHeader('Authorization', `Bearer ${s.access_token}`);
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      metadata: { bucketName: bucket, objectName: caminho, contentType, cacheControl: '3600' },
+      chunkSize: 6 * 1024 * 1024,
+      onError: reject,
+      onSuccess: () => resolve(),
+    });
+    envio.start();
+  });
+}
+async function enviarAnexoParaStorage(file, { pasta, privado = false }) {
+  const equipa = T.equipaId;
+  if (!equipa) throw new Error('equipa desconhecida');
+  const bucket = privado ? BUCKET_ANEXOS_PRIVADOS : BUCKET_ANEXOS;
+  const caminho = `${equipa}/${pasta}/${idAleatorioLongo()}-${nomeFicheiroSeguro(file.name)}`;
+  const contentType = file.type || 'application/octet-stream';
+  if (file.size > ENVIO_SIMPLES_MAX) {
+    await enviarPorTusParaBucket(file, bucket, caminho, contentType);
+  } else {
+    const { error } = await supabase.storage.from(bucket).upload(caminho, file, { contentType, upsert: false, cacheControl: '3600' });
+    if (error) throw error;
+  }
+  return { bucket, caminho };
+}
+/* Devolve { campos, emBase64 }: `campos` entra diretamente no registo
+   (dataUrl e/ou storagePath + bucket). `emBase64` diz se caiu para o
+   comportamento antigo (serve só para avisos). */
+async function ficheiroParaAnexo(file, { pasta, privado = false }) {
+  try {
+    const { bucket, caminho } = await enviarAnexoParaStorage(file, { pasta, privado });
+    if (privado) return { campos: { storagePath: caminho, bucket }, emBase64: false };
+    const { data } = supabase.storage.from(bucket).getPublicUrl(caminho);
+    return { campos: { dataUrl: data.publicUrl, storagePath: caminho, bucket }, emBase64: false };
+  } catch (e) {
+    console.warn('[anexos] Envio para o Storage falhou; fica guardado como antes (base64).', e);
+    return { campos: { dataUrl: await fileToDataUrl(file) }, emBase64: true };
+  }
+}
+/* Link temporário para um anexo privado (Diário). Guardado em memória
+   por 50 minutos para não pedir um novo a cada desenho do ecrã. */
+const LINKS_ANEXOS = new Map();
+async function urlAssinadaDoAnexo(anexo) {
+  if (!anexo || !anexo.storagePath || !anexo.bucket) return '';
+  const chave = `${anexo.bucket}/${anexo.storagePath}`;
+  const guardado = LINKS_ANEXOS.get(chave);
+  if (guardado && guardado.expira > Date.now()) return guardado.url;
+  const { data, error } = await supabase.storage.from(anexo.bucket).createSignedUrl(anexo.storagePath, 3600);
+  if (error || !data || !data.signedUrl) return '';
+  LINKS_ANEXOS.set(chave, { url: data.signedUrl, expira: Date.now() + 50 * 60 * 1000 });
+  return data.signedUrl;
+}
+/* O link a usar para mostrar um anexo: o `dataUrl` quando existe (base64
+   antigo ou link direto), senão um link temporário pedido ao Storage. */
+function useUrlAnexo(anexo) {
+  const direto = (anexo && anexo.dataUrl) || '';
+  const [assinado, setAssinado] = useState('');
+  const caminho = anexo && !direto ? anexo.storagePath : null;
+  const bucket = anexo && anexo.bucket;
+  useEffect(() => {
+    if (!caminho) { setAssinado(''); return undefined; }
+    let vivo = true;
+    urlAssinadaDoAnexo({ storagePath: caminho, bucket }).then(u => { if (vivo) setAssinado(u); });
+    return () => { vivo = false; };
+  }, [caminho, bucket]);
+  return direto || assinado;
+}
+function UrlAnexo({ anexo, children }) {
+  return children(useUrlAnexo(anexo));
+}
+/* Link de descarga: nos ficheiros do Storage, `?download=` faz o browser
+   guardar o ficheiro com o nome certo em vez de sair da app para o abrir
+   (o atributo `download` não funciona entre domínios). Base64 fica igual. */
+function hrefDescarga(url, nome) {
+  if (!url || !/\/storage\/v1\/object\/(public|sign)\//.test(url)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}download=${encodeURIComponent(nome || '')}`;
+}
+/* Antes de imprimir, espera (no máximo 5 s) que as imagens vindas do
+   Storage acabem de carregar; em base64 já estão prontas, por isso
+   nesses casos a impressão sai como antes, sem espera nenhuma. */
+function esperarImagensDoStorage(limiteMs = 5000) {
+  const pendentes = Array.from(document.images || []).filter(img =>
+    !img.complete && /\/storage\/v1\/object\//.test(img.currentSrc || img.src || ''));
+  if (!pendentes.length) return Promise.resolve();
+  const todas = Promise.all(pendentes.map(img => new Promise(r => {
+    img.addEventListener('load', r, { once: true });
+    img.addEventListener('error', r, { once: true });
+  })));
+  return Promise.race([todas, new Promise(r => setTimeout(r, limiteMs))]);
 }
 
 /* PSE DE TREINO vs PSE DE JOGO
@@ -3197,6 +3337,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // vermelho de origem, mesmo com outra cor escolhida em "Gerir
   // equipa".
   T.corEquipa = (equipaAtiva && equipaAtiva.cor) || '#B5393F';
+  // Pasta da equipa no Storage, para os anexos (ver `enviarAnexoParaStorage`).
+  T.equipaId = teamId || '';
   // Logótipo e nome do clube para os documentos Word (cabeçalho/rodapé
   // gerados pela app — ver `aplicarClubeNosModelosWord`).
   T.logoEquipa = (equipaAtiva && equipaAtiva.logo) || '';
@@ -20979,6 +21121,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   // reposta para o valor por omissão a meio da colocação de jogadores.
   const [diagramColor, setDiagramColor] = useState('A');
   const [attachError, setAttachError] = useState('');
+  const [aCarregarAnexo, setACarregarAnexo] = useState(false);
   // Importar de um exercício já existente na biblioteca.
   const [importOpen, setImportOpen] = useState(false);
   const [importNotice, setImportNotice] = useState('');
@@ -21054,8 +21197,13 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
       setAttachError('Ficheiro demasiado grande (máx. 8 MB).');
       return;
     }
-    const dataUrl = await fileToDataUrl(file);
-    setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', dataUrl } }));
+    setACarregarAnexo(true);
+    try {
+      const { campos } = await ficheiroParaAnexo(file, { pasta: 'exercicios' });
+      setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', ...campos } }));
+    } finally {
+      setACarregarAnexo(false);
+    }
   };
 
   const autoInsertPlayers = () => {
@@ -21237,6 +21385,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
             )}
           </div>
           {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
+          {aCarregarAnexo && <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 6 }}>A carregar o anexo…</div>}
           {importNotice && (
             <div style={{ fontSize: 12, color: T.warn, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Check size={13} /> {importNotice}
@@ -21260,7 +21409,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.name} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name || aCarregarAnexo} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
       {espacoSemSaltar}
     </Modal>
@@ -21590,7 +21739,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
             <div style={{ border: `1px solid ${T.line}`, borderRadius: 8, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: T.surfaceRaise }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}><BookOpen size={14} /> {exercise.attachment.name}</span>
-                <a href={exercise.attachment.dataUrl} download={exercise.attachment.name} style={{ fontSize: 12, color: T.gold, textDecoration: 'none' }}>Descarregar</a>
+                <a href={hrefDescarga(exercise.attachment.dataUrl, exercise.attachment.name)} download={exercise.attachment.name} style={{ fontSize: 12, color: T.gold, textDecoration: 'none' }}>Descarregar</a>
               </div>
               <div style={{ height: 420 }}>
                 <PdfCanvasViewer dataUrl={attachmentBlobUrl} />
@@ -26339,8 +26488,10 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
     setPrintDayDate(null);
     setPrintSession(s);
     setTimeout(() => {
-      window.print();
-      openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
+      esperarImagensDoStorage().then(() => {
+        window.print();
+        openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
+      });
     }, 80);
   };
 
@@ -26352,8 +26503,10 @@ function Planeamento({ sessions, setSessions, exercises, setExercises, exercises
     setPrintSession(null);
     setPrintDayDate(date);
     setTimeout(() => {
-      window.print();
-      openAndPrintPdfSequential(collectPdfAttachments(daySessions, exercises));
+      esperarImagensDoStorage().then(() => {
+        window.print();
+        openAndPrintPdfSequential(collectPdfAttachments(daySessions, exercises));
+      });
     }, 80);
   };
 
@@ -33765,9 +33918,11 @@ function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar 
                   <>
                     {n.texto && <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.texto}</div>}
                     {n.attachment && (
-                      <a href={n.attachment.dataUrl} download={n.attachment.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', marginTop: 6 }}>
+                      <UrlAnexo anexo={n.attachment}>{url => (
+                      <a href={hrefDescarga(url, n.attachment.name) || undefined} download={n.attachment.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', marginTop: 6 }}>
                         <BookOpen size={13} /> {n.attachment.name}
                       </a>
+                      )}</UrlAnexo>
                     )}
                   </>
                 )}
@@ -52622,7 +52777,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Tudo o que se reproduz neste jogo/tema, por ordem: cortes do YouTube e
   // clipes em vídeo (MP4, ex.: os enviados da Análise de Vídeo). É a lista
   // do "Corte seguinte" no fim de cada um.
-  const eMp4Sala = (v) => !!(v && v.kind === 'video' && !v.youtubeId && /^https?:/.test(String(v.dataUrl || '')));
+  const eMp4Sala = (v) => !!(v && v.kind === 'video' && !v.youtubeId && !v.storagePath && /^https?:/.test(String(v.dataUrl || '')));
   const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && v.youtubeId) || eMp4Sala(v)) : [];
   // Para o ⏮ ⏭ da barra de cima: TUDO o que se vê no jogo/tema, pela ordem
   // da lista — jogos completos, cortes e clipes em vídeo.
@@ -52777,7 +52932,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
          que são MP4 guardados na app): usa a miniatura de um desses cortes. */
       const comThumb = g.itens.find(x => !ehClipe(x) && x.thumbUrl) || g.itens.find(x => x.thumbUrl);
       // Nem miniatura: o primeiro fotograma do próprio MP4 (só os metadados são lidos).
-      const comMp4 = !comThumb && g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId);
+      const comMp4 = !comThumb && g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId && !x.storagePath);
       return comThumb ? (
         <img src={comThumb.thumbUrl} alt="" loading="lazy"
           style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
@@ -54316,7 +54471,7 @@ async function shareMediaItem(item) {
     }
   } catch (e) { /* cai para o download */ }
   const a = document.createElement('a');
-  a.href = item.dataUrl;
+  a.href = hrefDescarga(item.dataUrl, item.fileName || 'ficheiro');
   a.download = item.fileName || 'ficheiro';
   a.click();
 }
@@ -54607,12 +54762,12 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
     }
     setLoadingFile(true);
     try {
-      const dataUrl = await fileToDataUrl(file);
-      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, youtubeId: null, drive: null, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
-      // Acima de ~4 MB a gravação começa a ultrapassar o tempo limite do
-      // Postgres ("statement timeout"): o ficheiro vai em base64 dentro da
-      // própria linha da tabela. Avisamos ANTES de tentar gravar.
-      if (file.size > 4 * 1024 * 1024) {
+      const { campos, emBase64 } = await ficheiroParaAnexo(file, { pasta: 'sala' });
+      setF(prev => ({ ...prev, kind, fileName: file.name, storagePath: null, bucket: null, ...campos, youtubeId: null, drive: null, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
+      // Só no comportamento antigo (base64 dentro da linha da tabela):
+      // acima de ~4 MB a gravação começa a ultrapassar o tempo limite do
+      // Postgres ("statement timeout"). No Storage não há esse limite.
+      if (emBase64 && file.size > 4 * 1024 * 1024) {
         setError(`Atenção: ${Math.round(file.size / 1024 / 1024)} MB é grande para guardar na base de dados — a gravação pode falhar com "statement timeout". Usa antes o separador Google Drive, ou comprime o ficheiro.`);
       }
     } finally {
@@ -54624,12 +54779,12 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
     if (source === 'link') {
       const ytId = parseYouTubeId(f.url);
       if (ytId) {
-        onSave({ ...(item || {}), ...comuns(), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null, drive: null });
+        onSave({ ...(item || {}), ...comuns(), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null, storagePath: null, bucket: null, drive: null });
         return;
       }
       const social = detectSocialEmbed(f.url);
       if (social) {
-        onSave({ ...(item || {}), ...comuns(), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, drive: null });
+        onSave({ ...(item || {}), ...comuns(), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, storagePath: null, bucket: null, drive: null });
         return;
       }
       setError(/fb\.watch/.test(f.url || '')
@@ -54643,11 +54798,11 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
       }
       onSave({
         ...(item || {}), ...comuns(),
-        drive, kind: 'drive', youtubeId: null, social: null, fileName: null, dataUrl: null,
+        drive, kind: 'drive', youtubeId: null, social: null, fileName: null, dataUrl: null, storagePath: null, bucket: null,
       });
     } else {
       if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-      onSave({ ...(item || {}), ...comuns(), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null, drive: null });
+      onSave({ ...(item || {}), ...comuns(), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, storagePath: f.storagePath || null, bucket: f.bucket || null, youtubeId: null, social: null, drive: null });
     }
   };
 
@@ -54904,6 +55059,8 @@ function useBlobUrl(dataUrl) {
   const [blobUrl, setBlobUrl] = useState(null);
   useEffect(() => {
     if (!dataUrl) { setBlobUrl(null); return undefined; }
+    // Ficheiro no Storage: já é um link, o leitor de PDF abre-o diretamente.
+    if (!/^data:/.test(dataUrl)) { setBlobUrl(dataUrl); return undefined; }
     try {
       const [header, base64] = dataUrl.split(',');
       const mimeMatch = /data:([^;]+);base64/.exec(header || '');
@@ -55426,7 +55583,7 @@ function AttachmentPreview({ item, tall }) {
           padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
         }}>
           <a
-            href={item.dataUrl} download={item.fileName || 'imagem.jpg'}
+            href={hrefDescarga(item.dataUrl, item.fileName || 'imagem.jpg')} download={item.fileName || 'imagem.jpg'}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
           >
             <Download size={13} /> Abrir / descarregar
@@ -55530,7 +55687,7 @@ function AttachmentPreview({ item, tall }) {
               PDF embutido mesmo com blob: URL — este link garante que há
               sempre uma forma de o abrir/descarregar. */}
           <a
-            href={item.dataUrl} download={item.fileName || 'documento.pdf'}
+            href={hrefDescarga(item.dataUrl, item.fileName || 'documento.pdf')} download={item.fileName || 'documento.pdf'}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
           >
             <Download size={13} /> Abrir / descarregar
@@ -55561,7 +55718,7 @@ function AttachmentPreview({ item, tall }) {
         Ficheiros PowerPoint não podem ser pré-visualizados diretamente no browser. Abre ou descarrega para veres a apresentação.
       </div>
       <a
-        href={item.dataUrl} download={item.fileName}
+        href={hrefDescarga(item.dataUrl, item.fileName)} download={item.fileName}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '7px 14px' }}
       >
         <Download size={14} /> Abrir / descarregar
@@ -60034,6 +60191,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [attachError, setAttachError] = useState('');
+  const [aCarregarAnexo, setACarregarAnexo] = useState(false);
   const [verTudo, setVerTudo] = useState(false);
   const [filtro, setFiltro] = useState(null);
   const [novaCategoria, setNovaCategoria] = useState(false);
@@ -60087,8 +60245,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
       setAttachError('Ficheiro demasiado grande (máx. 8 MB).');
       return;
     }
-    const dataUrl = await fileToDataUrl(file);
-    setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', dataUrl } }));
+    setACarregarAnexo(true);
+    try {
+      const { campos } = await ficheiroParaAnexo(file, { pasta: 'diario', privado: true });
+      setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', ...campos } }));
+    } finally {
+      setACarregarAnexo(false);
+    }
   };
 
   const escolherTipo = (id, nome) => setF(prev => {
@@ -60101,7 +60264,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   });
 
   const temConteudo = !!(f.nota.trim() || f.attachment || (f.atletas || []).length || f.decisoes.trim());
-  const podeGravar = !!f.tipo && (f.tipo !== 'outra' || !!f.tipoNome.trim()) && temConteudo;
+  const podeGravar = !!f.tipo && (f.tipo !== 'outra' || !!f.tipoNome.trim()) && temConteudo && !aCarregarAnexo;
 
   const save = () => {
     if (!podeGravar) return;
@@ -60502,7 +60665,9 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                     {f.attachment && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {f.attachment.type === 'image' ? (
-                          <img src={f.attachment.dataUrl} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
+                          <UrlAnexo anexo={f.attachment}>{url => (
+                            <img src={url || undefined} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
+                          )}</UrlAnexo>
                         ) : (
                           <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px solid ${T.line}`, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <BookOpen size={18} color={T.mutedDim} />
@@ -60514,6 +60679,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                     )}
                   </div>
                   {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
+                  {aCarregarAnexo && <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 6 }}>A carregar o anexo…</div>}
                 </Field>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -60761,18 +60927,20 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                   </div>
                 )}
                 {n.attachment && (
+                  <UrlAnexo anexo={n.attachment}>{url => (
                   n.attachment.type === 'image' ? (
-                    <a href={n.attachment.dataUrl} download={n.attachment.name}>
-                      <img src={n.attachment.dataUrl} alt={n.attachment.name} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: `1px solid ${T.line}`, display: 'block' }} />
+                    <a href={hrefDescarga(url, n.attachment.name) || undefined} download={n.attachment.name}>
+                      <img src={url || undefined} alt={n.attachment.name} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: `1px solid ${T.line}`, display: 'block' }} />
                     </a>
                   ) : (
                     <a
-                      href={n.attachment.dataUrl} download={n.attachment.name}
+                      href={hrefDescarga(url, n.attachment.name) || undefined} download={n.attachment.name}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '6px 12px' }}
                     >
                       <BookOpen size={13} /> {n.attachment.name}
                     </a>
                   )
+                  )}</UrlAnexo>
                 )}
               </div>
             );
