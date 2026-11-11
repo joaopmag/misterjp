@@ -51712,23 +51712,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
       if (gravacaoBibRef.current) return;
-      // "VER CORTES EM SEGUIDA": é para ver de seguida — passa sozinho ao
-      // corte seguinte; só no último pára e mostra "Repetir".
-      if (sequencia && sequencia.includes(active.id)) {
-        const iSeq = sequencia.indexOf(active.id);
-        if (iSeq < sequencia.length - 1) {
-          ytATocarRef.current = true;
-          setActiveId(sequencia[iSeq + 1]);
-          tempoAnteriorClipeRef.current = null;
-          return;
-        }
-        enviarComandoYoutube('pauseVideo');
-        enviarComandoYoutube('seekTo', [Math.max(clipIni, clipFimEf - 0.1), true]);
-        setFimCorte(active.id);
-        setSequencia(null);
-        tempoAnteriorClipeRef.current = null;
-        return;
-      }
       // Como na Análise individual: corte SOZINHO repete sem parar; numa
       // lista (vários cortes do jogo/tema) pára no fim e pergunta
       // "Repetir / Clipe seguinte".
@@ -52541,6 +52524,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // do "Corte seguinte" no fim de cada um.
   const eMp4Sala = (v) => !!(v && v.kind === 'video' && !v.youtubeId && /^https?:/.test(String(v.dataUrl || '')));
   const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && v.youtubeId) || eMp4Sala(v)) : [];
+  // Para o ⏮ ⏭ da barra de cima: TUDO o que se vê no jogo/tema, pela ordem
+  // da lista — jogos completos, cortes e clipes em vídeo.
+  const navegaveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => v.youtubeId || eMp4Sala(v)) : [];
   const seguinteNaSala = (id) => {
     const lista = (sequencia && sequencia.includes(id)) ? sequencia : reproduziveisDoGrupo.map(v => v.id);
     const i = lista.indexOf(id);
@@ -53093,6 +53079,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       const { lista, i } = ativoEClipe ? seguinteNaSala(active.id) : { lista: [], i: -1 };
                       const emLista = ativoEClipe && i >= 0 && lista.length >= 2;
                       const irPara = (id) => { if (!id) return; setFimCorte(null); ytATocarRef.current = true; setActiveId(id); };
+                      // Nos cortes, ⏮ ⏭ andam entre os cortes (ou a sequência);
+                      // no jogo completo, entre tudo o que está na lista do jogo
+                      // (outra parte do jogo, os cortes…).
+                      const navLista = emLista ? lista : navegaveisDoGrupo.map(v => v.id);
+                      const iNav = navLista.indexOf(active.id);
+                      const temNav = iNav >= 0 && navLista.length >= 2;
                       const btnTopo = { padding: '6px 10px' };
                       return (
                         <div style={{
@@ -53114,9 +53106,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           </span>
                           {/* Os botões ocupam sempre o mesmo espaço (escondidos
                               quando não há lista), para a barra não mudar. */}
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0, visibility: emLista ? 'visible' : 'hidden' }}>
-                            <Btn escuro variant="ghost" onClick={() => irPara(lista[i - 1])} disabled={i === 0} style={btnTopo} title="Clipe anterior"><SkipBack size={14} /></Btn>
-                            <Btn escuro variant="ghost" onClick={() => irPara(lista[i + 1])} disabled={i >= lista.length - 1} style={btnTopo} title="Clipe seguinte"><SkipForward size={14} /></Btn>
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0, visibility: temNav ? 'visible' : 'hidden' }}>
+                            <Btn escuro variant="ghost" onClick={() => irPara(navLista[iNav - 1])} disabled={iNav <= 0} style={btnTopo} title={emLista ? 'Clipe anterior' : 'Anterior'}><SkipBack size={14} /></Btn>
+                            <Btn escuro variant="ghost" onClick={() => irPara(navLista[iNav + 1])} disabled={iNav >= navLista.length - 1} style={btnTopo} title={emLista ? 'Clipe seguinte' : 'Seguinte'}><SkipForward size={14} /></Btn>
                           </div>
                         </div>
                       );
@@ -53728,16 +53720,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {!isBlocked && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                        // Em ecrã inteiro: o painel de baixo do leitor da Análise
-                        // (fundo da app, título em destaque).
-                        ...(ytFull
-                          ? { padding: '12px 14px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: T.surface }
-                          : { padding: '6px 10px', background: '#111' }),
-                        borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
                         {ytFull ? (
                           // Em ecrã inteiro não há título por baixo — fica aqui.
-                          <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...body }}>
+                          <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                             {active.title}
                           </span>
                         ) : (
