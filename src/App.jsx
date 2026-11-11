@@ -4015,8 +4015,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     const fichas = [...(adversarios || [])].filter(a => a && a.nome)
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'))
       .map(a => ({ id: a.id, rotulo: a.nome }));
-    return { pastas, jogos, fichas };
-  }, [videos, matches, adversarios]);
+    /* Equipas das competições criadas na app que ainda NÃO têm ficha de
+       adversário (sem a nossa) — para o "+ Nova equipa" na Análise de Vídeo
+       se escolher de uma lista em vez de escrever. */
+    const nossa = String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim();
+    const equipasSemFicha = Array.from(new Set(nomesEquipasCompeticao(standings) || []))
+      .filter(n => n && !ehNossaEquipa(n, nossa) && !fichaDaEquipa(n, adversarios))
+      .sort((a, b) => a.localeCompare(b, 'pt'));
+    return { pastas, jogos, fichas, equipasSemFicha };
+  }, [videos, matches, adversarios, standings, equipaAtiva]);
   // Clipes da Análise que estão a ser usados na Sala de Vídeo (para não
   // se apagar o ficheiro deles quando são apagados na Análise).
   // Os enviados sozinhos para a ficha (origemAnalise.auto) não contam: esses
@@ -4079,7 +4086,26 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     setPedidoFichaAnalise(null);
     pedido.resolver(ficha ? { equipa, equipas: eqs } : null);
   };
-  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId }) => {
+  /* Ficha de adversário criada NA HORA a partir da Análise de Vídeo (envio
+     de um clipe para Adversários quando a equipa ainda não tem ficha): só
+     o nome. Se já houver uma com esse nome, devolve essa. Devolve o nome
+     com que a ficha aparece (o da equipa do clipe). */
+  const criarFichaAdversario = (nome) => {
+    const n = String(nome || '').trim();
+    if (!n) return null;
+    let f = fichaDaEquipa(n, adversarios) || (adversarios || []).find(a => fichaRepetida(n, [a])) || null;
+    if (!f) {
+      f = {
+        id: idFichaAutomatica(teamId, n), nome: n, equipaCompeticao: n,
+        escalao: '', prova: '', pontosFortes: '', pontosFracos: '', notas: '',
+        jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
+      };
+      const nova0 = f;
+      setAdversarios(prev => ((prev || []).some(a => a.id === nova0.id || fichaRepetida(nova0.nome, [a])) ? prev : [...(prev || []), nova0]));
+    }
+    return f.equipaCompeticao || f.nome;
+  };
+  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova }) => {
     if (!clip || !clip.publicUrl) throw new Error('Este clipe não tem vídeo guardado.');
     const base = {
       id: uid(), title: (titulo || '').trim() || 'Clipe', kind: 'video', dataUrl: clip.publicUrl,
@@ -4095,8 +4121,25 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       if (!m) throw new Error('Escolhe o jogo.');
       item = { ...base, categoria: 'jogo', jogoId: m.id, jornada: m.jornada || '', pasta: '' };
     } else if (destino === 'adversario') {
-      const f = (adversarios || []).find(x => x.id === fichaId);
-      if (!f) throw new Error('Escolhe a equipa.');
+      /* FICHA NOVA a partir da Análise de Vídeo: só com o nome. Se já houver
+         uma ficha com esse nome, usa-se essa (não se duplica). O resto da
+         ficha (escalão, prova, jogadores…) preenche-se depois em Scouting ›
+         Adversários. */
+      let f = (adversarios || []).find(x => x.id === fichaId);
+      const nomeNovo = fichaNova && String(fichaNova.nome || '').trim();
+      if (!f && nomeNovo) {
+        f = fichaDaEquipa(nomeNovo, adversarios) || (adversarios || []).find(a => fichaRepetida(nomeNovo, [a])) || null;
+        if (!f) {
+          f = {
+            id: idFichaAutomatica(teamId, nomeNovo), nome: nomeNovo, equipaCompeticao: nomeNovo,
+            escalao: '', prova: '', pontosFortes: '', pontosFracos: '', notas: '',
+            jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
+          };
+          const nova0 = f;
+          setAdversarios(prev => ((prev || []).some(a => a.id === nova0.id || fichaRepetida(nova0.nome, [a])) ? prev : [...(prev || []), nova0]));
+        }
+      }
+      if (!f) throw new Error(fichaNova ? 'Escreve o nome da equipa.' : 'Escolhe a equipa.');
       item = { ...base, adversarioId: f.id, equipa: f.equipaCompeticao || f.nome, pasta: '' };
     } else {
       if (!(pasta || '').trim()) throw new Error('Escolhe ou escreve a pasta.');
@@ -4645,7 +4688,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario} />
             {/* Por cima da bancada da Análise (z-index alto) e DENTRO do ecrã
                 inteiro, se estiver ligado: fora dele a janela não se via e o
                 pedido ficava preso em "A preparar a ficha do adversário…". */}

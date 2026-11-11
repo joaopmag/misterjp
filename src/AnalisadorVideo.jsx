@@ -1633,7 +1633,13 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   const [pasta, setPasta] = useState(() => (d.pastas || [])[0] || '');
   const [pastaNova, setPastaNova] = useState('');
   const [jogoId, setJogoId] = useState('');
-  const [fichaId, setFichaId] = useState('');
+  // Sem fichas ainda, começa logo em "Nova equipa".
+  const [fichaId, setFichaId] = useState(() => ((d.fichas || []).length ? '' : '__nova__'));
+  const [nomeFichaNova, setNomeFichaNova] = useState('');
+  // Equipa nova: escolhida das equipas das competições da app (sem ficha),
+  // ou escrita à mão em "Outra equipa…".
+  const equipasLista = d.equipasSemFicha || [];
+  const [equipaNovaSel, setEquipaNovaSel] = useState(() => (equipasLista.length ? '' : '__outra__'));
   const [erro, setErro] = useState('');
   const [feito, setFeito] = useState('');
   useFecharComEsc(onClose);
@@ -1642,10 +1648,13 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
     setErro('');
     try {
       const pastaFinal = pasta === '__nova__' ? pastaNova : pasta;
+      const nomeNovo = equipaNovaSel && equipaNovaSel !== '__outra__' ? equipaNovaSel : nomeFichaNova;
+      const fichaNova = destino === 'adversario' && fichaId === '__nova__' ? { nome: String(nomeNovo || '').trim() } : null;
+      if (fichaNova && !fichaNova.nome) { setErro(equipaNovaSel === '__outra__' || !equipasLista.length ? 'Escreve o nome da equipa.' : 'Escolhe a equipa.'); return; }
       const rotulo = destino === 'jogo' ? `Jogos › ${(d.jogos.find(j => j.id === jogoId) || {}).rotulo || ''}`
-        : destino === 'adversario' ? `Adversários › ${(d.fichas.find(f => f.id === fichaId) || {}).rotulo || ''}`
+        : destino === 'adversario' ? `Adversários › ${fichaNova ? fichaNova.nome : ((d.fichas.find(f => f.id === fichaId) || {}).rotulo || '')}`
           : `Temas › ${pastaFinal}`;
-      onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId, rotulo });
+      onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo });
       setFeito(destino === 'adversario' ? `${rotulo} (e ficha da equipa)` : rotulo);
     } catch (e) { setErro(e.message || String(e)); }
   };
@@ -1712,8 +1721,27 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
                 <select value={fichaId} onChange={e => setFichaId(e.target.value)} style={campo}>
                   <option value="">Escolhe a equipa…</option>
                   {(d.fichas || []).map(f => <option key={f.id} value={f.id}>{f.rotulo}</option>)}
+                  <option value="__nova__">+ Nova equipa…</option>
                 </select>
-                {!(d.fichas || []).length && <span style={{ fontSize: 11.5, color: T.warn }}>Ainda não há fichas de adversários. Cria a ficha em Scouting › Adversários.</span>}
+                {/* FICHA NOVA, SIMPLES: só o nome. Cria a ficha do adversário e
+                    o clipe vai logo para lá; o resto preenche-se depois em
+                    Scouting › Adversários. */}
+                {fichaId === '__nova__' && (
+                  <>
+                    {equipasLista.length > 0 && (
+                      <select value={equipaNovaSel} onChange={e => setEquipaNovaSel(e.target.value)} style={campo}>
+                        <option value="">Escolhe a equipa da competição…</option>
+                        {equipasLista.map(n => <option key={n} value={n}>{n}</option>)}
+                        <option value="__outra__">Outra equipa (escrever o nome)…</option>
+                      </select>
+                    )}
+                    {(equipaNovaSel === '__outra__' || !equipasLista.length) && (
+                      <input value={nomeFichaNova} onChange={e => setNomeFichaNova(e.target.value)} placeholder="Nome da equipa (ex.: FC Maia Lidador)"
+                        maxLength={80} autoFocus style={campo} onKeyDown={e => { if (e.key === 'Enter') enviar(); }} />
+                    )}
+                    <span style={{ fontSize: 11.5, color: T.mutedDim }}>Cria a ficha do adversário com este nome e o clipe vai logo para lá. O resto da ficha preenche-se em Scouting › Adversários.</span>
+                  </>
+                )}
               </label>
             )}
             {clipeNaSala(clip) && textoNaSala(clip) && (
@@ -2782,7 +2810,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -2900,9 +2928,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
        sincronização põe-no (uma vez) na ficha. Antes criava-se um segundo
        vídeo na ficha, e o mesmo corte aparecia duas vezes. */
     if (dados.destino === 'adversario') {
-      const f = ((destinosSala && destinosSala.fichas) || []).find(x => x.id === dados.fichaId);
-      if (!f) throw new Error('Escolhe a equipa.');
-      const equipa = f.rotulo;
+      // Equipa NOVA (sem ficha ainda): cria-se a ficha só com o nome e o
+      // clipe fica com essa equipa (vai para a ficha como os outros).
+      let equipa = '';
+      if (dados.fichaNova && dados.fichaNova.nome) {
+        if (!criarFichaAdversario) throw new Error('Não foi possível criar a ficha aqui. Cria-a em Scouting › Adversários.');
+        equipa = criarFichaAdversario(dados.fichaNova.nome) || '';
+        if (!equipa) throw new Error('Escreve o nome da equipa.');
+      } else {
+        const f = ((destinosSala && destinosSala.fichas) || []).find(x => x.id === dados.fichaId);
+        if (!f) throw new Error('Escolhe a equipa.');
+        equipa = f.rotulo;
+      }
       setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, equipa, envioFicha: null } : c)));
       setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, equipa, envioFicha: null } : prev));
       setClipeParaSala(prev => (prev && prev.id === clip.id ? { ...prev, equipa, envioFicha: null } : prev));
