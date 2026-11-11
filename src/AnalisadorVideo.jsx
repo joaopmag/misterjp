@@ -342,6 +342,42 @@ function CampoTempo({ valor, onEscolher, max, rotulo, cor }) {
   );
 }
 
+/* BARRA DE TEMPO — desenhada à mão (em vez do <input range>), para a
+   bolinha chegar MESMO ao fim quando o clipe acaba (no range nativo
+   ficava sempre um bocadinho antes). A mesma da Sala de Vídeo (App.jsx ›
+   BarraTempoSala). Arrastar com o rato ou com o dedo. */
+function BarraTempo({ min, max, value, onChange, disabled, rotulo, cor }) {
+  const ref = useRef(null);
+  const span = Math.max(0.001, max - min);
+  const pct = Math.min(1, Math.max(0, (value - min) / span));
+  const KNOB = 14;
+  const dourado = cor || T.gold;
+  const valorEm = (clientX) => {
+    const r = ref.current.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientX - r.left - KNOB / 2) / Math.max(1, r.width - KNOB)));
+    return min + f * span;
+  };
+  const aoPremir = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
+    onChange(valorEm(e.clientX));
+  };
+  const aoMover = (e) => {
+    if (disabled) return;
+    if (e.currentTarget.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) onChange(valorEm(e.clientX));
+  };
+  return (
+    <div ref={ref} role="slider" aria-label={rotulo} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value}
+      onPointerDown={aoPremir} onPointerMove={aoMover}
+      style={{ position: 'relative', flex: 1, minWidth: 0, height: 22, cursor: disabled ? 'default' : 'pointer', touchAction: 'none', opacity: disabled ? 0.5 : 1 }}>
+      <div style={{ position: 'absolute', left: KNOB / 2, right: KNOB / 2, top: '50%', height: 4, marginTop: -2, borderRadius: 2, background: '#ffffff40' }} />
+      <div style={{ position: 'absolute', left: KNOB / 2, top: '50%', height: 4, marginTop: -2, borderRadius: 2, background: dourado, width: `calc((100% - ${KNOB}px) * ${pct})` }} />
+      <div style={{ position: 'absolute', top: '50%', width: KNOB, height: KNOB, marginTop: -KNOB / 2, borderRadius: '50%', background: dourado, left: `calc((100% - ${KNOB}px) * ${pct})` }} />
+    </div>
+  );
+}
+
 function Btn({ children, onClick, variant = 'ghost', active, disabled, style, title }) {
   const T = React.useContext(BancadaVideo) ? TV : TEMA;
   const base = {
@@ -1946,10 +1982,8 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             style={{ background: 'none', border: `1px solid ${TV.line}`, color: TV.cream, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, display: 'flex' }}>
             <RotateCcw size={14} />
           </button>
-          <input type="range" min={0} max={duracaoVideo || 0} step={0.1} value={Math.min(t, duracaoVideo || 0)}
-            onChange={e => irPara(Number(e.target.value))} disabled={!duracaoVideo}
-            aria-label="Posição no clipe"
-            style={{ flex: 1, minWidth: 0, accentColor: TV.gold, cursor: 'pointer' }} />
+          <BarraTempo min={0} max={duracaoVideo || 1} value={Math.min(t, duracaoVideo || 0)}
+            onChange={(v) => irPara(v)} disabled={!duracaoVideo} rotulo="Posição no clipe" cor={TV.gold} />
           <span style={{ fontSize: 12, color: TV.muted, ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
           <button onClick={() => (onEcraInteiro ? onEcraInteiro() : alternarEcraInteiro(videoRef.current))} title={emEcraInteiroAgora ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
             style={{ background: 'none', border: `1px solid ${TV.line}`, color: TV.cream, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, display: 'flex', flexShrink: 0 }}>
@@ -2486,10 +2520,8 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
             <RotateCcw size={15} />
           </button>
-          <input type="range" min={0} max={duracao} step={0.1} value={Math.max(0, tempo - inicio)}
-            onChange={e => irPara(inicio + Number(e.target.value))}
-            aria-label="Posição no clipe"
-            style={{ flex: 1, accentColor: T.gold }} />
+          <BarraTempo min={0} max={duracao} value={Math.max(0, tempo - inicio)}
+            onChange={(v) => irPara(inicio + v)} rotulo="Posição no clipe" />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(tempo - inicio)} / {mmss(duracao)}</span>
           <button onClick={() => alternarEcraInteiro(null)} title={emEcraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}>
