@@ -49636,6 +49636,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [renaming, setRenaming] = useState(null); // nome antigo, enquanto se renomeia
   const [renameValue, setRenameValue] = useState('');
   const [activeId, setActiveId] = useState(null);
+  const activeIdRefSala = useRef(null);
+  activeIdRefSala.current = activeId;
   // youtubeId -> 'embed_disabled' (dono do canal bloqueou a incorporação,
   // erro 101/150) | 'unavailable' (outro erro, ex: vídeo removido/privado).
   // Só nesse caso mostramos o aviso "abre no YouTube" — o resto reproduz
@@ -50972,10 +50974,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // a reportar-nos eventos (incluindo onError) por postMessage. Fábrica em
   // vez de função fixa porque agora há dois iframes possíveis (o da caixa
   // inline e o da janela ampliada) e cada um precisa do seu próprio ref.
+  const tocarAoCarregarRef = useRef(null);
   const handleIframeLoad = (ref) => () => {
     const win = ref.current && ref.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+    // Chegou pelo ⏮ ⏭ / "Clipe seguinte": começa a tocar quando o leitor
+    // estiver pronto (umas tentativas, até o YouTube responder).
+    const alvo = tocarAoCarregarRef.current;
+    if (alvo) {
+      tocarAoCarregarRef.current = null;
+      [400, 1000, 1800].forEach(ms => setTimeout(() => {
+        if (activeIdRefSala.current !== alvo || ytATocarRef.current) return;
+        try { win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*'); } catch (e) { /* nada */ }
+      }, ms));
+    }
   };
 
   const save = (data) => {
@@ -52142,8 +52155,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Chegou aqui pelo ⏮ ⏭ (ou "Clipe seguinte"): arranca logo a tocar,
     // mesmo sendo outro vídeo (antes abria parado e parecia que não
     // tinha avançado).
-    const auto = emSeq || autoplayIdRef.current === active.id;
-    if (autoplayIdRef.current === active.id) autoplayIdRef.current = null;
+    // O autoplay do próprio YouTube (autoplay=1) deixava o ecrã PRETO num
+    // leitor novo. Agora abre normal (com imagem) e, logo que o leitor
+    // está pronto, manda-se tocar (ver `handleIframeLoad`).
+    const auto = emSeq;
+    if (autoplayIdRef.current === active.id) { tocarAoCarregarRef.current = active.id; autoplayIdRef.current = null; }
     const novo = {
       chave: active.id, servindo: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
       src: youtubeEmbedSrc(active, auto ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
@@ -53846,7 +53862,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         em ecrã inteiro (fora dela não se veria). */}
                     {ytFull && clipMode && podeCriarClipe && !isBlocked && renderPainelClipe(true)}
                   </div>
-                  {!ytFull && clipMode && podeCriarClipe && !isBlocked && renderPainelClipe(false)}
+                  {/* O painel de criar clipe fica POR CIMA do que está por
+                      baixo do leitor (título, descrição), sem empurrar nada:
+                      antes a coluna crescia e o leitor subia todo. */}
+                  {!ytFull && clipMode && podeCriarClipe && !isBlocked && (
+                    <div style={{ position: 'relative', height: 0 }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 6, background: T.bg, borderRadius: '0 0 8px 8px', boxShadow: '0 10px 24px rgba(0,0,0,.45)' }}>
+                        {renderPainelClipe(false)}
+                      </div>
+                    </div>
+                  )}
                   </>
                 ) : active.social ? (
                   <div style={{ maxWidth: isSocialFullscreen ? 'none' : 320, margin: '0 auto' }}>
