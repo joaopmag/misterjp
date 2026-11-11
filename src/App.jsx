@@ -51688,7 +51688,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      avança-se à mão (antes: um corte sozinho repetia sem parar e, em
      "Ver cortes em seguida", passava sozinho ao seguinte). */
   const [fimCorte, setFimCorte] = useState(null); // id do corte que chegou ao fim
-  useEffect(() => { setFimCorte(null); }, [activeId]);
+  /* Só se deteta o FIM depois de o leitor ter mesmo ENTRADO no corte novo.
+     Ao andar para trás (⏮), o leitor ainda dava por instantes o tempo do
+     corte de onde se vinha — já depois do fim deste — e aparecia logo o
+     "Repetir / Clipe seguinte", preso. */
+  const entrouNoCorteRef = useRef(false);
+  const autoplayIdRef = useRef(null); // item que deve arrancar já a tocar ao abrir
+  useEffect(() => { setFimCorte(null); entrouNoCorteRef.current = false; }, [activeId]);
   useEffect(() => {
     if (!ativoEClipe) { tempoAnteriorClipeRef.current = null; return; }
     const anterior = tempoAnteriorClipeRef.current;
@@ -51707,7 +51713,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
 
     const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
-    if (aTocarNormalmente && liveTime >= clipFimEf) {
+    if (!entrouNoCorteRef.current && liveTime >= clipIni - 0.5 && liveTime < clipFimEf - 0.2) entrouNoCorteRef.current = true;
+    if (aTocarNormalmente && liveTime >= clipFimEf && entrouNoCorteRef.current) {
       // Uma paragem com desenhos a decorrer mesmo no fim: deixa-a acabar.
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
@@ -52132,9 +52139,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       && (ytATocarRef.current || emSeqAgora);
     if (reaproveita) { atual.servindo = active.id; atual.saltarPara = active.id; return atual; }
     const emSeq = sequencia && sequencia.includes(active.id);
+    // Chegou aqui pelo ⏮ ⏭ (ou "Clipe seguinte"): arranca logo a tocar,
+    // mesmo sendo outro vídeo (antes abria parado e parecia que não
+    // tinha avançado).
+    const auto = emSeq || autoplayIdRef.current === active.id;
+    if (autoplayIdRef.current === active.id) autoplayIdRef.current = null;
     const novo = {
       chave: active.id, servindo: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
-      src: youtubeEmbedSrc(active, emSeq ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
+      src: youtubeEmbedSrc(active, auto ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
     };
     leitorBibRef.current = novo;
     return novo;
@@ -53093,7 +53105,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         // ficava marcado "a tocar" e o 1.º toque no play mandava
                         // PAUSAR (em ecrã inteiro não arrancava).
                         const alvo = (items || []).find(v => v.id === id);
-                        ytATocarRef.current = !!(alvo && ehClipe(alvo) && alvo.youtubeId && active && active.youtubeId === alvo.youtubeId);
+                        const mesmoLeitor = !!(alvo && ehClipe(alvo) && alvo.youtubeId && active && active.youtubeId === alvo.youtubeId && ativoEClipe);
+                        ytATocarRef.current = mesmoLeitor;
+                        // Leitor novo (outro vídeo, ou de/para jogo completo):
+                        // abre já a tocar.
+                        if (!mesmoLeitor) autoplayIdRef.current = id;
                         setActiveId(id);
                       };
                       // Nos cortes, ⏮ ⏭ andam entre os cortes (ou a sequência);
@@ -53671,9 +53687,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           </button>
                           <button onClick={() => ir(0)} title="Voltar ao início" style={btnJ}><RotateCcw size={14} /></button>
                           {!isNarrow && <button onClick={() => ir(agoraJ - 10)} title="Recuar 10 segundos" style={{ ...btnJ, fontSize: 11.5, ...mono }}>-10s</button>}
-                          <input type="range" min={0} max={dur || 1} step={1} value={agoraJ} disabled={!dur}
-                            onChange={e => ir(Number(e.target.value))} aria-label="Posição no vídeo"
-                            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: dur ? 'pointer' : 'default' }} />
+                          <BarraTempoSala min={0} max={dur || 1} value={agoraJ} disabled={!dur}
+                            onChange={(t) => ir(t)} rotulo="Posição no vídeo" />
                           {!isNarrow && <button onClick={() => ir(agoraJ + 10)} title="Avançar 10 segundos" style={{ ...btnJ, fontSize: 11.5, ...mono }}>+10s</button>}
                           <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
                             {fmtMMSS(agoraJ)} / {dur ? fmtMMSS(dur) : '--:--'}
@@ -53712,18 +53727,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {!isNarrow && (
                             <button onClick={() => recuarClipe(-2)} title="Recuar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>-2s</button>
                           )}
-                          <input
-                            type="range"
-                            min={clipIni}
-                            max={clipFimEf}
-                            step={0.1}
-                            value={agora}
-                            onChange={e => procurarNoClipe(Number(e.target.value))}
-                            onMouseUp={largarBarraClipe}
-                            onTouchEnd={largarBarraClipe}
-                            aria-label="Posição dentro do clipe"
-                            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }}
-                          />
+                          <BarraTempoSala min={clipIni} max={clipFimEf} value={agora}
+                            onChange={(t) => { if (fimCorte === active.id) setFimCorte(null); procurarNoClipe(t); }}
+                            onLargar={largarBarraClipe} rotulo="Posição dentro do clipe" />
                           {!isNarrow && (
                             <button onClick={() => recuarClipe(2)} title="Avançar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>+2s</button>
                           )}
@@ -55101,6 +55107,38 @@ function VideoSemPiscar({ item, proporcao }) {
         );
       })}
     </>
+  );
+}
+
+/* BARRA DE TEMPO DA SALA — desenhada à mão (em vez do <input range>), para
+   a bolinha chegar MESMO ao fim quando o clipe acaba (no range nativo
+   ficava sempre um bocadinho antes). Arrastar com o rato ou o dedo. */
+function BarraTempoSala({ min, max, value, onChange, onLargar, disabled, rotulo }) {
+  const ref = useRef(null);
+  const span = Math.max(0.001, max - min);
+  const pct = Math.min(1, Math.max(0, (value - min) / span));
+  const KNOB = 14;
+  const valorEm = (clientX) => {
+    const r = ref.current.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (clientX - r.left - KNOB / 2) / Math.max(1, r.width - KNOB)));
+    return min + f * span;
+  };
+  const aoPremir = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
+    onChange(valorEm(e.clientX));
+  };
+  const aoMover = (e) => { if (disabled || !(e.buttons & 1) && e.pointerType === 'mouse') return; if (e.currentTarget.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) onChange(valorEm(e.clientX)); };
+  const aoLargarP = () => { if (onLargar) onLargar(); };
+  return (
+    <div ref={ref} role="slider" aria-label={rotulo} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value}
+      onPointerDown={aoPremir} onPointerMove={aoMover} onPointerUp={aoLargarP} onPointerCancel={aoLargarP}
+      style={{ position: 'relative', flex: 1, minWidth: 0, height: 22, cursor: disabled ? 'default' : 'pointer', touchAction: 'none' }}>
+      <div style={{ position: 'absolute', left: KNOB / 2, right: KNOB / 2, top: '50%', height: 4, marginTop: -2, borderRadius: 2, background: '#ffffff40' }} />
+      <div style={{ position: 'absolute', left: KNOB / 2, top: '50%', height: 4, marginTop: -2, borderRadius: 2, background: T.gold, width: `calc((100% - ${KNOB}px) * ${pct})` }} />
+      <div style={{ position: 'absolute', top: '50%', width: KNOB, height: KNOB, marginTop: -KNOB / 2, borderRadius: '50%', background: T.gold, left: `calc((100% - ${KNOB}px) * ${pct})` }} />
+    </div>
   );
 }
 
