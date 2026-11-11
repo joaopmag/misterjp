@@ -55281,15 +55281,23 @@ function PdfCanvasViewer({ dataUrl }) {
       const QUALITY = 1.5;
       const renderScale = fitScale * dpr * QUALITY;
       const viewport = page.getViewport({ scale: renderScale });
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      canvas.style.width = `${Math.ceil(fitScale * unscaled.width)}px`;
-      canvas.style.height = `${Math.ceil(fitScale * unscaled.height)}px`;
-      const ctx = canvas.getContext('2d');
-      const task = page.render({ canvasContext: ctx, viewport });
+      // Desenha primeiro numa tela escondida e só no fim passa para a do
+      // ecrã, de uma vez. Antes, o pdf.js pintava a página de branco e ia
+      // desenhando por cima à vista de todos: dava um clarão branco ao
+      // escolher uma apresentação (e ao mudar de página).
+      const escondida = document.createElement('canvas');
+      escondida.width = Math.ceil(viewport.width);
+      escondida.height = Math.ceil(viewport.height);
+      const task = page.render({ canvasContext: escondida.getContext('2d'), viewport });
       renderTaskRef.current = task;
       await task.promise;
       renderTaskRef.current = null;
+      if (canvasRef.current !== canvas) return;
+      canvas.width = escondida.width;
+      canvas.height = escondida.height;
+      canvas.style.width = `${Math.ceil(fitScale * unscaled.width)}px`;
+      canvas.style.height = `${Math.ceil(fitScale * unscaled.height)}px`;
+      canvas.getContext('2d').drawImage(escondida, 0, 0);
     } catch (err) {
       if (err && err.name !== 'RenderingCancelledException') {
         console.error('Erro ao mostrar a página do PDF', err);
@@ -60444,7 +60452,10 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
     const txt = semAcentos(`${n.titulo || ''} ${n.nota || ''}`);
     const dist = (m) => Math.abs(new Date(m.date) - new Date(n.data || todayStr()));
     const nomeia = (m) => { const o = semAcentos(m.opponent); return o.length > 2 && txt.includes(o); };
-    return (matches || []).filter(m => m && m.date)
+    // Só jogos já realizados: é aí que vive a "análise do jogo" (Jogos ›
+    // Relatórios de jogo). Um jogo futuro escondia a nota até ao dia do jogo.
+    const hoje = todayStr();
+    return (matches || []).filter(m => m && m.date && m.date <= hoje)
       .sort((a, b) => (nomeia(b) - nomeia(a)) || (dist(a) - dist(b)));
   };
   const abrirMover = (n) => {
