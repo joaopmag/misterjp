@@ -50815,6 +50815,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // ecrã a cada mensagem. O efeito que mantém isto atualizado vive mais
   // abaixo, depois de `active` estar definido — precisa de o ler.
   const precisaTempoAoVivoRef = React.useRef(false);
+  const precisaTempoJogoRef = React.useRef(false);
+  const [tempoJogo, setTempoJogo] = useState(0);
+  const [duracaoJogo, setDuracaoJogo] = useState(0);
   const [liveTime, setLiveTime] = useState(0);
   // Estado do leitor (1 = a tocar, 3 = a carregar) — só para o botão
   // reproduzir/pausar da barra do clipe mostrar o ícone certo.
@@ -50856,7 +50859,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         if (typeof data.info.currentTime === 'number') {
           currentTimeRef.current = data.info.currentTime;
           if (precisaTempoAoVivoRef.current) setLiveTime(data.info.currentTime);
+          // Jogo completo: tempo para a barra própria (a mesma dos clipes).
+          if (precisaTempoJogoRef.current) setTempoJogo(data.info.currentTime);
         }
+        if (typeof data.info.duration === 'number' && data.info.duration > 0) setDuracaoJogo(data.info.duration);
       }
     };
     window.addEventListener('message', onMessage);
@@ -51384,6 +51390,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // reproduzir (barra própria + limites do corte).
   useEffect(() => {
     precisaTempoAoVivoRef.current = ativoEClipe;
+    precisaTempoJogoRef.current = !!(active && active.youtubeId && !ativoEClipe);
+    setTempoJogo(0); setDuracaoJogo(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ativoEClipe, active && active.id]);
 
@@ -51704,9 +51712,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (pausaEmCursoRef.current) return;
       // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
       if (gravacaoBibRef.current) return;
+      // "VER CORTES EM SEGUIDA": é para ver de seguida — passa sozinho ao
+      // corte seguinte; só no último pára e mostra "Repetir".
+      if (sequencia && sequencia.includes(active.id)) {
+        const iSeq = sequencia.indexOf(active.id);
+        if (iSeq < sequencia.length - 1) {
+          ytATocarRef.current = true;
+          setActiveId(sequencia[iSeq + 1]);
+          tempoAnteriorClipeRef.current = null;
+          return;
+        }
+        enviarComandoYoutube('pauseVideo');
+        enviarComandoYoutube('seekTo', [Math.max(clipIni, clipFimEf - 0.1), true]);
+        setFimCorte(active.id);
+        setSequencia(null);
+        tempoAnteriorClipeRef.current = null;
+        return;
+      }
       // Como na Análise individual: corte SOZINHO repete sem parar; numa
-      // lista (vários cortes do jogo/tema, ou "em seguida") pára no fim e
-      // pergunta "Repetir / Clipe seguinte".
+      // lista (vários cortes do jogo/tema) pára no fim e pergunta
+      // "Repetir / Clipe seguinte".
       if (seguinteNaSala(active.id).lista.length <= 1) {
         enviarComandoYoutube('seekTo', [clipIni, true]);
         enviarComandoYoutube('playVideo');
@@ -52525,16 +52550,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!cortesDoGrupo.length) return;
     const ids = cortesDoGrupo.map(v => v.id);
     setSequencia(ids);
-    setFimCorte(null);
-    // Arranca LOGO a tocar no 1.º corte. Se ele já estava aberto, antes não
-    // acontecia nada (o corte não mudava e ninguém mandava tocar).
-    if (active && active.id === ids[0]) {
-      enviarComandoYoutube('seekTo', [cortesDoGrupo[0].clipInicio || 0, true]);
+    const parado = !!(active && fimCorte === active.id);
+    setFimCorte(null); // sai o "Repetir / Clipe seguinte" do ecrã
+    const iAtual = active ? ids.indexOf(active.id) : -1;
+    if (iAtual >= 0 && !parado) {
+      // A meio de um corte: continua DAQUI (do sítio onde está) e segue.
       enviarComandoYoutube('playVideo');
-    } else {
-      ytATocarRef.current = true;
-      setActiveId(ids[0]);
+      return;
     }
+    if (iAtual >= 0 && parado) {
+      // Parado no fim de um corte: segue para o seguinte (ou recomeça o
+      // último, se já era o último).
+      if (iAtual < ids.length - 1) { ytATocarRef.current = true; setActiveId(ids[iAtual + 1]); }
+      else { enviarComandoYoutube('seekTo', [cortesDoGrupo[iAtual].clipInicio || 0, true]); enviarComandoYoutube('playVideo'); }
+      return;
+    }
+    // Fora dos cortes (ex.: jogo completo aberto): começa no 1.º.
+    ytATocarRef.current = true;
+    setActiveId(ids[0]);
   };
   const posSeq = sequencia && active ? sequencia.indexOf(active.id) : -1;
 
@@ -53053,9 +53086,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         individual em clipes: "Clipe X de N · título ·
                         início–fim (duração)" e ⏮ ⏭. Fica também em ecrã
                         inteiro. Só nos clipes que estão numa lista. */}
-                    {!isBlocked && ativoEClipe && (() => {
-                      const { lista, i } = seguinteNaSala(active.id);
-                      if (i < 0 || lista.length < 2) return null;
+                    {/* Sempre presente (jogo completo, clipe sozinho ou numa
+                        lista), com a mesma altura: trocar de jogo completo para
+                        um corte já não muda o tamanho da caixa. */}
+                    {!isBlocked && (() => {
+                      const { lista, i } = ativoEClipe ? seguinteNaSala(active.id) : { lista: [], i: -1 };
+                      const emLista = ativoEClipe && i >= 0 && lista.length >= 2;
                       const irPara = (id) => { if (!id) return; setFimCorte(null); ytATocarRef.current = true; setActiveId(id); };
                       const btnTopo = { padding: '6px 10px' };
                       return (
@@ -53064,10 +53100,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           padding: '8px 12px', background: T.surface, borderBottom: `1px solid ${T.line}`, flexShrink: 0,
                         }}>
                           <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>
-                            {active.title || 'Clipe'} · {fmtMMSS(clipIni)}–{fmtMMSS(clipFimEf)} ({Math.round(clipFimEf - clipIni)}s)
+                            {ativoEClipe ? (
+                              <>
+                                {emLista && <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>}
+                                {active.title || 'Clipe'} · {fmtMMSS(clipIni)}–{fmtMMSS(clipFimEf)} ({Math.round(clipFimEf - clipIni)}s)
+                              </>
+                            ) : (
+                              <>
+                                <strong style={{ color: T.gold, fontWeight: 700 }}>Jogo completo · </strong>
+                                {active.title || 'Vídeo'}{duracaoJogo ? ` · ${fmtMMSS(duracaoJogo)}` : ''}
+                              </>
+                            )}
                           </span>
-                          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          {/* Os botões ocupam sempre o mesmo espaço (escondidos
+                              quando não há lista), para a barra não mudar. */}
+                          <div style={{ display: 'flex', gap: 6, flexShrink: 0, visibility: emLista ? 'visible' : 'hidden' }}>
                             <Btn escuro variant="ghost" onClick={() => irPara(lista[i - 1])} disabled={i === 0} style={btnTopo} title="Clipe anterior"><SkipBack size={14} /></Btn>
                             <Btn escuro variant="ghost" onClick={() => irPara(lista[i + 1])} disabled={i >= lista.length - 1} style={btnTopo} title="Clipe seguinte"><SkipForward size={14} /></Btn>
                           </div>
@@ -53594,6 +53641,40 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* BARRA DO CLIPE — só nos clipes. Vai do início ao fim
                         do corte, e nada mais: não há como ver o resto do
                         jogo a partir de um clipe. */}
+                    {/* JOGO COMPLETO — a MESMA barra (mesma altura e aspeto),
+                        sobre o vídeo todo: trocar entre jogo completo e cortes
+                        já não mexe na caixa. ±10 s em vez de ±2 s. */}
+                    {!isBlocked && !ativoEClipe && (() => {
+                      const dur = duracaoJogo || 0;
+                      const agoraJ = Math.min(Math.max(tempoJogo || 0, 0), dur || 0);
+                      const ir = (t) => { const alvo = Math.max(0, dur ? Math.min(t, dur - 0.5) : t); enviarComandoYoutube('seekTo', [alvo, true]); setTempoJogo(alvo); };
+                      const btnJ = {
+                        background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0,
+                      };
+                      return (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10,
+                          padding: '8px 12px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                        }}>
+                          <button onClick={() => enviarComandoYoutube(ytATocar ? 'pauseVideo' : 'playVideo')} title={ytATocar ? 'Pausar' : 'Reproduzir'} style={btnJ}>
+                            {ytATocar ? <Pause size={16} /> : <Play size={16} />}
+                          </button>
+                          <button onClick={() => ir(0)} title="Voltar ao início" style={btnJ}><RotateCcw size={14} /></button>
+                          {!isNarrow && <button onClick={() => ir(agoraJ - 10)} title="Recuar 10 segundos" style={{ ...btnJ, fontSize: 11.5, ...mono }}>-10s</button>}
+                          <input type="range" min={0} max={dur || 1} step={1} value={agoraJ} disabled={!dur}
+                            onChange={e => ir(Number(e.target.value))} aria-label="Posição no vídeo"
+                            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: dur ? 'pointer' : 'default' }} />
+                          {!isNarrow && <button onClick={() => ir(agoraJ + 10)} title="Avançar 10 segundos" style={{ ...btnJ, fontSize: 11.5, ...mono }}>+10s</button>}
+                          <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
+                            {fmtMMSS(agoraJ)} / {dur ? fmtMMSS(dur) : '--:--'}
+                          </span>
+                          <button onClick={toggleYtFull} title={ytFull ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'} style={btnJ}>
+                            {ytFull ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     {!isBlocked && ativoEClipe && (() => {
                       const dur = Math.max(0.1, clipFimEf - clipIni);
                       const agora = Math.min(Math.max(arrastoClipe != null ? arrastoClipe : liveTime, clipIni), clipFimEf);
@@ -53647,11 +53728,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {!isBlocked && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                        // Em ecrã inteiro: o painel de baixo do leitor da Análise
+                        // (fundo da app, título em destaque).
+                        ...(ytFull
+                          ? { padding: '12px 14px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))', background: T.surface }
+                          : { padding: '6px 10px', background: '#111' }),
+                        borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
                         {ytFull ? (
                           // Em ecrã inteiro não há título por baixo — fica aqui.
-                          <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...body }}>
                             {active.title}
                           </span>
                         ) : (
