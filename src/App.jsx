@@ -29,160 +29,12 @@ import {
   Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag, ZoomOut, Film,
   Target, Pin,
 } from 'lucide-react';
+// Base movida para src/base/ (divisão do App.jsx, passo 1).
+import { FONTS, IconeTema, ROTULO_TROCA_TEMA, T, TEMA_ATUAL, TEXT_ON_ACCENT, T_ESCURO, body, display, mono, trocarTema } from './base/tema';
+import { ACTIVITY_LABELS, addDays, escapeHtmlText, fmtDate, fmtShort, formatShortDatePt, semAcentos, timeAgo, toLocalISODate, todayStr, uid } from './base/utilidades';
+import { BotaoTopo, Btn, ConfirmDialog, EmptyState, FIELD_FULL, FIELD_GRID, Field, Input, Modal, Panel, SectionHeader, Select, TextArea, UNDO_SECONDS, UndoBar, askConfirm, definirModalHandoff, herdarOuEmpurrarMarca, inputStyle, itemLabel, modalHandoffAtivo, offerUndo, removeWithUndo, trocarJanela, undoHandler, useIsMobile, useModalHistory } from './base/ui';
+import { BannerRascunho, SyncErrorBanner, ensureSession, jsonEstavel, loadSingleton, saveSingleton, useCollectionSync, useRascunho, useSingletonSync } from './base/sincronizacao';
 
-/* ---------------------------------------------------------------
-   TOKENS — Relvado Multi-acento: dark pitch-green theme with
-   Salgueiros crimson as primary accent and blue/gold/purple
-   accents borrowed from the alternative jersey graffiti print.
----------------------------------------------------------------- */
-const T = {
-  bg: '#182619',
-  surface: '#202F22',
-  surfaceRaise: '#2B402D',
-  line: '#3A4F3D',
-  crimson: '#A6192E',
-  crimsonBright: '#D14056',
-  gold: '#C9A227',
-  goldSoft: '#8A6F1C',
-  cream: '#ECEFEA',
-  muted: '#8FA091',
-  mutedDim: '#6B7A6D',
-  good: '#4CA86B',
-  warn: '#D9A72E',
-  bad: '#C25A5A',
-  teamA: '#B5393F',
-  teamB: '#3A6FC4',
-  teamC: '#D9A72E',
-  teamD: '#8C3F9E',
-  // A COR DA PRÓPRIA EQUIPA nos quadros de posições (Simulador, Ficha
-  // de Jogo, Estrutura habitual do Adversário) — bolas vermelhas por
-  // omissão, mas cada equipa pode escolher a sua em "Gerir equipa".
-  // `App` atualiza isto assim que sabe qual é a equipa ativa (ver mais
-  // abaixo); os quadros só leem `T.corEquipa`, nunca um vermelho fixo.
-  corEquipa: '#B5393F',
-  // Dourado de FUNDO (botões e etiquetas com texto escuro por cima): fica
-  // igual nos dois temas, ao contrário de `gold`, que no modo claro
-  // escurece para se ler como texto.
-  goldFundo: '#C9A227',
-  // Cores que eram escritas à mão nos ecrãs (fase 2 do modo claro). No
-  // escuro têm exatamente o valor de antes; o modo claro troca-as.
-  textoForte: '#FFFFFF',     // títulos de painel e nome da equipa
-  sobreCream: '#1B241C',     // texto sobre uma etiqueta com fundo `cream`
-  sobreVerde: '#0d140e',     // visto (✓) sobre `good`
-  fundoErro: '#3A1F22',      // faixa de erro
-  fundoDica: '#0F1A12',      // balão de valor nos gráficos
-  linhaAtiva: '#4A6250',     // contorno de um cartão aberto
-  epocaRotulo: '#D9A72E',    // "Época" na faixa vermelha da Visão Geral
-  epocaNome: '#ECEFEA',      // nome da época na mesma faixa
-  // Fase 3 (Portal do Atleta)
-  veuMissao: 'rgba(10,20,12,0.92)',   // fundo de "Missão cumprida"
-  brilhoMissao: '#2b3a2e',            // halo do ecrã da missão
-  brilhoEntrada: '#33463a',           // halo do ecrã de entrada da equipa
-  botaoInativo: '#3a4f3d',            // "Levantar o cartão" antes do código
-  botaoInativoTexto: '#8A9A8C',
-  sobreBom: '#0E1A0E',                // texto sobre o botão verde
-  giz: '#FFFFFF',                     // desenhos que sobem no fundo (Portal, missão, credencial)
-};
-/* A paleta escura, fixa. Os objetos do Portal que são sempre escuros
-   (placard, TV do balneário, porta, estádio do dia de jogo) leem daqui,
-   para não mudarem com o modo claro. */
-const T_ESCURO = { ...T };
-
-/* ===================================================================
-   MODO CLARO
-   ===================================================================
-   Três escolhas, guardadas em cada aparelho: Escuro (o de sempre, e o
-   que fica por omissão), Claro, e Automático (segue o modo do telemóvel
-   ou do computador). O tema aplica-se AQUI, antes de qualquer ecrã ou
-   estilo ser calculado, trocando os valores de `T`: assim tudo o que lê
-   `T` (a grande maioria da app) muda de uma vez, sem mexer em cada ecrã.
-   Ao trocar de tema a página recarrega: é a forma de garantir que os
-   estilos calculados no arranque também mudam.
-   Fase 2 (plataforma) feita com os tokens no fim de `T`. Fase 3: Portal.
-   No Portal, o placard, a TV do balneário e a porta ficam escuros de
-   propósito. */
-/* O Portal e a plataforma são duas apps: cada uma guarda o seu tema
-   (mudar para claro na plataforma não muda o Portal, e vice-versa). */
-const TEMA_CHAVE = (() => {
-  try {
-    const l = window.location;
-    const noPortal = /^\/portal(\/|$)/.test(l.pathname) || /[?&](portal|checkin)=?/.test(l.search) || /portal=|checkin/.test(l.hash);
-    return noPortal ? 'mjp-tema-portal' : 'mjp-tema';
-  } catch (e) { return 'mjp-tema'; }
-})();
-const PALETA_CLARA = {
-  bg: '#F2F4EF',
-  surface: '#FFFFFF',
-  surfaceRaise: '#E7ECE4',
-  line: '#C9D3C6',
-  crimson: '#A6192E',
-  crimsonBright: '#B8243A',
-  gold: '#8A6A0E',      // dourado mais escuro: legível sobre fundo claro
-  goldSoft: '#B08A1E',
-  cream: '#1B2A1D',     // o "texto principal" passa a escuro
-  muted: '#4F6352',
-  mutedDim: '#5F7062',
-  good: '#2E7D4A',
-  warn: '#A6750F',
-  bad: '#B23A3A',
-  textoForte: '#132015',
-  sobreCream: '#F2F4EF',
-  sobreVerde: '#FFFFFF',
-  fundoErro: '#FBE9E9',
-  fundoDica: '#FFFFFF',
-  linhaAtiva: '#9FB29C',
-  epocaRotulo: '#F6D88A',
-  epocaNome: '#FFFFFF',
-  veuMissao: 'rgba(242,244,239,0.96)',
-  brilhoMissao: '#DCE5D7',
-  brilhoEntrada: '#D5DFD1',
-  botaoInativo: '#DDE3DA',
-  botaoInativoTexto: '#6F806F',
-  sobreBom: '#FFFFFF',
-  giz: '#1B2A1D',
-};
-function lerPreferenciaTema() {
-  try { const v = localStorage.getItem(TEMA_CHAVE); return v === 'claro' || v === 'auto' ? v : 'escuro'; } catch (e) { return 'escuro'; }
-}
-function temaEfetivo(pref) {
-  if (pref === 'claro' || pref === 'escuro') return pref;
-  try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'escuro'; } catch (e) { return 'escuro'; }
-}
-const TEMA_ATUAL = typeof window !== 'undefined' ? temaEfetivo(lerPreferenciaTema()) : 'escuro';
-if (TEMA_ATUAL === 'claro') {
-  Object.assign(T, PALETA_CLARA);
-  try {
-    // O index.html arranca verde-escuro (sem flash branco); aqui acerta-se
-    // logo para o fundo claro e para os controlos do navegador em claro.
-    document.documentElement.style.background = T.bg;
-    // O index.html declara `color-scheme: dark` também no body e no #root;
-    // sem isto as caixas de seleção e os calendários nativos ficavam pretos.
-    const estilo = document.createElement('style');
-    estilo.textContent = `html, body, #root { color-scheme: light !important; background: ${T.bg} !important; }`;
-    document.head.appendChild(estilo);
-    document.documentElement.style.colorScheme = 'light';
-    if (document.body) document.body.style.background = T.bg;
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', T.bg);
-  } catch (e) { /* sem documento: nada a fazer */ }
-}
-function mudarTema(pref) {
-  try { localStorage.setItem(TEMA_CHAVE, pref); } catch (e) { /* sem memória: fica só nesta visita */ }
-  if (temaEfetivo(pref) !== TEMA_ATUAL) window.location.reload();
-}
-// Um só toque troca entre claro e escuro. Mostra o modo para onde vai:
-// lua no claro (passar a escuro), sol no escuro (passar a claro).
-// Uma preferência 'auto' antiga continua a valer até o utilizador tocar.
-function trocarTema() { mudarTema(TEMA_ATUAL === 'claro' ? 'escuro' : 'claro'); }
-function IconeTema({ size = 14 }) {
-  return TEMA_ATUAL === 'claro' ? <Moon size={size} /> : <Sun size={size} />;
-}
-const ROTULO_TROCA_TEMA = TEMA_ATUAL === 'claro' ? 'Mudar para modo escuro' : 'Mudar para modo claro';
-
-/* Text-on-accent color: light text used on the crimson accent
-   backgrounds (buttons, active tabs, badges) — dark pitch-green
-   theme, so this is now light instead of dark. */
-const TEXT_ON_ACCENT = '#FBF3F0';
 
 /* Imprimir com o nome certo no PDF. Ao "Guardar como PDF", o browser usa
    o título da página como nome do ficheiro (e como cabeçalho da folha).
@@ -202,23 +54,6 @@ function imprimirComNome(nome) {
   }, 80);
 }
 
-/* O EMBLEMA DEIXOU DE VIVER NO CÓDIGO.
-
-   Estavam aqui 70 KB de PNG em base64 com o emblema do SC Salgueiros —
-   razoável quando a app era de uma equipa, errado a partir do momento em
-   que há outras. O logótipo passou a ser um campo da equipa (`logo`), e
-   quem não tiver nenhum não vê emblema, o que é melhor do que ver o de
-   outro clube.
-
-   Sai também de cada carregamento da app: eram 70 KB no ficheiro, para
-   toda a gente, sempre. */
-
-
-const FONTS = "@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');";
-
-const display = { fontFamily: "'Oswald', sans-serif" };
-const body = { fontFamily: "'Inter', sans-serif" };
-const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
 
@@ -708,7 +543,6 @@ function resumoClinico(estado, { comNivel = true } = {}) {
 const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos', fichaadversario: 'scouting', ideiasjogo: 'jogos' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
-const uid = () => Math.random().toString(36).slice(2, 10);
 
 /* Lê um ficheiro (imagem ou PDF) escolhido pelo utilizador e devolve uma
    Promise com um data URL em base64, pronto a guardar diretamente no
@@ -953,917 +787,7 @@ function genPlayerCode(usedSet) {
 import { supabase } from './supabaseClient';
 import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE, staffBioDisponivel, staffBioEstado, staffBioAtivar, staffBioDesativar, staffReporPalavraPasse, FUNCOES_STAFF, BIO_TXT } from './AuthScreen.jsx';
 
-// A Época é um registo único (não uma lista) — vive numa linha fixa
-// (id='default') na tabela season_config.
-/* Devolve { ok, value, editedBy, editedAt }. O `ok` é o que interessa.
 
-   ISTO ERA UM CAMINHO REAL DE PERDA DE DADOS. Antes, uma leitura falhada
-   devolvia o `fallback` — classificação vazia, época por omissão — sem
-   distinção nenhuma de uma leitura bem-sucedida. Bastava o treinador
-   mexer num campo a seguir para essa versão vazia ser gravada por cima da
-   classificação verdadeira, com todas as jornadas e resultados da época.
-
-   Ao contrário das coleções (onde o snapshot vazio impedia eliminações),
-   aqui não havia nada a travar a escrita. Com `ok: false`, o hook não fica
-   pronto e a gravação nunca chega a acontecer. */
-/* REGISTO ÚNICO — MAS ÚNICO POR EQUIPA.
-
-   A Época e a Classificação viviam numa linha fixa, `id='default'`. Com
-   várias equipas isso deixa de funcionar: o `id` é chave primária da
-   tabela inteira, portanto só podia existir uma no sistema todo — a
-   segunda equipa a gravar a época esmagava a da primeira.
-
-   A busca passa a ser pelo `team_id` e não pelo `id`. As linhas antigas
-   mantêm o `id='default'` que já tinham (por isso `loadSingleton`
-   devolve o id encontrado, para a gravação lhe voltar a acertar); as de
-   equipas novas nascem com o id igual ao da equipa. Assim não é preciso
-   migrar nada do que já existe. */
-async function loadSingleton(table, fallback, teamId) {
-  try {
-    // Token válido primeiro — sem ele a RLS aplica o papel `anon` e a
-    // resposta vem vazia, sem erro. Ver a nota em ensureSession.
-    const sessao = await ensureSession();
-    if (!sessao) throw new Error('Sem sessão válida — o token expirou e não foi possível renovar.');
-    if (!teamId) throw new Error('Sem equipa ativa.');
-
-    const { data, error } = await supabase
-      .from(table).select('id, data, updated_by_email, updated_at')
-      .eq('team_id', teamId).maybeSingle();
-    if (error) throw error;
-    return data
-      ? { ok: true, rowId: data.id, value: data.data, editedBy: data.updated_by_email, editedAt: data.updated_at }
-      : { ok: true, rowId: null, value: fallback, editedBy: null, editedAt: null };
-  } catch (e) {
-    console.error('Falha ao carregar', table, e);
-    reportReadError(table, e);
-    return { ok: false, rowId: null, value: fallback, editedBy: null, editedAt: null };
-  }
-}
-async function saveSingleton(table, value, teamId, rowId) {
-  try {
-    if (!teamId) return;
-    const { error } = await supabase.from(table)
-      .upsert({ id: rowId || teamId, data: value, team_id: teamId }, { onConflict: 'id' });
-    if (error) throw error;
-  } catch (e) {
-    console.error('Falha ao guardar', table, e);
-  }
-}
-
-// Versão genérica do padrão usado para a Época: carrega, grava (debounced
-// pelo próprio efeito de mudança de valor) e escuta alterações em tempo
-// real feitas por outra pessoa, para uma tabela de registo único
-// (colunas id='default', data jsonb, updated_by_email, updated_at).
-function useSingletonSync(table, fallback, notifyEdit, teamId) {
-  const [value, setValue] = useState(fallback);
-  const [ready, setReady] = useState(false);
-  const [meta, setMeta] = useState({ email: null, at: null });
-  // Id da linha desta equipa. Nulo até se saber — ver loadSingleton.
-  const rowIdRef = useRef(null);
-  /* CICLO INFINITO — o Supabase Realtime devolve-nos as NOSSAS próprias
-     escritas. Como `row.data` chega sempre como um objeto novo, o
-     setValue mudava a identidade do estado, o efeito de gravação
-     disparava outra vez, gravava, o realtime devolvia... sem fim. O
-     sintoma era a "Última atividade" a piscar com "agora mesmo"
-     permanente. A solução é guardar a assinatura JSON do último valor
-     sincronizado e ignorar tudo o que for igual — nos dois sentidos. */
-  const syncedRef = useRef(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!teamId) { setReady(false); return () => { cancelled = true; }; }
-    (async () => {
-      const s = await loadSingleton(table, fallback, teamId);
-      if (cancelled) return;
-      rowIdRef.current = s.rowId;
-      syncedRef.current = jsonEstavel(s.value);
-      setValue(s.value);
-      setMeta(s.editedBy ? { email: s.editedBy, at: s.editedAt } : { email: null, at: null });
-      // Só fica pronto (= só autoriza gravar) se a leitura correu bem.
-      if (s.ok) setReady(true);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, teamId]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const signature = jsonEstavel(value);
-    // Nada mudou de facto (ex.: veio do realtime, ou é o valor acabado de
-    // carregar) — não voltar a gravar nem marcar nova atividade.
-    if (signature === syncedRef.current) return;
-    syncedRef.current = signature;
-    saveSingleton(table, value, teamId, rowIdRef.current);
-    if (!rowIdRef.current) rowIdRef.current = teamId;
-    if (notifyEdit) notifyEdit(table);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, ready]);
-
-  useEffect(() => {
-    if (!teamId) return undefined;
-    /* O filtro é do lado do servidor: sem ele receberíamos as alterações
-       de todas as equipas e a época de outro clube entrava aqui. O nome
-       do canal leva a equipa para que trocar de equipa crie um canal
-       novo em vez de reaproveitar o antigo. */
-    const channel = supabase.channel(`${table}_rt_${teamId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `team_id=eq.${teamId}` }, (payload) => {
-        const row = payload.new;
-        if (!row) return;
-        const signature = jsonEstavel(row.data);
-        if (signature === syncedRef.current) return; // é o eco da nossa própria gravação
-        syncedRef.current = signature;
-        rowIdRef.current = row.id;
-        setValue(row.data);
-        setMeta({ email: row.updated_by_email, at: row.updated_at });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, teamId]);
-
-  return [value, setValue, ready, meta];
-}
-
-// Hook genérico de sincronização para as listas (jogadores, sessões,
-// jogos, ...). Cada registo da lista vira UMA LINHA na respetiva tabela,
-// o que permite saber quem editou cada registo individual — não só "a
-// lista mudou". Compara a lista atual com a última versão sincronizada
-// e só grava (upsert/apagar) o que realmente mudou; as alterações feitas
-// por outra pessoa chegam sozinhas via tempo real.
-/* AVISO DE GRAVAÇÃO FALHADA — quando o Supabase recusa uma gravação (tabela
-   em falta, permissões/RLS, ou payload demasiado grande, como acontece com
-   ficheiros grandes guardados em base64), a app tem de o dizer. Sem isto o
-   ecrã mostrava tudo bem e o conteúdo desaparecia no refresh seguinte. */
-const SYNC_ERROR_EVENT = 'mrjp-sync-error';
-function reportSyncError(table, error, kind = 'write') {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(SYNC_ERROR_EVENT, {
-    detail: { table, kind, message: (error && error.message) || 'erro desconhecido' },
-  }));
-}
-
-/* LEITURA FALHADA — o caso mais perigoso de todos, porque não parece um
-   erro: parece que não há dados.
-
-   Se a sessão expirou ou a RLS recusa a leitura, o Supabase devolve muitas
-   vezes `data: []` SEM erro. A app mostrava "Sem exercícios" e o treinador
-   concluía, com razão, que tinha perdido tudo — quando na verdade os
-   registos estão intactos na base de dados e o que falhou foi o acesso.
-
-   Daí valer a pena distinguir os dois casos e dizê-lo por palavras. */
-function reportReadError(table, error) {
-  reportSyncError(table, error, 'read');
-}
-
-/* SESSÃO VÁLIDA ANTES DE LER — a correção da causa raiz.
-
-   O que acontecia: o portão de autenticação monta a app assim que o
-   getSession() responde, e a app dispara logo a seguir as treze leituras
-   das treze tabelas, todas ao mesmo tempo. Se a app esteve fechada tempo
-   suficiente para o token caducar, essas leituras saem antes de a
-   renovação ter terminado — e uma leitura sem token válido não dá erro:
-   o Postgres aplica a RLS do papel `anon` e devolve lista VAZIA.
-
-   Daí o padrão exato que se via: `players`, `sessions` e `monitoring`
-   continuavam a funcionar (têm política `anon`), e tudo o resto aparecia
-   em branco.
-
-   `getSession()` do supabase-js renova o token se estiver caducado, e
-   devolve a sessão só depois disso. Esperar por ele antes de cada leitura
-   custa milissegundos e fecha a corrida.
-
-   A promessa é partilhada por todas as tabelas (não são treze renovações
-   em paralelo, é uma só à qual todas se juntam). */
-let sessaoPendente = null;
-async function ensureSession() {
-  if (!sessaoPendente) {
-    sessaoPendente = supabase.auth.getSession()
-      .then(({ data }) => (data && data.session) || null)
-      .catch(() => null)
-      .finally(() => { sessaoPendente = null; });
-  }
-  return sessaoPendente;
-}
-
-function SyncErrorBanner() {
-  const [err, setErr] = useState(null);
-  useEffect(() => {
-    const onErr = (e) => setErr(e.detail);
-    window.addEventListener(SYNC_ERROR_EVENT, onErr);
-    return () => window.removeEventListener(SYNC_ERROR_EVENT, onErr);
-  }, []);
-  if (!err) return null;
-  return (
-    <div style={{
-      position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 80,
-      background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10,
-      padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10,
-      boxShadow: '0 12px 40px #00000080', maxWidth: 620, margin: '0 auto',
-    }}>
-      <div style={{ flex: 1, ...body }}>
-        <div style={{ color: T.bad, fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-          {err.kind === 'read'
-            ? `Não foi possível ler os dados (${ACTIVITY_LABELS[err.table] || err.table})`
-            : `Não foi possível guardar (${ACTIVITY_LABELS[err.table] || err.table})`}
-        </div>
-        <div style={{ color: T.cream, fontSize: 12.5, lineHeight: 1.5 }}>
-          {err.kind === 'read' ? (
-            <>
-              Esta secção pode aparecer vazia, mas <strong>os teus dados não foram apagados</strong> —
-              o que falhou foi o acesso à base de dados. Sai da conta e volta a entrar.
-              Enquanto isto durar, esta secção está bloqueada para escrita, para não gravar
-              por cima do que lá está. Detalhe: {err.message}
-            </>
-          ) : (
-            <>
-              O que acabaste de introduzir está no ecrã mas NÃO ficou gravado — vai perder-se
-              se recarregares a página. Detalhe: {err.message}
-            </>
-          )}
-        </div>
-      </div>
-      <button onClick={() => setErr(null)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={16} /></button>
-    </div>
-  );
-}
-
-/* Toda a leitura por aqui exige sessão válida — sem exceções.
-
-   Houve um tempo em que o quiosque do questionário lia estas tabelas sem
-   login e era preciso abrir uma exceção. Deixou de ser: o quiosque passou
-   a usar as funções checkin_bootstrap/checkin_save (ver checkin_rpc.sql)
-   e não toca em tabela nenhuma. Sem exceção, não há forma de contornar a
-   verificação de sessão por engano. */
-/* JSON ESTÁVEL — as chaves sempre pela mesma ordem, ordenadas
-   alfabeticamente, tanto para objetos como para o que vier dentro de
-   arrays; e os números sempre com a MESMA representação de texto.
-
-   O Postgres (jsonb) NÃO guarda os campos na ordem em que foram
-   escritos — pode devolvê-los canonicalizados numa ordem diferente da
-   nossa. Comparar `JSON.stringify` normal (que respeita a ordem de
-   inserção do objeto local) contra o que veio da base de dados dava
-   "diferente" só por causa da ordem, mesmo quando o CONTEÚDO era
-   exatamente igual — e isso fazia a gravação achar sempre que havia
-   qualquer coisa por gravar, escrevendo o mesmo registo vezes sem
-   conta, em ciclo.
-
-   Ordenar as chaves não chegou sozinho: os diagramas das ideias têm
-   dezenas de coordenadas decimais (posições de jogadores e setas), e
-   um número como 0.1 pode voltar do Postgres escrito de forma
-   ligeiramente diferente da nossa (mais ou menos casas decimais,
-   ainda que o VALOR seja rigorosamente o mesmo) — e cada uma dessas
-   pequenas diferenças de texto também contava como "isto mudou",
-   mantendo o ciclo de reescrita vivo. Arredondar todos os números à
-   mesma precisão antes de comparar tira essa última fonte de
-   "diferenças" que não são diferenças nenhumas. */
-function jsonEstavel(valor) {
-  if (Array.isArray(valor)) return `[${valor.map(jsonEstavel).join(',')}]`;
-  if (valor && typeof valor === 'object') {
-    const chaves = Object.keys(valor).sort();
-    return `{${chaves.map(k => `${JSON.stringify(k)}:${jsonEstavel(valor[k])}`).join(',')}}`;
-  }
-  if (typeof valor === 'number' && Number.isFinite(valor)) {
-    // 9 casas decimais chegam e sobram para qualquer coordenada ou nota
-    // desta app — é só para tirar ruído de vírgula flutuante, não para
-    // arredondar valores a sério.
-    return JSON.stringify(Math.round(valor * 1e9) / 1e9);
-  }
-  return JSON.stringify(valor);
-}
-
-/* LER TUDO, EM BLOCOS — nunca confiar no limite por omissão.
-
-   O Supabase (PostgREST) devolve no máximo 1000 linhas por pedido, salvo
-   se se disser o contrário — e isso não é um aviso, é simplesmente o que
-   vem. Uma equipa com uma temporada de Wellness + PSE diários acumula
-   isso depressa (30 jogadores × 2 registos por dia passam de 1000 em
-   pouco mais de dois meses). Como a leitura ficava ordenada do mais
-   antigo para o mais novo, ao passar dos 1000 registos os MAIS RECENTES
-   — as respostas de hoje — ficavam sempre de fora, silenciosamente: sem
-   erro nenhum, só ausentes. Foi isto que fez respostas gravadas
-   corretamente nunca aparecerem como respondidas, por mais vezes que se
-   desse refresh.
-
-   A correção não é subir o limite (isso só adia o mesmo problema para
-   quando a equipa acumular mais um tanto) — é ir buscar tudo, às fatias,
-   até a última fatia vir mais pequena do que o pedido, o que só acontece
-   quando já não há mais nada por trazer. */
-async function fetchAllRows(table, teamId) {
-  const PAGE = 1000;
-  let offset = 0;
-  const todas = [];
-  for (;;) {
-    const { data, error } = await supabase.from(table)
-      .select('id, data, updated_by_email, updated_at')
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    const pagina = data || [];
-    todas.push(...pagina);
-    if (pagina.length < PAGE) break;
-    offset += PAGE;
-  }
-  return todas;
-}
-
-/* Guarda um rascunho da edição em curso no localStorage deste dispositivo,
-   para não se perder trabalho se saíres da página a meio (troca de
-   separador, botão de retroceder do browser, fechar sem querer). Usado nos
-   três sítios que usam o editor tático 2D: Exercícios, Ideia de Jogo, e as
-   dinâmicas do Scouting.
-
-   Isto é só local ao dispositivo (localStorage) — não sincroniza com o
-   Supabase nem aparece para outras pessoas da equipa; é só uma rede de
-   segurança para ti, neste computador. */
-function useRascunho(chave, f, setF, ativo = true) {
-  const [rascunhoEncontrado, setRascunhoEncontrado] = useState(null);
-  const jaVerificou = useRef(false);
-
-  useEffect(() => {
-    if (!ativo || jaVerificou.current) return;
-    jaVerificou.current = true;
-    try {
-      const bruto = localStorage.getItem(chave);
-      if (bruto) {
-        const guardado = JSON.parse(bruto);
-        if (guardado && guardado.f) setRascunhoEncontrado(guardado);
-      }
-    } catch (e) { /* rascunho corrompido — ignora, como se não existisse */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave, ativo]);
-
-  useEffect(() => {
-    if (!ativo) return;
-    const t = setTimeout(() => {
-      try { localStorage.setItem(chave, JSON.stringify({ f, guardadoEm: Date.now() })); } catch (e) { /* ex.: localStorage cheio — sem drama, só não fica rascunho desta vez */ }
-    }, 800);
-    return () => clearTimeout(t);
-  }, [chave, f, ativo]);
-
-  const limpar = () => { try { localStorage.removeItem(chave); } catch (e) {} };
-  const restaurar = () => { if (rascunhoEncontrado) { setF(rascunhoEncontrado.f); setRascunhoEncontrado(null); } };
-  const descartar = () => { limpar(); setRascunhoEncontrado(null); };
-
-  return { rascunhoEncontrado, restaurar, descartar, limpar };
-}
-
-// Banner mostrado quando se encontra um rascunho não guardado ao abrir um
-// destes editores.
-function BannerRascunho({ rascunho, onRestaurar, onDescartar }) {
-  if (!rascunho) return null;
-  const minutos = Math.max(1, Math.round((Date.now() - (rascunho.guardadoEm || Date.now())) / 60000));
-  const quando = minutos < 60 ? `há ${minutos} min` : `há ${Math.round(minutos / 60)}h`;
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-      background: `${T.gold}22`, border: `1px solid ${T.gold}`, borderRadius: 8,
-      padding: '10px 12px', marginBottom: 14, fontSize: 13, color: T.cream, ...body,
-    }}>
-      <span style={{ flex: 1, minWidth: 200 }}>Encontrámos uma edição não guardada, de {quando}. Continuar dela ou começar do zero?</span>
-      <Btn variant="solid" onClick={onRestaurar} style={{ padding: '6px 12px', fontSize: 12.5 }}>Continuar rascunho</Btn>
-      <Btn variant="ghost" onClick={onDescartar} style={{ padding: '6px 12px', fontSize: 12.5 }}>Começar do zero</Btn>
-    </div>
-  );
-}
-
-function useCollectionSync(table, notifyEdit, teamId) {
-  /* `exercises` e `players` são, de longe, as coleções mais pesadas da
-     app (fotografias de jogadores, diagramas/anexos de exercícios) —
-     quase 5 MB combinadas, contra menos de 600 KB somando TODAS as
-     outras. Isso não muda de 5 em 5 minutos, por isso não faz sentido
-     recarregá-las por inteiro com a mesma frequência da rede de
-     segurança normal (ver `INTERVALO_MINIMO`/o `setInterval` de 20 min,
-     mais abaixo) — cada vez que alguém desbloqueava o telemóvel, estas
-     duas tabelas sozinhas já pesavam mais do que as outras 11 juntas.
-     Uma mudança a sério (nova foto, novo exercício) continua a chegar na
-     hora a quem está a ver o ecrã, através do Realtime — isto só atrasa
-     a REDE DE SEGURANÇA contra uma ligação morta, não o normal. */
-  const COLECOES_PESADAS = { exercises: true, players: true };
-  const ehPesada = !!COLECOES_PESADAS[table];
-  const [items, setItems] = useState([]);
-  /* Autorização de UMA remoção em massa (ver o travão de segurança mais
-     abaixo). Fica num ref e não no estado porque não afeta o que se vê e
-     tem de estar disponível na gravação seguinte, sem esperar por um
-     novo desenho do ecrã. */
-  const remocaoAutorizada = useRef(false);
-  const [ready, setReady] = useState(false);
-  const [recordMeta, setRecordMeta] = useState({}); // id -> { email, at }
-  const snapshot = useRef(new Map()); // id -> JSON da última versão gravada
-  /* IDs com uma gravação nossa em curso.
-
-     Sem isto, carregar depressa na mesma célula fazia-a saltar para trás.
-     A sequência: clico (falta) → grava; clico (escalão) → grava; e então
-     chega o eco de Realtime da PRIMEIRA gravação, que traz "falta" e
-     substitui o estado local, já em "escalão". O ecrã anda para trás
-     sozinho e parece que o clique falhou.
-
-     Enquanto uma gravação nossa estiver a decorrer, os ecos dessa linha
-     são ignorados: o que temos localmente é mais recente do que qualquer
-     coisa que o servidor nos possa devolver desse id. Os ecos de OUTRAS
-     linhas, e de outros dispositivos, continuam a entrar normalmente. */
-  const aGravar = useRef(new Set());
-  /* UM CICLO DE GRAVAÇÃO DE CADA VEZ, nunca dois ao mesmo tempo.
-
-     Marcar sete ideias visíveis de uma só vez (ver `alternarFase`)
-     muda `items` uma vez, mas grava sete registos UM A UM (mais
-     abaixo, de propósito — ver esse comentário). Enquanto o registo #1
-     ainda está a gravar, o eco de Realtime da SUA PRÓPRIA escrita
-     confirmada faz `setItems` disparar de novo — e o React volta a
-     correr este efeito, com `items` a apontar para o mesmo objeto de
-     sempre (ainda com os sete marcados) mas ainda a meio da primeira
-     passagem pelo ciclo. Sem proteção, arrancava um SEGUNDO ciclo em
-     paralelo com o primeiro, os dois a decidir "isto ainda não foi
-     escrito" a partir do mesmo `snapshot` desatualizado — e conforme a
-     ordem por que cada um chegava ao servidor, um dos dois podia achar
-     que um registo já tinha mudado de outra forma e reescrevê-lo com
-     um valor antigo. Era isto que fazia alguns itens "perderem" a
-     marcação sozinhos, sem se tocar em mais nada.
-
-     `aEscrever` deixa só UM ciclo ativo; se `items` mudar outra vez
-     enquanto esse ciclo ainda decorre, fica um pedido pendente que o
-     próprio ciclo relê no fim, em vez de arrancar um segundo em
-     paralelo. */
-  const aEscrever = useRef(false);
-  const pedidoPendente = useRef(false);
-  /* CONTADOR DE ESCRITAS NOSSAS CONFIRMADAS.
-
-     Serve só para a rede de segurança do `apanharAtraso` saber se
-     gravámos alguma coisa ENQUANTO ela estava a ler o servidor. Ver aí o
-     motivo — é o que impede que uma leitura já desatualizada apague do
-     ecrã registos criados no meio dela. */
-  const escritasConfirmadas = useRef(0);
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-  /* A HORA (`updated_at`) de cada registo é a fonte de verdade mais
-     fiável para saber se um eco do Realtime é mesmo mais recente do
-     que o que já temos — mais fiável do que "vai um tempo desde que
-     gravámos" (a proteção anterior, `aGravar` com um prazo), que podia
-     ainda assim deixar passar um eco atrasado depois de várias
-     gravações seguidas em pouco tempo. Um eco com uma hora IGUAL ou
-     MAIS ANTIGA do que a que já temos localmente nunca é mais recente
-     do que o que já sabemos — é sempre seguro ignorá-lo. */
-  const ultimaHoraConhecida = useRef(new Map());
-
-  useEffect(() => {
-    let cancelled = false;
-    /* TROCAR DE EQUIPA COMEÇA POR ESQUECER TUDO.
-
-       Sem isto, os registos da equipa anterior ficavam em `items` até a
-       nova leitura chegar — e, pior, no `snapshot`: a gravação seguinte
-       compararia a lista nova com a antiga, concluiria que dezenas de
-       registos "desapareceram" e tentaria apagá-los na equipa errada. O
-       travão de eliminação em massa apanharia o caso, mas isto não pode
-       depender de um travão. */
-    snapshot.current = new Map();
-    aGravar.current = new Set();
-    setItems([]);
-    setRecordMeta({});
-    setReady(false);
-    if (!teamId) return () => { cancelled = true; };
-    (async () => {
-      /* Três tentativas antes de desistir. Uma falha de rede a meio de um
-         arranque não deve deixar a secção vazia para o resto da sessão. */
-      let ultimo = null;
-      for (let tentativa = 0; tentativa < 3; tentativa++) {
-        // Token válido primeiro; sem isto a leitura pode sair como `anon`
-        // e o Postgres devolve lista vazia sem erro nenhum.
-        const sessao = await ensureSession();
-        if (cancelled) return;
-        if (!sessao) {
-          ultimo = { message: 'Sem sessão válida — o token expirou e não foi possível renovar.' };
-          await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
-          if (cancelled) return;
-          continue;
-        }
-
-        /* O filtro por equipa está aqui E na RLS, de propósito. A RLS é
-           a fronteira de segurança; este filtro é correção e velocidade —
-           não traz para o browser o que não vai ser usado. Se um dia um
-           deles falhar, o outro ainda segura.
-
-           `fetchAllRows` (e não um `.select()` direto) — ver o comentário
-           ao lado da função: sem paginação, uma tabela com mais de 1000
-           registos perdia sempre os mais recentes. */
-        let data, error;
-        try {
-          data = await fetchAllRows(table, teamId);
-        } catch (e) {
-          error = e;
-        }
-        if (cancelled) return;
-        if (!error) {
-          const rows = data || [];
-
-          /* ZERO REGISTOS SEM ERRO — o caso silencioso.
-
-             Quando o token expira ou a RLS recusa a leitura, o Supabase
-             pode devolver uma lista vazia SEM erro nenhum. É
-             indistinguível de "esta tabela está mesmo vazia", e é a
-             explicação mais provável para conteúdo que "desaparece" e
-             volta sozinho a seguir.
-
-             Não conseguimos distinguir os dois casos pelo resultado, mas
-             conseguimos perguntar se ainda há sessão válida. Se não
-             houver, isto não é uma tabela vazia — é uma leitura falhada,
-             e trata-se como tal (sem `ready`, portanto sem escrita). */
-          if (rows.length === 0) {
-            const sess = await ensureSession();
-            if (cancelled) return;
-            if (!sess) {
-              reportReadError(table, { message: 'A sessão expirou durante a leitura.' });
-              return;
-            }
-          }
-
-          const snap = new Map();
-          const meta = {};
-          rows.forEach(r => {
-            snap.set(r.id, jsonEstavel(r.data));
-            meta[r.id] = { email: r.updated_by_email, at: r.updated_at };
-            if (r.updated_at) ultimaHoraConhecida.current.set(r.id, r.updated_at);
-          });
-          snapshot.current = snap;
-          setRecordMeta(meta);
-          setItems(rows.map(r => ({ ...r.data, id: r.id })));
-          setReady(true);
-          return;
-        }
-        ultimo = error;
-        await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
-        if (cancelled) return;
-      }
-
-      /* Falhou as três vezes. `ready` FICA A FALSE de propósito: é ele que
-         autoriza o efeito de gravação. Com ele a false, esta tabela fica em
-         modo só-leitura e é impossível escrever (ou apagar) por cima de
-         dados que não conseguimos sequer ler. Antes punha-se ready=true
-         aqui, o que abria a porta a gravar sobre um estado vazio. */
-      console.error(table, ultimo);
-      reportReadError(table, ultimo);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, teamId]);
-
-  useEffect(() => {
-    if (!teamId) return undefined;
-    const channel = supabase.channel(`${table}_rt_${teamId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `team_id=eq.${teamId}` }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const id = payload.old.id;
-          snapshot.current.delete(id);
-          setItems(prev => prev.filter(it => it.id !== id));
-          setRecordMeta(prev => { const n = { ...prev }; delete n[id]; return n; });
-        } else {
-          const row = payload.new || {};
-          /* O Realtime do Supabase tem um limite de tamanho por registo
-             (max_record_bytes, 1 MB por omissão). Registos acima disso não
-             são enviados por inteiro: chega um evento com "errors" e com o
-             registo vazio ou só com a chave. Se aplicássemos isso ao estado,
-             o item bom que temos em memória era substituído por um vazio —
-             perdia o título, a pasta e o próprio ficheiro — e a gravação
-             seguinte escrevia esse vazio por cima do registo correto na base
-             de dados. Era isto que fazia os ficheiros grandes "desaparecer"
-             e ficarem como linhas em branco.
-             Nesse caso ignoramos o evento e vamos buscar a versão completa
-             diretamente à base de dados. */
-          const truncated = (payload.errors && payload.errors.length) || row.data == null;
-          const rowId = row.id || (payload.old && payload.old.id);
-          if (truncated) {
-            if (!rowId) return;
-            supabase.from(table).select('id, data, updated_by_email, updated_at').eq('id', rowId).maybeSingle()
-              .then(({ data: full, error }) => {
-                if (error || !full || full.data == null) return; // mantém o que já temos
-                applyRow(full);
-              });
-            return;
-          }
-          applyRow(row);
-        }
-
-        function applyRow(row) {
-          if (aGravar.current.has(row.id)) return;
-          // Um eco tão antigo (ou mais) do que o que já temos nunca traz
-          // nada de novo — só um risco de repor uma versão ultrapassada
-          // por cima de uma edição local mais recente. Isto substitui a
-          // antiga proteção por tempo fixo (`aGravar` com prazo), que
-          // ainda falhava depois de várias gravações seguidas em pouco
-          // tempo — esta compara mesmo a HORA real de cada registo, não
-          // um relógio à parte.
-          const conhecida = ultimaHoraConhecida.current.get(row.id);
-          if (conhecida && row.updated_at && row.updated_at <= conhecida) return;
-          if (row.updated_at) ultimaHoraConhecida.current.set(row.id, row.updated_at);
-          snapshot.current.set(row.id, jsonEstavel(row.data));
-          setItems(prev => {
-            const item = { ...row.data, id: row.id };
-            return prev.some(it => it.id === row.id) ? prev.map(it => it.id === row.id ? item : it) : [...prev, item];
-          });
-          setRecordMeta(prev => ({ ...prev, [row.id]: { email: row.updated_by_email, at: row.updated_at } }));
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, teamId]);
-
-  /* REDE DE SEGURANÇA CONTRA UM WEBSOCKET MORTO EM SILÊNCIO.
-
-     A ligação em tempo real (`.channel(...)` acima) pode cair sem avisar
-     — o telemóvel bloqueia o ecrã, o browser suspende a aba em segundo
-     plano, muda-se de wifi para dados móveis. A aba continua aberta e
-     parece normal, mas deixou de receber ecos de gravações feitas por
-     outras pessoas (ou por um atleta a responder a um questionário) até
-     se recarregar a página à mão.
-
-     Isto foi apanhado como possível causa de "o atleta respondeu, mas o
-     treinador não via como respondido": o treinador tinha o ecrã de
-     Monitorização aberto há horas, a ligação tinha morrido nesse
-     intervalo, e a resposta nova nunca chegou a aparecer sozinha.
-
-     A correção não depende de perceber PORQUE é que o WebSocket caiu —
-     só verifica, sempre que a aba volta a ficar visível (e, por garantia
-     extra, a cada poucos minutos mesmo sem isso), se há alguma coisa mais
-     recente no servidor do que aquilo que já temos, e junta-a. Usa a
-     MESMA regra de "só aceitar o que for mesmo mais recente" que os ecos
-     do Realtime — nunca risco de repor uma edição local por cima. */
-  useEffect(() => {
-    if (!teamId) return undefined;
-    let cancelled = false;
-    /* Não repetir uma leitura completa se a anterior foi há pouco tempo
-       — sem isto, trocar de aba várias vezes seguidas (ou o foco a
-       disparar por qualquer motivo do browser) multiplicava leituras
-       completas da tabela toda, cada uma a contar para o limite de dados
-       transferidos (Egress) do Supabase. Isto acontece em cada uma das
-       ~16-17 coleções da app AO MESMO TEMPO sempre que o telemóvel volta
-       ao ecrã (desbloquear, trocar de app e voltar) — por isso um
-       intervalo curto custava caro, multiplicado por essa quantidade de
-       tabelas e por todos os telemóveis/tablets com a app aberta. 5
-       minutos continua a apanhar uma ligação morta a tempo (é só uma
-       rede de segurança, o Realtime já trata do normal), mas já não
-       repete a leitura toda de 16 tabelas cada vez que alguém desbloqueia
-       o telemóvel várias vezes seguidas. */
-    let ultimoFetch = 0;
-    const INTERVALO_MINIMO = (ehPesada ? 60 : 5) * 60 * 1000;
-    const apanharAtraso = async (forcar = false) => {
-      if (!ready || document.visibilityState === 'hidden') return;
-      const agora = Date.now();
-      if (!forcar && agora - ultimoFetch < INTERVALO_MINIMO) return;
-      ultimoFetch = agora;
-      /* MARCA DE INÍCIO — ver a guarda da remoção, mais abaixo. */
-      const escritasAoComecar = escritasConfirmadas.current;
-      const escreviaAoComecar = aEscrever.current;
-      let data, error;
-      try {
-        data = await fetchAllRows(table, teamId);
-      } catch (e) {
-        error = e;
-      }
-      if (cancelled || error) return;
-      (data || []).forEach(row => {
-        if (aGravar.current.has(row.id)) return;
-        const conhecida = ultimaHoraConhecida.current.get(row.id);
-        if (conhecida && row.updated_at && row.updated_at <= conhecida) return;
-        if (row.updated_at) ultimaHoraConhecida.current.set(row.id, row.updated_at);
-        snapshot.current.set(row.id, jsonEstavel(row.data));
-        setItems(prev => {
-          const item = { ...row.data, id: row.id };
-          return prev.some(it => it.id === row.id) ? prev.map(it => it.id === row.id ? item : it) : [...prev, item];
-        });
-        setRecordMeta(prev => ({ ...prev, [row.id]: { email: row.updated_by_email, at: row.updated_at } }));
-      });
-      /* Também remove quem foi apagado por outra pessoa nesse intervalo.
-
-         O que este ciclo traz é sempre a fotografia completa do servidor
-         — quem já não lá está foi apagado. Sem isto, um registo apagado
-         por outra pessoa enquanto a ligação estava morta ficava "fantasma"
-         no ecrã (visível, mas já não existe na base de dados) até um
-         refresh a sério. Não se toca em nada que esteja a ser gravado
-         agora mesmo (`aGravar`), para nunca fazer desaparecer algo que o
-         próprio utilizador acabou de criar e ainda não confirmou.
-
-         SÓ quando a leitura trouxe alguma coisa: uma lista vazia pode ser
-         a equipa mesmo sem registos, mas pode também ser uma leitura
-         silenciosamente recusada (RLS, token expirado) — ver o mesmo
-         cuidado tomado na leitura inicial, mais acima. Sem esta guarda,
-         uma leitura falhada em silêncio apagaria tudo do ecrã por engano. */
-      /* E SÓ SE NÃO GRAVÁMOS NADA ENQUANTO ESTA LEITURA DECORRIA.
-
-         Foi isto que apagou 15 convocatórias do ecrã de uma só vez, e
-         fez disparar o travão de eliminação em massa na gravação
-         seguinte. A sequência: lançar uma volta inteira de jogos cria
-         dezenas de registos novos, que são gravados UM A UM (de
-         propósito, ver mais acima); o ciclo demora vários segundos. Se
-         uma leitura destas começar a meio, a fotografia que traz é de
-         ANTES desses registos existirem — e `aGravar` só protege o
-         registo que está a ser escrito nesse instante, não os catorze
-         que já foram escritos depois de a leitura ter partido. Os
-         registos desapareciam do ecrã, mas continuavam no `snapshot`,
-         e o ciclo seguinte lia isso como "foram apagados".
-
-         A regra é simples: uma fotografia só serve para decidir quem
-         desapareceu se, entretanto, ninguém tiver mexido no álbum. Se
-         houve escritas nossas durante a leitura, ou se já havia um
-         ciclo de gravação a decorrer quando ela começou, ignora-se a
-         remoção e espera-se pela leitura seguinte — um registo fantasma
-         a mais durante uns minutos é incomparavelmente melhor do que
-         fazer desaparecer trabalho acabado de introduzir.
-
-         A parte de ACRESCENTAR o que veio de novo fica de fora desta
-         guarda: juntar é sempre seguro. */
-      const houveEscritasNossas = escritasConfirmadas.current !== escritasAoComecar
-        || escreviaAoComecar || aEscrever.current;
-      if ((data || []).length > 0 && !houveEscritasNossas) {
-        const idsNoServidor = new Set(data.map(r => r.id));
-        setItems(prev => {
-          const alguemFalta = prev.some(it => !idsNoServidor.has(it.id) && !aGravar.current.has(it.id));
-          if (!alguemFalta) return prev;
-          return prev.filter(it => idsNoServidor.has(it.id) || aGravar.current.has(it.id));
-        });
-      }
-    };
-    const aoFocar = () => apanharAtraso(false);
-    document.addEventListener('visibilitychange', aoFocar);
-    window.addEventListener('focus', aoFocar);
-    /* Alguns browsers/webviews não disparam `visibilitychange` de forma
-       fiável (sobretudo em apps embutidas) — por isso há também esta
-       verificação periódica, independente de qualquer evento. Mas não
-       precisa de ser frequente: é só uma rede de segurança para quando o
-       WebSocket morre e ninguém troca de aba durante muito tempo (ex.: um
-       ecrã de Monitorização deixado aberto o dia inteiro, sem ninguém a
-       tocar-lhe). 20 minutos continua a apanhar isso bem a tempo, e reduz
-       para uma fração o consumo de dados (Egress) desta rede de
-       segurança em 16 coleções × todas as pessoas com a app aberta ao
-       mesmo tempo, que era o que estava a esgotar a quota gratuita do
-       Supabase. */
-    const intervalo = setInterval(() => apanharAtraso(true), (ehPesada ? 60 : 20) * 60 * 1000);
-    return () => {
-      cancelled = true;
-      document.removeEventListener('visibilitychange', aoFocar);
-      window.removeEventListener('focus', aoFocar);
-      clearInterval(intervalo);
-    };
-  }, [table, teamId, ready]);
-
-  useEffect(() => {
-    if (!ready || !teamId) return;
-    if (aEscrever.current) { pedidoPendente.current = true; return; }
-    aEscrever.current = true;
-    (async () => {
-      // Sempre a versão MAIS RECENTE de `items` — se, enquanto este
-      // ciclo escreve, chegar outra alteração local (um clique a mais,
-      // ou o eco da própria escrita a repor `items`), o pedido fica
-      // marcado em `pedidoPendente` e este `do/while` relê-a no fim, em
-      // vez de um segundo efeito arrancar um ciclo à parte.
-      do {
-        pedidoPendente.current = false;
-        const items = itemsRef.current;
-      const currentIds = new Set(items.map(it => it.id));
-      const toUpsert = [];
-      for (const it of items) {
-        const { id, ...rest } = it;
-        // Nunca gravar um registo que ficou sem conteúdo nenhum. Um item só
-        // com id é sempre sinal de que algo correu mal a montante (ver o
-        // limite do Realtime acima) — gravá-lo destruiria o registo bom que
-        // está na base de dados.
-        if (Object.keys(rest).length === 0 && snapshot.current.has(id)) continue;
-        const json = jsonEstavel(rest);
-        /* O `team_id` vai em cada gravação. É também o que a política de
-           INSERT valida no WITH CHECK: sem ele, ou com o de outra equipa,
-           o Postgres recusa a linha. */
-        if (snapshot.current.get(id) !== json) toUpsert.push({ id, data: rest, team_id: teamId });
-      }
-      const toDelete = [];
-      for (const id of snapshot.current.keys()) if (!currentIds.has(id)) toDelete.push(id);
-
-      /* UM REGISTO DE CADA VEZ, e não todos num único upsert.
-
-         Um upsert com vários registos é UMA instrução SQL: se um deles for
-         enorme (um vídeo ou um PDF em base64) e rebentar o tempo limite do
-         Postgres, a instrução inteira é cancelada e NADA fica gravado —
-         nem os registos pequenos que iam à boleia. Era isto que fazia
-         falhar coisas triviais como criar uma pasta ou colar um link do
-         Drive: iam no mesmo lote de um ficheiro grande.
-
-         Assim, cada registo é gravado por si. Um grande que falhe não
-         arrasta os outros, e o aviso passa a dizer QUAL falhou. */
-      const failed = [];
-      for (const rec of toUpsert) {
-        aGravar.current.add(rec.id);
-        const { data, error } = await supabase.from(table).upsert([rec], { onConflict: 'id' })
-          .select('id, data, updated_by_email, updated_at');
-        /* NÃO se tira já a proteção deste id — só passados uns instantes.
-
-           O eco de Realtime da NOSSA PRÓPRIA gravação costuma chegar
-           quase de imediato, mas não é garantido: uma rede mais lenta,
-           ou várias gravações seguidas (clicar duas vezes seguidas no
-           mesmo momento) podem atrasá-lo o suficiente para chegar DEPOIS
-           de já se ter tirado a proteção — e nessa altura ele já não é
-           reconhecido como "nosso", é tratado como uma alteração vinda
-           de fora e aplicado por cima do que já estava (uma versão mais
-           antiga a substituir uma mais recente, perdendo a marcação).
-           Um segundo de folga chega para cobrir essa demora sem
-           atrapalhar gravações a sério de outra pessoa, que continuam a
-           reconhecer-se por serem de um id diferente. */
-        setTimeout(() => aGravar.current.delete(rec.id), 1200);
-        if (error) {
-          console.error(table, rec.id, error);
-          const nome = (rec.data && (rec.data.title || rec.data.name || rec.data.nome)) || rec.id;
-          /* O motivo real, não uma suposição.
-
-             Isto dizia sempre "ficheiros grandes não cabem", fosse qual
-             fosse o motivo verdadeiro — o que já enganou uma vez um
-             diagnóstico (um registo pequeníssimo a falhar por outra
-             razão, RLS por exemplo, e o aviso continuava a apontar para
-             o tamanho). Só se assume tamanho quando o registo É mesmo
-             grande; caso contrário mostra-se a mensagem que o Postgres
-             deu, que é sempre mais útil do que adivinhar. */
-          const tamanhoBytes = JSON.stringify(rec.data || {}).length;
-          const ehGrande = tamanhoBytes > 1.5 * 1024 * 1024;
-          const motivo = ehGrande
-            ? `ficheiro grande (~${Math.round(tamanhoBytes / 1024 / 1024)} MB) — não cabe numa linha da base de dados; usa o Storage ou o Google Drive`
-            : (error.message || error.hint || 'motivo desconhecido — vê a consola do browser (F12) para o erro completo');
-          failed.push(`${nome}: ${motivo}`);
-          continue;
-        }
-        escritasConfirmadas.current += 1;
-        (data || []).forEach(r => {
-          snapshot.current.set(r.id, jsonEstavel(r.data));
-          if (r.updated_at) ultimaHoraConhecida.current.set(r.id, r.updated_at);
-          setRecordMeta(prev => ({ ...prev, [r.id]: { email: r.updated_by_email, at: r.updated_at } }));
-        });
-      }
-      if (failed.length) {
-        reportSyncError(table, {
-          message: `Não ficou gravado: ${failed.join(' · ')}.`,
-        });
-      }
-      if (toDelete.length) {
-        /* TRAVÃO DE SEGURANÇA.
-
-           Apagar três ou mais registos de uma vez quase nunca é
-           deliberado: costuma vir de o estado local ter ficado vazio ou
-           truncado por engano (uma sessão que caiu a meio, um erro de
-           renderização, um bug nesta mesma função). Nesses casos não se
-           apaga nada e avisa-se, porque o custo de errar é assimétrico:
-           não apagar deixa lixo recuperável na base de dados, apagar por
-           engano destrói trabalho de uma época inteira.
-
-           MAS há uma exceção legítima, e ela nasceu com o Desenvolvimento
-           Individual: apagar um momento de avaliação apaga também a linha
-           de cada jogador — dezenas de registos de uma vez. Sem porta de
-           saída, o travão tornava impossível apagar um momento, e a
-           mensagem parecia um erro quando era a proteção a funcionar.
-
-           `remocaoAutorizada` abre a porta para UMA gravação, e é ligada
-           pelo código que sabe que a remoção é intencional. Nunca fica
-           ligada de forma permanente — é isso que a mantém uma exceção e
-           não um buraco. */
-        if (toDelete.length >= 3 && !remocaoAutorizada.current) {
-          console.error(table, 'eliminação em massa bloqueada:', toDelete);
-          reportSyncError(table, {
-            message: `Foi travada a eliminação de ${toDelete.length} registos de uma só vez. `
-              + 'Nada foi apagado. Recarrega a página — se os registos voltarem, estava tudo bem.',
-          });
-        } else {
-          // Consome a autorização: vale para esta gravação e mais nenhuma.
-          remocaoAutorizada.current = false;
-          const { error } = await supabase.from(table).delete().in('id', toDelete);
-          escritasConfirmadas.current += 1;
-          if (!error) toDelete.forEach(id => snapshot.current.delete(id));
-          else { console.error(table, error); reportSyncError(table, error); }
-        }
-      }
-      if (toUpsert.length || toDelete.length) notifyEdit(table);
-      } while (pedidoPendente.current);
-      aEscrever.current = false;
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, ready]);
-
-  return [items, setItems, ready, recordMeta, () => { remocaoAutorizada.current = true; }];
-}
-
-/* ---------------------------------------------------------------
-   ANULAR — rede de segurança para eliminações acidentais
-
-   Um clique a mais no caixote apagava um exercício, um jogador ou uma
-   sessão sem hipótese de recuperar. Em vez de pôr uma confirmação em
-   cada botão (que se acaba por carregar em automático e não protege
-   nada), o item é removido na mesma e fica uma barra em baixo, durante
-   alguns segundos, com a opção "Anular".
-
-   A reposição usa o MESMO id do registo. Isso é importante: o id é o que
-   liga um exercício às sessões onde está, um jogador às convocatórias e
-   às presenças, um jogo às notas. Repor com id novo partia essas
-   ligações; repor com o id original devolve tudo exatamente como estava.
----------------------------------------------------------------- */
-const UNDO_SECONDS = 12;
-// Só há uma barra montada de cada vez (fica na App, ao lado do conteúdo).
-let undoHandler = null;
-function offerUndo(message, onUndo) {
-  if (typeof undoHandler === 'function') undoHandler({ key: uid(), message, onUndo });
-}
 /* A mesma barra, com uma ação extra opcional: um link (por exemplo,
    WhatsApp com a mensagem escrita). É um <a>, não um window.open, para o
    browser o tratar como um toque direto da pessoa e não o bloquear. */
@@ -1871,14 +795,6 @@ function offerAviso({ message, onUndo, acao }) {
   if (typeof undoHandler === 'function') undoHandler({ key: uid(), message, onUndo, acao });
 }
 
-/* Pedido de confirmação — a primeira das duas redes. Também é global:
-   quem chama não precisa de gerir estado nenhum. */
-let confirmHandler = null;
-function askConfirm(pedido) {
-  if (typeof confirmHandler === 'function') { confirmHandler({ key: uid(), ...pedido }); return; }
-  // Sem diálogo montado (não devia acontecer), não se apaga nada em
-  // silêncio: é preferível não fazer nada do que apagar sem confirmação.
-}
 
 /* Apaga um item de uma lista sincronizada, com DUAS redes de segurança:
    1) pergunta primeiro, com o nome do registo à frente — para o clique
@@ -2010,189 +926,6 @@ function contarRastoDoJogador({ playerId, sessions, matches, convocatorias, moni
   };
 }
 
-function removeWithUndo(list, setList, id, label, depois) {
-  const alvo = (list || []).find(x => x.id === id);
-  if (!alvo) return;
-  askConfirm({
-    label,
-    onConfirm: () => {
-      setList(prev => prev.filter(x => x.id !== id));
-      if (typeof depois === 'function') depois();
-      offerUndo(`${label} apagado.`, () => {
-        // Funcional e à prova de repetições: se entretanto o registo voltou
-        // (por exemplo por sincronização de outro dispositivo), não duplica.
-        setList(prev => (prev.some(x => x.id === id) ? prev : [...prev, alvo]));
-      });
-    },
-  });
-}
-
-function ConfirmDialog() {
-  const [pedido, setPedido] = useState(null);
-  // Só para quando o pedido pede para escrever uma palavra/nome antes de
-  // deixar confirmar (ex.: apagar uma equipa). Reinicia sempre que muda
-  // o pedido — inclusive quando um pedido é substituído por outro
-  // encadeado (ver a nota em `confirmar`), para não sobrar texto escrito
-  // no diálogo anterior.
-  const [digitado, setDigitado] = useState('');
-
-  useEffect(() => {
-    confirmHandler = (next) => { setDigitado(''); setPedido(next); };
-    return () => { confirmHandler = null; };
-  }, []);
-
-  // Aqui o Esc PODE fechar (ao contrário das janelas de edição): fechar
-  // este diálogo é cancelar, nunca destrói nada.
-  useEffect(() => {
-    if (!pedido) return;
-    const onKey = (e) => { if (e.key === 'Escape') setPedido(null); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [pedido]);
-
-  if (!pedido) return null;
-
-  const precisaTexto = !!pedido.confirmText;
-  const textoBate = !precisaTexto
-    || digitado.trim().toLowerCase() === String(pedido.confirmText).trim().toLowerCase();
-
-  const confirmar = () => {
-    if (!textoBate) return;
-    /* `onConfirm` pode, ele próprio, chamar `askConfirm` outra vez — é o
-       caso de "apagar equipa", que encadeia um segundo diálogo (a última
-       confirmação) a seguir a este. Se se fechasse sempre com
-       `setPedido(null)` no fim, isso apagava esse segundo diálogo mesmo
-       antes de ele chegar a aparecer. Por isso só se fecha AQUI se
-       ninguém tiver posto um pedido novo entretanto. */
-    const pedidoAntes = pedido;
-    try { pedido.onConfirm(); } catch (e) { console.error(e); }
-    setPedido(prev => (prev === pedidoAntes ? null : prev));
-  };
-
-  return createPortal(
-    <div
-      onClick={() => setPedido(null)}
-      style={{
-        // Sempre por cima de tudo (antes ficava escondida atrás do leitor de
-        // clipes da Análise, que está a 1000, e só aparecia ao fechá-lo).
-        position: 'fixed', inset: 0, background: '#000000bb', zIndex: 3000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
-          width: '100%', maxWidth: 460, padding: 22, boxShadow: '0 20px 60px #00000090',
-        }}
-      >
-        <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{pedido.title || 'Apagar?'}</h3>
-        <p style={{ color: T.cream, fontSize: 13.5, margin: '0 0 4px', ...body }}>{pedido.label}</p>
-        {/* Sem `note`, assume-se a rede de anular — é o caso das
-            eliminações, que são a maioria. Com `note: ''`, não sai
-            parágrafo nenhum: há diálogos em que o título e a linha do meio
-            já dizem tudo, e acrescentar texto é só ruído a explicar o
-            funcionamento a quem só quer decidir. */}
-        {(() => {
-          const nota = pedido.note === undefined ? 'Ainda vais poder anular durante alguns segundos.' : pedido.note;
-          return nota
-            ? <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>{nota}</p>
-            : <div style={{ height: 14 }} />;
-        })()}
-        {precisaTexto && (
-          <div style={{ margin: '0 0 18px' }}>
-            <div style={{ color: T.muted, fontSize: 12.5, margin: '0 0 8px', ...body }}>
-              Para confirmar, escreve: <strong style={{ color: T.cream }}>{pedido.confirmText}</strong>
-            </div>
-            <input
-              autoFocus
-              value={digitado}
-              onChange={e => setDigitado(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && textoBate) confirmar(); }}
-              placeholder={pedido.confirmText}
-              style={{
-                width: '100%', boxSizing: 'border-box', background: T.surface,
-                border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
-                color: T.cream, fontSize: 14, outline: 'none', ...body,
-              }}
-            />
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <Btn variant="ghost" onClick={() => setPedido(null)}>Cancelar</Btn>
-          <Btn onClick={confirmar} disabled={!textoBate}>
-            {pedido.destructive === false ? <Check size={15} /> : <Trash2 size={15} />}
-            {pedido.confirmLabel || 'Apagar'}
-          </Btn>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
-
-// Nome legível de um registo, para a mensagem da barra.
-function itemLabel(item, fallback = 'Registo') {
-  const nome = item && (item.name || item.title || item.titulo || item.focus || item.opponent || item.adversario);
-  return nome ? `${fallback} "${nome}"` : fallback;
-}
-
-function UndoBar() {
-  const [aviso, setAviso] = useState(null);
-
-  useEffect(() => {
-    undoHandler = (next) => setAviso(next);
-    return () => { undoHandler = null; };
-  }, []);
-
-  useEffect(() => {
-    if (!aviso) return;
-    const t = setTimeout(() => setAviso(null), UNDO_SECONDS * 1000);
-    return () => clearTimeout(t);
-  }, [aviso]);
-
-  if (!aviso) return null;
-
-  return createPortal(
-    <div style={{
-      position: 'fixed', left: 14, right: 14, bottom: 18, zIndex: 90,
-      display: 'flex', justifyContent: 'center', pointerEvents: 'none',
-    }}>
-      <div style={{
-        pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12,
-        width: '100%', maxWidth: 520, background: T.surfaceRaise,
-        border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
-        boxShadow: '0 14px 44px #000000a0',
-      }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, ...body }}>{aviso.message}</span>
-        {aviso.acao && aviso.acao.href && (
-          <a
-            href={aviso.acao.href} target="_blank" rel="noopener noreferrer"
-            onClick={() => setAviso(null)}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, textDecoration: 'none',
-              background: 'transparent', color: T.cream, border: '1px solid #25D366', borderRadius: 7,
-              padding: '6px 11px', fontSize: 12.5, fontWeight: 600, ...body,
-            }}
-          ><MessageCircle size={14} color="#25D366" /> {aviso.acao.label}</a>
-        )}
-        {aviso.onUndo && <button
-          onClick={() => { try { aviso.onUndo(); } catch (e) { console.error(e); } setAviso(null); }}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
-            background: '#B5393F', color: TEXT_ON_ACCENT, border: 'none', borderRadius: 7,
-            padding: '7px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
-          }}
-        ><Undo2 size={14} /> Anular</button>}
-        <button
-          onClick={() => setAviso(null)} title="Dispensar"
-          style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}
-        ><X size={16} /></button>
-      </div>
-    </div>,
-    document.body
-  );
-}
 
 // Calcula a média de bem-estar de um registo de monitorização, usando
 // apenas os campos que existirem (compatível com registos antigos, que
@@ -2234,55 +967,6 @@ function Badge({ number, label }) {
 // "Gerar estatística e assiduidade"); num ecrã estreito não passa da linha.
 const BTN_GERAR_DOC = { width: 'min(300px, 80vw)', justifyContent: 'center', whiteSpace: 'nowrap' };
 
-function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {}, type = 'button', disabled, title, escuro }) {
-  /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
-
-     Um "Guardar" que cria um registo novo gera um id novo dentro do
-     próprio clique — dois cliques muito seguidos (ecrã lento a reagir,
-     dedo a escorregar, duplo toque por acidente no telemóvel) disparavam
-     o mesmo código duas vezes e criavam dois registos, um por clique. Foi
-     exatamente este tipo de falha que já apanhámos na gravação do
-     questionário (`checkin_save`) — em vez de corrigir dezenas de botões
-     "Guardar" espalhados pela app um a um, a proteção fica aqui, no botão
-     partilhado por todos eles.
-
-     400 ms chega para distinguir um toque duplo por acidente (tipicamente
-     bem abaixo de 300 ms de intervalo) de dois cliques a sério em botões
-     diferentes ou no mesmo botão com intenção — sem se notar como atraso
-     em uso normal, mesmo a navegar depressa (ex.: "Seguinte" numa
-     animação). */
-  const ultimoClique = useRef(0);
-  const handleClick = (e) => {
-    const agora = Date.now();
-    if (agora - ultimoClique.current < 400) return;
-    ultimoClique.current = agora;
-    if (onClick) onClick(e);
-  };
-  const base = {
-    ...body, fontSize: 13.5, fontWeight: 600, padding: '9px 16px', borderRadius: 7,
-    border: '1px solid transparent', cursor: disabled ? 'not-allowed' : 'pointer',
-    display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all .15s ease',
-    opacity: disabled ? 0.5 : 1,
-  };
-  const variants = {
-    primary: { background: '#B5393F', color: TEXT_ON_ACCENT, },
-    // `escuro`: botões por cima do vídeo (sempre escuro), também no modo claro.
-    ghost: { background: 'transparent', color: escuro ? T_ESCURO.cream : T.cream, border: `1px solid ${escuro ? T_ESCURO.line : T.line}` },
-    danger: { background: 'transparent', color: T.bad, border: `1px solid ${T.bad}55` },
-  };
-  return (
-    <button type={type} disabled={disabled} title={title} onMouseDown={onMouseDown} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
-      {children}
-    </button>
-  );
-}
-
-/* Grelha-padrão dos formulários. Todas as caixas de um mesmo bloco devem
-   viver numa ÚNICA grelha: quando se usam grelhas separadas por linha (uma
-   com 3 campos, a seguir outra com 4), as caixas ficam com larguras
-   diferentes de linha para linha. Campos que ocupam a linha toda usam
-   FIELD_FULL. */
-const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 };
 
 /* Filtro por momento do jogo.
 
@@ -2322,59 +1006,7 @@ function MomentoFilter({ value, onChange, options }) {
     </div>
   );
 }
-const FIELD_FULL = { gridColumn: '1 / -1' };
 
-/* `bloco` — para campos que não são uma caixa de texto.
-
-   Um <label> do HTML transfere QUALQUER clique dentro dele para o primeiro
-   controlo que contém. Isso é útil num campo normal (clicar na palavra
-   "Nome" põe o cursor na caixa) e é um problema em blocos grandes:
-
-   · no Anexo, clicar no espaço vazio ao lado dos botões abria a janela de
-     escolher ficheiro — o clique ia parar ao <input type="file">;
-   · no Esquema tático, clicar na margem à volta do campo dava foco ao
-     primeiro botão da barra de ferramentas, e o browser rolava a janela
-     para o trazer à vista — era o "salta para cima".
-
-   Com `bloco`, a etiqueta continua a ser um <label> (para leitores de
-   ecrã), mas o conteúdo fica fora dele: os cliques no vazio não vão dar a
-   lado nenhum.
-
-   height:100% + marginTop:auto: quando os campos estão lado a lado numa
-   grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE NASCIMENTO"), as
-   caixas continuam alinhadas em baixo. */
-/* `solto` — para um campo que está sozinho numa coluna, e não lado a lado
-   com outros numa grelha.
-
-   O `height: 100%` abaixo serve para alinhar as caixas em baixo quando os
-   campos estão emparelhados e uma etiqueta ocupa duas linhas. Num campo
-   solto dentro de um cartão faz o contrário do que se quer: o campo estica
-   até à altura toda do cartão, o `marginTop: auto` empurra a caixa para o
-   fundo, e tudo o que vinha a seguir sai para fora do cartão e fica por
-   cima do conteúdo seguinte. Era o que acontecia no Simulador, com o
-   "Dia do treino" a atirar a lista de exercícios para fora da caixa. */
-function Field({ label, children, labelColor, bloco, solto }) {
-  const etiqueta = (
-    <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
-  );
-  const estilo = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, ...(solto ? {} : { height: '100%' }), ...body };
-
-  if (bloco) {
-    return (
-      <div style={estilo}>
-        <label style={{ display: 'block' }}>{etiqueta}</label>
-        <div style={solto ? { minWidth: 0 } : { marginTop: 'auto', minWidth: 0 }}>{children}</div>
-      </div>
-    );
-  }
-
-  return (
-    <label style={estilo}>
-      {etiqueta}
-      <div style={solto ? { minWidth: 0 } : { marginTop: 'auto', minWidth: 0 }}>{children}</div>
-    </label>
-  );
-}
 
 /* Campo de fotografia reutilizável (ficha de scouting e ficha do plantel).
    Guarda a foto como data URL já redimensionada em `value`. */
@@ -2559,141 +1191,6 @@ function PhotoField({ label = 'Fotografia', value, onChange, hint }) {
 // Altura da barra superior em mobile (fixa no topo + espaçador).
 const MOBILE_BAR_H = 62;
 
-const inputStyle = {
-  background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '0 10px',
-  color: T.cream, fontSize: 14, ...body, outline: 'none',
-  width: '100%', height: 40, lineHeight: '38px', boxSizing: 'border-box', minWidth: 0,
-};
-
-/* CAMPOS SOBREPOSTOS NO SAFARI / iPAD
-
-   Os `input type=date` e `type=time` do Safari trazem uma largura própria
-   imposta pelo aspeto nativo e ignoram o `width: 100%` — passam por cima
-   do campo do lado quando estão numa grelha de duas colunas. É o que
-   acontecia na Nova convocatória (Data, Hora do jogo, Hora de
-   concentração lado a lado) e acontece em qualquer formulário com datas:
-   ficha do jogador, sessão, jogo, filtros de monitorização.
-
-   `appearance: none` tira essa largura imposta e o campo passa a respeitar
-   a célula. Aplica-se só ao Input: no Select apagaria também a setinha
-   nativa, que é a única indicação de que a lista abre. */
-const inputResetStyle = { WebkitAppearance: 'none', appearance: 'none', maxWidth: '100%' };
-function Input(props) { return <input {...props} style={{ ...inputStyle, ...inputResetStyle, ...(props.style || {}) }} />; }
-function Select(props) { return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
-/* `forwardRef` porque quem usa isto precisa por vezes de chegar ao
-   elemento — por exemplo o Diário, que põe o cursor dentro da nota ao
-   carregar no lápis. Sem isto a `ref` era simplesmente ignorada. */
-const TextArea = React.forwardRef(function TextArea(props, ref) {
-  return <textarea ref={ref} {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
-});
-
-/* `wide` alarga; `xwide` alarga mais ainda — é o tamanho das janelas com
-   campo tático, onde a precisão do desenho depende de o campo ser grande
-   no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
-   limite passa a ser a largura da janela. */
-function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larguraMax }) {
-  const estreito = useIsMobile(620);
-  const scrollRef = useRef(null);
-  useModalHistory(onClose);
-  // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
-  // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
-  // clique acidental fora — muito fácil de dar ao arrastar peças no editor
-  // tático — deitava fora tudo o que estava a ser preenchido. Fecha-se só
-  // pelo X ou pelo botão Cancelar (o Esc também não fecha, pelo mesmo
-  // motivo: seria outra forma acidental de perder o que está preenchido).
-
-  /* PÁGINA INTEIRA, EM VEZ DE JANELA FLUTUANTE.
-
-     O editor de exercício e o de ideia de jogo são os formulários mais
-     compridos da app (texto, metadados, o editor tático completo por
-     baixo) — dentro de uma janela pequena a meio do ecrã, com uma faixa
-     escura à volta, ficavam apertados e obrigavam a rolar dentro de uma
-     caixa dentro da página. Aqui ocupam o ecrã todo, como se fossem uma
-     página própria: mesmo fundo da app, mesmo scroll da página, sem
-     caixa nem fundo escurecido — só o cabeçalho com o título e o X a
-     fechar, tal como qualquer outra janela. */
-  if (fullPage) {
-    // Referência ao próprio contentor que rola aqui dentro — é ele que
-    // tem overflowY:auto, ao contrário da janela normal que fica presa
-    // ao scroll do <main>. Sem isto o botão de "voltar ao topo" nunca
-    // saberia até onde se desceu no editor de exercício/ideia de jogo,
-    // que são justamente os formulários mais compridos da app (ver
-    // comentário acima).
-    return (
-      <div ref={scrollRef} style={{
-        position: 'fixed', inset: 0, background: T.bg, zIndex: 50,
-        overflowY: 'auto', overflowX: 'hidden',
-        // Reserva sempre o lugar da barra de deslocamento: quando o
-        // conteúdo cresce (ex.: mudar o tipo no formulário do Diário) a
-        // barra aparece sem empurrar a página para o lado.
-        scrollbarGutter: 'stable',
-      }}>
-        <div style={{
-          // `larguraMax`: largura própria, quando nenhuma das três serve
-          // (a matriz wellness × esforço).
-          maxWidth: larguraMax || (xwide ? 1100 : (wide ? 640 : 460)), margin: '0 auto',
-          padding: estreito ? 14 : 22, paddingBottom: 60,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
-            <div style={{ minWidth: 0 }}>
-              <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
-              {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
-              <X size={20} />
-            </button>
-          </div>
-          {children}
-        </div>
-        <BotaoTopo alvoRef={scrollRef} isMobile={estreito} onFechar={onClose} soAlvo />
-      </div>
-    );
-  }
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: '#000000aa', zIndex: 50,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: estreito ? 8 : 16,
-    }}>
-      <div
-        ref={scrollRef}
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
-          width: '100%', maxWidth: xwide ? 1100 : (wide ? 640 : 460), maxHeight: '92vh',
-          /* `overflowY: auto` SOZINHO não chega — e era esta a origem do
-             arrastamento lateral no telemóvel.
-
-             Pelas regras do CSS, quando um dos eixos deixa de ser
-             `visible`, o outro passa automaticamente de `visible` a
-             `auto`. Ou seja: pedir scroll vertical dava scroll horizontal
-             de borla, e bastava um elemento uns pixéis mais largo para a
-             janela inteira deslizar de lado.
-
-             Declarar `overflowX: hidden` fecha essa porta. As tabelas que
-             precisam mesmo de rolar na horizontal (presenças,
-             classificação) têm o seu próprio invólucro com scroll e
-             continuam a funcionar. */
-          overflowY: 'auto', overflowX: 'hidden',
-          padding: estreito ? 14 : 22, boxShadow: '0 20px 60px #00000080',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
-          <div style={{ minWidth: 0 }}>
-            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
-            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
-            <X size={20} />
-          </button>
-        </div>
-        {children}
-      </div>
-      <BotaoTopo alvoRef={scrollRef} isMobile={estreito} onFechar={onClose} soAlvo />
-    </div>
-  );
-}
 
 /* SUB-SEPARADORES DENTRO DE UMA SECÇÃO.
 
@@ -2734,17 +1231,6 @@ function SubTabs({ value, onChange, tabs, semMargem }) {
   );
 }
 
-function EmptyState({ text, action }) {
-  return (
-    <div style={{
-      border: `1px dashed ${T.line}`, borderRadius: 10, padding: '36px 20px',
-      textAlign: 'center', color: T.mutedDim, ...body, fontSize: 14,
-    }}>
-      <p style={{ margin: '0 0 12px' }}>{text}</p>
-      {action}
-    </div>
-  );
-}
 
 const AUDIT_ACTION_LABEL = { criou: 'Criado', editou: 'Editado', apagou: 'Apagado' };
 
@@ -2847,22 +1333,6 @@ function HistoryModal({ table, recordId, title, onClose }) {
   );
 }
 
-/* ---------------------------------------------------------------
-   APP
----------------------------------------------------------------- */
-// Deteta ecrãs estreitos (telemóvel) e reage a rotação/redimensionamento,
-// para o layout poder trocar a barra lateral fixa por um menu retrátil.
-function useIsMobile(breakpoint = 860) {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
-  );
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [breakpoint]);
-  return isMobile;
-}
 
 /* ARRASTAR UM JOGADOR PARA CIMA DE OUTRO (OU DE UM LUGAR VAZIO) TROCA-OS
    DE SÍTIO — em qualquer campo da app que mostre jogadores em lugares
@@ -3009,75 +1479,7 @@ function useSubColecao(itemsCompletos, setItemsCompletos, pertence) {
   return [items, setItems];
 }
 
-/* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
 
-   Abrir o perfil de um jogador, a ficha de um jogo, ou qualquer vista
-   de detalhe destas — em cheio, a substituir o conteúdo da aba — nunca
-   mexia no endereço nem no histórico do browser: era só estado do
-   React. Resultado: ao retroceder, o browser ia para a última vez que
-   o ENDEREÇO mudou (a última mudança de aba, ex.: #jogos → #plantel),
-   nunca para "antes de abrir este jogador" — porque, aos olhos do
-   browser, essa abertura nunca tinha acontecido.
-
-   Este hook empurra uma entrada extra no histórico assim que a vista
-   de detalhe abre (mesmo endereço, só um marcador). Retroceder nessa
-   entrada é o que o browser já sabe fazer sozinho — e é isso que faz
-   cair de volta na aba anterior, não na lista desta aba.
-
-   Para o botão "Voltar" DENTRO da app dar o mesmo resultado, ele deve
-   chamar `back()` (devolvido por este hook) em vez de fechar a vista
-   diretamente — assim há só UM caminho a fechar a vista (retroceder no
-   histórico), e os dois gatilhos (botão da app, botão do telemóvel/
-   browser) ficam sempre de acordo, sem risco de uma entrada de
-   histórico ficar esquecida por trás.
-
-   UMA VISTA DENTRO DE OUTRA (ex.: abrir uma tática de dentro da ficha
-   de um adversário) EMPILHA duas destas marcas, uma por cima da outra.
-   Sem cuidado, fechar a de dentro dispara UM "popstate" só — e esse
-   evento único chega a AMBOS os ouvintes (o de dentro e o de fora), que
-   sem saberem distinguir "foi a minha marca que saiu?" fechavam-se os
-   dois de uma vez, fazendo saltar duas vistas com um só fecho. Cada
-   marca leva por isso um identificador próprio (`marker`); ao ouvir um
-   "popstate", compara-se o identificador que ficou no topo do
-   histórico com o nosso — só nos fechamos se DEIXOU de ser o nosso
-   (sinal de que foi mesmo a nossa entrada, ou algo acima dela, que
-   saiu); se ainda é o nosso, foi uma marca mais funda a sair, e não nos
-   diz respeito. */
-/* TROCAR DE JANELA SEM PASSAR PELO HISTÓRICO NO MEIO.
-
-   Fechar uma janela (Modal ou vista de detalhe) empurra um "voltar"
-   pendente no histórico; abrir outra empurra logo a seguir uma marca
-   nova. Quando as duas coisas acontecem no MESMO gesto — o botão
-   "Editar" de qualquer ficha, que fecha a vista e abre o editor ao
-   mesmo tempo — o "voltar" só é processado pelo browser depois de a
-   marca nova já lá estar, e acaba por desfazer a marca ERRADA (a da
-   janela que acabou de abrir, não a da que fechou). O efeito visto foi
-   o editor a abrir e fechar-se sozinho de imediato, voltando à janela
-   anterior.
-
-   `modalHandoffAtivo` avisa a próxima janela a montar que está a
-   HERDAR a marca da anterior em vez de empilhar uma nova — sem
-   empilhar nem desempilhar nada no meio, não há corrida nenhuma.
-   `trocarJanela` é o que qualquer botão "Editar" (ou equivalente) deve
-   usar em vez de chamar o fecho e a abertura diretamente. */
-let modalHandoffAtivo = false;
-function trocarJanela(fechar, abrir) {
-  modalHandoffAtivo = true;
-  fechar();
-  abrir();
-}
-function herdarOuEmpurrarMarca() {
-  if (modalHandoffAtivo) {
-    modalHandoffAtivo = false;
-    const atual = window.history.state && window.history.state.mjpMarker;
-    if (atual) return atual;
-    // Handoff sem marca nenhuma por baixo (raro): cria uma na mesma,
-    // sem empilhar, para não ficar sem histórico nenhum.
-  }
-  const meuMarker = uid();
-  window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
-  return meuMarker;
-}
 /* Passos internos de uma área do Portal do Atleta que o gesto de
    retroceder deve fechar primeiro (ver CheckinKiosk). */
 let KIOSK_VOLTAR_INTERNO = [];
@@ -3118,149 +1520,6 @@ function useDetailBack(aberto, fechar) {
   return () => window.history.back();
 }
 
-/* A MESMA IDEIA, MAS PARA QUALQUER Modal — sem precisar de tocar em
-   cada botão "Cancelar"/"Guardar"/X de cada formulário da app, um a
-   um.
-
-   Um Modal só existe montado enquanto está aberto (o padrão em toda a
-   app é `{modal && <Modal onClose={...}>}`) — ou seja, ABRIR é montar
-   e FECHAR é desmontar, seja qual for o botão que o motivou. Aproveita-
-   -se exatamente isso: ao montar, empurra-se uma marca no histórico;
-   ao desmontar (por QUALQUER motivo — X, Cancelar, Guardar, ou o
-   próprio retroceder do browser), confirma-se que essa marca foi
-   mesmo consumida. Se ainda lá estiver (fechou-se por um botão da
-   app, não pelo browser), consome-se sozinho — assim nunca fica uma
-   marca por trás à espera de um retroceder que já não serve para
-   nada, e o retroceder do browser passa a fechar QUALQUER janela desta
-   app, em qualquer aba, sem precisar de dizer isso janela a janela.
-
-   Mesmo cuidado do `useDetailBack` com marcas identificadas — ver a
-   nota lá em cima sobre vistas empilhadas (um Modal aberto de dentro
-   de outra vista de detalhe): sem isso, fechar o Modal de dentro fazia
-   fechar também a vista de fora, com um só gesto. */
-function useModalHistory(onClose) {
-  const markerRef = useRef(null);
-  const fechadoPeloPop = useRef(false);
-  useEffect(() => {
-    const meuMarker = herdarOuEmpurrarMarca();
-    markerRef.current = meuMarker;
-    const onPop = () => {
-      const atual = window.history.state && window.history.state.mjpMarker;
-      if (atual === meuMarker) return; // saiu uma marca mais funda, não a nossa
-      fechadoPeloPop.current = true;
-      onClose();
-    };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if (fechadoPeloPop.current) return;
-      if (modalHandoffAtivo) return; // outra janela vai herdar esta marca, não a desfazer agora
-      const atual = window.history.state && window.history.state.mjpMarker;
-      if (atual === meuMarker) window.history.back();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-}
-
-function BotaoTopo({ alvoRef, isMobile, onFechar, soAlvo }) {
-  /* VOLTAR AO TOPO.
-
-     Numa lista de exercícios ou de jogos de uma época inteira, descer
-     dezenas de "gestos" (ou scrolls de rato) para regressar ao início é
-     desnecessário. O botão só aparece depois de se ter descido um ecrã
-     inteiro — antes disso não serve para nada e só tapava conteúdo.
-
-     Aparece em telemóvel E em desktop: em desktop fica mais junto ao
-     canto (sem reservar espaço para a barra de navegação inferior, que
-     só existe no telemóvel).
-
-     E FECHAR, logo por baixo (`onFechar`). Nas janelas e páginas
-     compridas, o X está lá no topo; depois de descer um ecrã, sair
-     obrigava a subir tudo primeiro. Aparece com a mesma regra da seta —
-     no topo o X normal está à vista e este não faz falta — e faz
-     exatamente o mesmo que o X (nos formulários, o rascunho automático
-     continua a guardar o que estava escrito). Só o X, redondo como a
-     seta (o nome aparece ao passar o rato).
-
-     `soAlvo`: numa janela por cima da app, só conta o scroll DA JANELA —
-     a página por trás pode estar lá em baixo, e isso não é motivo para
-     os botões aparecerem mal a janela abre. */
-  const [visivel, setVisivel] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    /* QUEM É QUE ROLA?
-
-       Em vez de decidir uma única vez, ao arrancar, qual dos dois rola
-       (o <main> ou a janela) — o que corria mal se a página ainda não
-       tivesse estabilizado nesse instante (ex.: dados ainda a carregar)
-       e deixava o botão "surdo" para o resto da sessão — agora ouvem-se
-       os dois em simultâneo. Em desktop só o <main> mexe; em telemóvel
-       só a janela mexe; o outro fica só a ouvir sem nunca disparar. */
-    const el = (alvoRef && alvoRef.current) || null;
-    const ler = () => {
-      const elY = el ? el.scrollTop : 0;
-      if (soAlvo) return elY;
-      const winY = window.scrollY || document.documentElement.scrollTop || 0;
-      return Math.max(elY, winY);
-    };
-    // "Um ecrã": a altura de quem rola (uma janela flutuante é mais baixa
-    // que o ecrã — com a altura do ecrã os botões quase nunca apareciam).
-    const altura = () => (soAlvo && el && el.clientHeight ? el.clientHeight : window.innerHeight);
-    const aoRolar = () => setVisivel(ler() > altura() * 0.9);
-    aoRolar();
-    if (!soAlvo) window.addEventListener('scroll', aoRolar, { passive: true });
-    if (el) el.addEventListener('scroll', aoRolar, { passive: true });
-    return () => {
-      if (!soAlvo) window.removeEventListener('scroll', aoRolar);
-      if (el) el.removeEventListener('scroll', aoRolar);
-    };
-  }, [alvoRef, soAlvo]);
-
-  if (!visivel) return null;
-
-  const subir = () => {
-    const el = (alvoRef && alvoRef.current) || null;
-    const elRola = !!el && el.scrollHeight > el.clientHeight + 4;
-    if (elRola) el.scrollTo({ top: 0, behavior: 'smooth' });
-    else window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const lado = isMobile ? 44 : 40;
-  const sombra = '0 4px 14px rgba(0,0,0,0.45)';
-  return (
-    <div style={{
-      position: 'fixed', right: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
-      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
-    }}>
-      <button
-        onClick={subir}
-        aria-label="Voltar ao topo"
-        title="Voltar ao topo"
-        style={{
-          width: lado, height: lado, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: T.surfaceRaise, border: `1px solid ${T.line}`,
-          color: T.cream, cursor: 'pointer', boxShadow: sombra,
-        }}
-      ><ChevronLeft size={isMobile ? 20 : 18} style={{ transform: 'rotate(90deg)' }} /></button>
-      {onFechar && (
-        <button
-          onClick={onFechar}
-          aria-label="Fechar"
-          title="Fechar"
-          style={{
-            width: lado, height: lado, borderRadius: '50%', padding: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: T.surfaceRaise, border: `1px solid ${T.line}`,
-            color: T.cream, cursor: 'pointer', boxShadow: sombra,
-          }}
-        ><X size={isMobile ? 20 : 18} /></button>
-      )}
-    </div>
-  );
-}
 
 /* Plano da sincronização Análise de Vídeo → fichas (ver o efeito em App). */
 function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) {
@@ -4053,7 +2312,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   ];
 
 
-
   /* Qual das duas bibliotecas está aberta. Um #videos ou #apresentacoes
      antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
   const [biblioteca, setBiblioteca] = useState(() => {
@@ -4327,8 +2585,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
        `modalHandoffAtivo` avisa esses ecrãs para não tentarem limpar
        nada — a navegação está a ser tratada aqui, pela troca de
        separador em si. */
-    modalHandoffAtivo = true;
-    setTimeout(() => { modalHandoffAtivo = false; }, 0);
+    definirModalHandoff(true);
+    setTimeout(() => { definirModalHandoff(false); }, 0);
     setTabPedida(id);
     if (id === 'videos' || id === 'apresentacoes') setBiblioteca(id);
     setTab(tabValida(id));
@@ -5456,23 +3714,6 @@ function StandingsSummary({ standings, season, topo = 6 }) {
   );
 }
 
-const ACTIVITY_LABELS = {
-  season_config: 'Época', players: 'Plantel', exercises: 'Exercícios', ideias: 'Ideia de Jogo',
-  sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
-  scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
-  league_standings: 'Classificação', clinico: 'Boletim Clínico', tarefas: 'Tarefas',
-};
-
-function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.round(diff / 60000);
-  if (mins < 1) return 'agora mesmo';
-  if (mins < 60) return `há ${mins} min`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `há ${hours}h`;
-  const days = Math.round(hours / 24);
-  return `há ${days}d`;
-}
 
 // Mostra quem foi a última pessoa da equipa técnica a editar cada bloco
 // de dados (plantel, jogos, sessões, ...) e há quanto tempo.
@@ -8014,12 +6255,6 @@ function Stat({ value, label }) {
 
 const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
-// Normaliza para comparar nomes de mês sem acentos/maiúsculas — o texto
-// do ficheiro modelo tem acentos ("Março"), o que se escreve à mão para
-// o comparar pode não ter.
-function semAcentos(s) {
-  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
 
 // Escapa texto para entrar num nó <t> de XML — & < > sempre, e a
 // quebra de linha como &#10; (é assim que o Excel guarda um "Alt+Enter"
@@ -9376,7 +7611,6 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }
-
 
 
 /* FICHA INDIVIDUAL DO JOGADOR (Word) — UM SÓ .docx COM UMA FICHA POR
@@ -12298,22 +10532,6 @@ function PlantelStatusSummary({ players, compacto = false }) {
   );
 }
 
-function Panel({ title, children, action }) {
-  /* height:100% — numa grelha, todos os painéis da mesma linha ficam com a
-     mesma altura, em vez de cada um terminar onde o seu conteúdo acaba. */
-  return (
-    <div style={{
-      background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 18,
-      height: '100%', boxSizing: 'border-box',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
-        <h3 style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</h3>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
 
 /* Botões pequenos por baixo da ação principal do cabeçalho (Dossier,
    Portal, Exportar CSV): todos com o mesmo tamanho, em todas as páginas. */
@@ -12322,23 +10540,6 @@ function Panel({ title, children, action }) {
 const ESTILO_BOTAO_PEQUENO = { padding: '0 12px', height: 26, fontSize: 12.5, gap: 6, borderRadius: 6, whiteSpace: 'nowrap', lineHeight: 1 };
 const ICONE_BOTAO_PEQUENO = 14;
 
-function SectionHeader({ title, subtitle, action }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
-      <div>
-        {title && <h1 style={{ ...display, color: T.cream, fontSize: 26, fontWeight: 600, margin: 0 }}>{title}</h1>}
-        {subtitle && <p style={{ color: T.mutedDim, fontSize: 13.5, margin: '4px 0 0' }}>{subtitle}</p>}
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  const dt = new Date(d + 'T00:00:00');
-  return dt.toLocaleDateString('pt-PT', { weekday: 'short', day: '2-digit', month: 'short' });
-}
 
 /* ---------------------------------------------------------------
    PLANTEL
@@ -16423,7 +14624,6 @@ const PITCH_FIT = {
 };
 
 
-
 /* Bancos de suplentes e áreas técnicas.
 
    Medidas do regulamento: a área técnica estende-se 1 m para cada lado dos
@@ -18379,7 +16579,6 @@ function diagramaParaImpressao(diagram) {
 }
 
 
-
 function stepElements(step, diagram) {
   const doPasso = (step && step.elements) || [];
   const atuais = new Map(((diagram && diagram.elements) || []).map(el => [el.id, el]));
@@ -18445,9 +16644,6 @@ function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
   return { frames, hasAnimation: true };
 }
 
-function escapeHtmlText(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
 
 // Constrói o bloco (campo + eventual botão "Apresentar") para um único
 // esquema tático, com um id único (blockId) para não colidir quando há
@@ -27555,18 +25751,6 @@ function groupByWeek(sessions) {
   return groups;
 }
 
-// Formata uma Date como 'YYYY-MM-DD' usando o calendário LOCAL do browser,
-// em vez de toISOString() (que converte para UTC e, em fusos horários
-// à frente de UTC como Portugal no verão, "recua" um dia à meia-noite).
-function toLocalISODate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-function todayStr() {
-  return toLocalISODate(new Date());
-}
 
 // Data de hoje por extenso ("quarta-feira, 3 de setembro"), sempre a
 // partir da hora LOCAL de quem está a ver o ecrã — `new Date()` sem mais
@@ -27582,11 +25766,7 @@ function getMonday(dateStr) {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return toLocalISODate(d);
 }
-function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return toLocalISODate(d);
-}
+
 
 /* PRÉMIO DOS 30 DIAS SEGUIDOS — ver o comentário grande junto do efeito
    que usa isto, em `App`. Aqui ficam só as duas funções puras: uma que
@@ -27633,17 +25813,11 @@ function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje, d
   return { dias, inicio: dias > 0 ? addDays(comecaEm, -(dias - 1)) : null, fim: dias > 0 ? comecaEm : null };
 }
 
-const WEEKDAY_ABBR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-function weekdayAbbr(dateStr) {
-  return WEEKDAY_ABBR[new Date(dateStr + 'T00:00:00').getDay()];
-}
+
 function dayOfMonth(dateStr) {
   return new Date(dateStr + 'T00:00:00').getDate();
 }
-function formatShortDatePt(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return `${weekdayAbbr(dateStr)}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+
 
 /* ---------------------------------------------------------------
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir
@@ -29134,9 +27308,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
 function dayLabel(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { weekday: 'short' }).replace('.', '');
 }
-function fmtShort(d) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
-}
+
 
 function SessionModal({ session, presetDate, exercises, players: playersAtivosDoTreino, onClose, onSave, clinico, onIntegrarConvidado, setExercises, exercisesMeta, sessions, setSessions, matches }) {
   const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoTreino, session), [playersAtivosDoTreino, session]);

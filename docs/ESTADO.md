@@ -57,8 +57,8 @@ ganha as importações de que precisa. Ordem combinada:
 
 | Passo | O que sai do `App.jsx` | Estado |
 |---|---|---|
-| 0 | Nada. Verificador, este ficheiro, servidor do Modal e SQL no repositório | feito, à espera de "ok" |
-| 1 | Base: tema, cores, formatos, sincronização (`useCollectionSync`), botões e janelas comuns | por fazer |
+| 0 | Nada. Verificador, este ficheiro, servidor do Modal e SQL no repositório | feito |
+| 1 | Base → `src/base/`: `tema.jsx`, `utilidades.js`, `ui.jsx`, `sincronizacao.jsx` | feito, à espera de "ok" |
 | 2 | Tático: editor de diagramas, Quadro tático, Simulador | por fazer |
 | 3 | Biblioteca de média | por fazer |
 | 4 | Treino: Planeamento, Exercícios, Sessões, Ideia de jogo | por fazer |
@@ -66,6 +66,26 @@ ganha as importações de que precisa. Ordem combinada:
 | 6 | Plantel: Plantel, Presenças, Monitorização, Desenvolvimento, Clínico | por fazer |
 | 7 | Scouting, Diário, Tarefas, Gestão de equipa | por fazer |
 | 8 | Atleta: Portal, Check-in, Cacifo | por fazer |
+
+### Como se move código (ferramenta usada no passo 1)
+
+A divisão faz-se com uma ferramenta que lê o código (não à mão):
+- leva cada bloco de topo com os comentários de cima, pela ordem original;
+- gera as importações de cada ficheiro novo e do `App.jsx`;
+- **recusa** se um ficheiro novo usar algo que fica no `App.jsx`, se
+  houver ciclos entre ficheiros novos, ou se uma variável `let` for
+  alterada fora do ficheiro onde vai ficar. Nesse caso cria-se uma função
+  para a alterar. No passo 1: `definirModalHandoff()`, em `base/ui.jsx`.
+- as instruções soltas de topo (ex.: aplicar o tema claro) vão com o
+  módulo de que dependem.
+
+Provas feitas no passo 1, a repetir nos seguintes:
+- as linhas de código antes e depois são as mesmas (58.885), só mudam as
+  importações;
+- o verificador dá 0 problemas, compila, e o tamanho da app é igual;
+- a app antiga e a nova, arrancadas com um Supabase fictício (sem rede),
+  mostram o mesmo nas páginas `/`, `/app/` e `/portal/`, nos temas escuro
+  e claro, sem erros.
 
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.

@@ -25,6 +25,7 @@ export default [
     settings: { react: { version: '18' } },
     rules: {
       'no-undef': 'error',               // nome usado sem existir neste ficheiro
+      'no-import-assign': 'error',       // alterar uma variável importada (rebenta ao correr)
       'react/jsx-no-undef': 'error',     // componente <Xpto /> sem import
       'react/jsx-uses-vars': 'error',    // (necessário para o no-undef perceber o JSX)
       'react/jsx-uses-react': 'error',
