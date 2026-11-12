@@ -60,8 +60,8 @@ ganha as importações de que precisa. Ordem combinada:
 |---|---|---|
 | 0 | Nada. Verificador, este ficheiro, servidor do Modal e SQL no repositório | feito |
 | 1 | Base → `src/base/`: `tema.jsx`, `utilidades.js`, `ui.jsx`, `sincronizacao.jsx` | feito |
-| 2 | Tático → `src/tatico/` (campo, DiagramEditor, QuadroTaticoLivre, Simulador, prancheta); regras partilhadas → `src/dominio/` (jogadores, clínico, jogos, treino); `base/impressao.js`, `base/arrastar.js` | feito, à espera de "ok" |
-| 3 | Biblioteca de média | por fazer |
+| 2 | Tático → `src/tatico/` (campo, DiagramEditor, QuadroTaticoLivre, Simulador, prancheta); regras partilhadas → `src/dominio/` (jogadores, clínico, jogos, treino); `base/impressao.js`, `base/arrastar.js` | feito |
+| 3 | Média → `src/media/` (MediaLibrary, MediaModal, LeitorJunto, leitores, social, organização, ações); `base/anexos.jsx`, `base/kiosk.js` | feito, à espera de "ok" |
 | 4 | Treino: Planeamento, Exercícios, Sessões, Ideia de jogo | por fazer |
 | 5 | Competição: Jogos, Convocatórias, Ficha de jogo, Escalação, Classificação | por fazer |
 | 6 | Plantel: Plantel, Presenças, Monitorização, Desenvolvimento, Clínico | por fazer |
