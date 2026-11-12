@@ -284,6 +284,52 @@ export function EquipaEmColunasPrint({ titulares, suplentes, capitaoId, subcapit
    caixas de "Destaques" e "Números" aparece aqui colado a cada nome, em
    símbolo: numa folha, ler "1 substituição" em baixo obriga a procurar
    quem foi; uma seta ao lado do nome responde de imediato. */
+/* ACONTECIMENTOS JUNTO DE CADA JOGADOR (folha impressa e partilha), quando
+   o jogo tem o onze no campo com fotos. Antes, essa vista só mostrava
+   nomes e fotos: golos, cartões e substituições ficavam de fora da folha.
+   Quem substituiu quem: o suplente que entrou ao minuto X troca com o
+   titular que saiu nesse minuto (se forem vários, ficam todos). */
+function quemSaiuPara(x, eventos, players) {
+  if (!x || x.entrouAo == null) return [];
+  return eventos.titulares.filter(t => t.saiuAo === x.entrouAo).map(t => shortPlayerName(t.player, players));
+}
+function extraEventosPrint(eventos, players) {
+  const porId = new Map(eventos.todos.map(x => [x.player.id, x]));
+  return (pid, onde) => {
+    const x = porId.get(pid);
+    if (!x || !x.jogou) {
+      return onde === 'banco' ? <span style={{ fontSize: '8.5pt', color: '#bbb' }}>não jogou</span> : null;
+    }
+    const icones = [
+      ...Array.from({ length: Math.min(x.golos, 3) }).map((_, i) => <IconeGoloPrint key={`g${i}`} size={9} />),
+      x.golos > 3 ? <span key="gx" style={{ fontSize: '7pt' }}>×{x.golos}</span> : null,
+      ...Array.from({ length: Math.min(x.assistencias, 3) }).map((_, i) => <IconeAssistenciaPrint key={`a${i}`} size={9} />),
+      x.cartao ? <IconeCartaoPrint key="c" card={x.cartao} size={9} /> : null,
+    ].filter(Boolean);
+    if (onde === 'campo') {
+      if (!icones.length && x.saiuAo == null) return null;
+      return (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.6mm', marginTop: '0.3mm', background: '#fff', padding: '0 0.8mm', borderRadius: '1mm', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+          {icones}
+          {x.saiuAo != null && <span style={{ display: 'flex', alignItems: 'center', gap: '0.3mm', fontSize: '7pt', color: '#555' }}><IconeSubstituicaoPrint size={8} />{x.saiuAo}'</span>}
+        </span>
+      );
+    }
+    const saiu = quemSaiuPara(x, eventos, players);
+    return (
+      <>
+        {icones}
+        {x.entrouAo != null && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.6mm', fontSize: '8.5pt', color: '#555' }}>
+            <IconeSubstituicaoPrint size={9} />{x.entrouAo}'{saiu.length ? ` · por ${saiu.join(', ')}` : ''}
+          </span>
+        )}
+        <span style={{ fontSize: '8.5pt', color: '#111', minWidth: '7mm', textAlign: 'right' }}>{x.minutos}'</span>
+      </>
+    );
+  };
+}
+
 export function PrintFichaJogo({ match, players: playersAtivosDoJogo, season }) {
   const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
@@ -313,7 +359,20 @@ export function PrintFichaJogo({ match, players: playersAtivosDoJogo, season }) 
       {(match.starters || []).length > 0 && (() => {
         // Onze no campo com fotos + suplentes com foto, como no ecrã.
         const esc = escalacaoDoJogo(match, players);
-        return <EscalacaoPrint players={players} formacao={esc.formacao} slots={esc.slots} banco={esc.banco} capitao={match.capitao} subcapitao={match.subcapitao} />;
+        const eventos = eventosDoJogo(match, players);
+        const destaques = linhasDestaquesJogo(eventos, resumoDoJogo(eventos), players);
+        return (
+          <>
+            <EscalacaoPrint players={players} formacao={esc.formacao} slots={esc.slots} banco={esc.banco} capitao={match.capitao} subcapitao={match.subcapitao}
+              extra={eventos.todos.some(x => x.jogou) ? extraEventosPrint(eventos, players) : undefined} />
+            {destaques.length > 0 && (
+              <div style={{ breakInside: 'avoid', pageBreakInside: 'avoid', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Destaques</h3>
+                {destaques.map((l, i) => <p key={i} style={{ margin: '0 0 3px', fontSize: 12 }}>{l}</p>)}
+              </div>
+            )}
+          </>
+        );
       })()}
       {!(match.starters || []).length && <>
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação</h3>
@@ -385,6 +444,34 @@ export function escalacaoComFotosHtml(match, players) {
   const banco = (match.convocados || []).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean)
     .sort((a, b) => numDe(a) - numDe(b) || String(a.name || '').localeCompare(String(b.name || ''), 'pt'));
   const nomeCurto = (p) => escapeHtmlText(shortPlayerName(p, players));
+  /* Acontecimentos junto de cada jogador (só num jogo já com minutos). */
+  const eventos = eventosDoJogo(match, players);
+  const comEventos = eventos.todos.some(x => x.jogou);
+  const evDe = new Map(eventos.todos.map(x => [x.player.id, x]));
+  const cartaoHtml = (c) => `<span title="${c === 'yellow' ? 'Amarelo' : c === 'red' ? 'Vermelho' : 'Duplo amarelo'}" style="display:inline-block;width:7px;height:10px;border-radius:1.5px;vertical-align:-1px;background:${c === 'red' ? '#C0392B' : '#E8C33A'};${c === 'yellow2' ? 'box-shadow:2px 0 0 #C0392B;' : ''}"></span>`;
+  const iconesHtml = (x) => [
+    x.golos ? `<span title="${x.golos} golo${x.golos > 1 ? 's' : ''}">${'⚽'.repeat(Math.min(x.golos, 3))}${x.golos > 3 ? '×' + x.golos : ''}</span>` : '',
+    x.assistencias ? `<span title="assistência" style="font-weight:700">A${x.assistencias > 1 ? x.assistencias : ''}</span>` : '',
+    x.cartao ? cartaoHtml(x.cartao) : '',
+  ].filter(Boolean).join(' ');
+  const eventosNoCampo = (p) => {
+    const x = comEventos ? evDe.get(p.id) : null;
+    if (!x || !x.jogou) return '';
+    const partes = [iconesHtml(x), x.saiuAo != null ? `<span style="color:#ffb4b4">↓${x.saiuAo}'</span>` : ''].filter(Boolean).join(' ');
+    return partes ? `<span style="font-size:10px;color:#fff;background:#00000066;border-radius:6px;padding:0 4px;margin-top:1px;white-space:nowrap">${partes}</span>` : '';
+  };
+  const eventosNoBanco = (p) => {
+    const x = comEventos ? evDe.get(p.id) : null;
+    if (!comEventos) return '';
+    if (!x || !x.jogou) return '<span style="display:block;font-size:11px;opacity:.45">não jogou</span>';
+    const saiu = eventos.titulares.filter(t => t.saiuAo != null && t.saiuAo === x.entrouAo).map(t => escapeHtmlText(shortPlayerName(t.player, players)));
+    const linha = [
+      x.entrouAo != null ? `<span style="color:#9fe0b0">↑${x.entrouAo}'</span>${saiu.length ? ` por ${saiu.join(', ')}` : ''}` : '',
+      `${x.minutos}' jogados`,
+      iconesHtml(x),
+    ].filter(Boolean).join(' · ');
+    return `<span style="display:block;font-size:11px;opacity:.85">${linha}</span>`;
+  };
   const bola = (p, tam) => {
     const conteudo = p.photo
       ? `<img src="${escapeHtmlText(p.photo)}" alt="" style="width:100%;height:100%;object-fit:cover">`
@@ -397,7 +484,7 @@ export function escalacaoComFotosHtml(match, players) {
     const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${topNoCampoEcra(lx, ly).toFixed(2)}%`;
     if (!p) return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);color:#ffffffaa;font-size:11px">${escapeHtmlText(rotuloDoLugar(lugar))}</div>`;
     return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:76px">${bola(p, 40)}`
-      + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span></div>`;
+      + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span>${eventosNoCampo(p)}</div>`;
   }).join('');
   const linhas = '<svg viewBox="0 0 68 105" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><g fill="none" stroke="#ffffff88" stroke-width="0.35">'
     + '<rect x="1.5" y="1.5" width="65" height="102"/><line x1="1.5" y1="52.5" x2="66.5" y2="52.5"/><circle cx="34" cy="52.5" r="9.15"/>'
@@ -406,7 +493,7 @@ export function escalacaoComFotosHtml(match, players) {
   const campo = `<div style="position:relative;width:100%;max-width:340px;aspect-ratio:68/105;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(180deg,#2b5a33 0 7.5%,#275230 7.5% 15%)">${linhas}${noCampo}</div>`;
   const suplentes = banco.length
     ? banco.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid #ffffff22;border-radius:8px;background:#ffffff08">${bola(p, 30)}`
-      + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span></span></div>`).join('')
+      + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span>${eventosNoBanco(p)}</span></div>`).join('')
     : '<p class="desc">Sem suplentes.</p>';
   return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">`
     + `<div style="flex:1 1 280px;max-width:340px"><div style="font-size:14px;font-weight:600;margin:0 0 8px">Onze inicial</div>${campo}<div style="font-size:12px;opacity:.6;margin-top:6px">Sistema ${escapeHtmlText(formacao)}</div></div>`

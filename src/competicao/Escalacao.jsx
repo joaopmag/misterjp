@@ -606,7 +606,10 @@ export function nomeNoCampoPrint(lx) {
   return t + PRINT_NOME_ABAIXO;
 }
 
-export function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }) {
+/* `extra(pid, 'campo' | 'banco')`, opcional: o que se escreve junto de cada
+   jogador (ex.: golos, cartões, substituições, na ficha de um jogo já
+   jogado). Sem `extra`, a folha fica como sempre foi (convocatória). */
+export function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao, extra }) {
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
   const porId = new Map(players.map(p => [p.id, p]));
@@ -652,6 +655,7 @@ export function EscalacaoPrint({ players, formacao, slots, banco, capitao, subca
                   <span style={{ fontSize: '7.5pt', fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '24mm', textAlign: 'center', background: '#fff', padding: '0 1mm', borderRadius: '1mm', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                     {p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}{marca(p.id)}
                   </span>
+                  {extra ? extra(p.id, 'campo') : null}
                 </div>
               ) : (
                 <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoPrint(lx)}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
@@ -670,6 +674,7 @@ export function EscalacaoPrint({ players, formacao, slots, banco, capitao, subca
             {foto(p, 8)}
             <span style={{ width: '7mm', textAlign: 'right', color: '#666', ...mono }}>{p.number || ''}</span>
             <span>{p.name}{marca(p.id)}</span>
+            {extra ? <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1.2mm', flexShrink: 0 }}>{extra(p.id, 'banco')}</span> : null}
           </div>
         ))}
       </div>

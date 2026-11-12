@@ -110,6 +110,14 @@ reduz o peso inicial da app e do Portal.
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem
   ocorrência, decide o wellness como antes.
+- 12/11: Ficha de jogo com onze no campo (impressão e partilha): passam a
+  aparecer golos, assistências, cartões e saídas junto de cada titular;
+  nos suplentes, entrada, quem substituíram (pelo minuto da saída),
+  acontecimentos e minutos; a impressão ganha os Destaques.
+  `EscalacaoPrint` aceita `extra(pid, 'campo'|'banco')`.
+- 12/11: Gravação (`base/sincronizacao.jsx`): erros de sessão ("JWT
+  issued at future", "JWT expired") tentam de novo até 2 vezes, com uns
+  segundos de intervalo, antes de mostrar o aviso.
 
 ## Pontos para a versão comercial
 

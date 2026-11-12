@@ -808,8 +808,20 @@ export function useCollectionSync(table, notifyEdit, teamId) {
       const failed = [];
       for (const rec of toUpsert) {
         aGravar.current.add(rec.id);
-        const { data, error } = await supabase.from(table).upsert([rec], { onConflict: 'id' })
+        const gravarUm = () => supabase.from(table).upsert([rec], { onConflict: 'id' })
           .select('id, data, updated_by_email, updated_at');
+        let { data, error } = await gravarUm();
+        /* ERROS DE SESSÃO ("JWT issued at future", "JWT expired"): costumam
+           ser momentâneos, logo a seguir à renovação automática da sessão
+           (pequena diferença de relógio). Volta a tentar até 2 vezes, com
+           uns segundos de intervalo (e renovando a sessão se expirou),
+           antes de mostrar o aviso. O registo é o mesmo: gravar de novo
+           não duplica nada. */
+        for (let t = 0; error && /JWT/i.test(error.message || '') && t < 2; t++) {
+          await new Promise(r => setTimeout(r, 1500 * (t + 1)));
+          if (/expired/i.test(error.message || '')) { try { await supabase.auth.refreshSession(); } catch (e) { /* tenta na mesma */ } }
+          ({ data, error } = await gravarUm());
+        }
         /* NÃO se tira já a proteção deste id — só passados uns instantes.
 
            O eco de Realtime da NOSSA PRÓPRIA gravação costuma chegar
