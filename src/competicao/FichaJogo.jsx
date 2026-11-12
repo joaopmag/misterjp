@@ -289,6 +289,26 @@ export function EquipaEmColunasPrint({ titulares, suplentes, capitaoId, subcapit
    nomes e fotos: golos, cartões e substituições ficavam de fora da folha.
    Quem substituiu quem: o suplente que entrou ao minuto X troca com o
    titular que saiu nesse minuto (se forem vários, ficam todos). */
+/* Substituição: círculo verde com seta para cima (entra) ou vermelho com
+   seta para baixo (sai), como nas transmissões. Em preto e branco
+   distingue-se pelo sentido da seta. */
+const COR_ENTRA = '#2E9E5B';
+const COR_SAI = '#C0392B';
+function IconeTrocaPrint({ tipo, size = 10 }) {
+  const cima = tipo === 'entra';
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block', flexShrink: 0, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} aria-hidden="true">
+      <circle cx="10" cy="10" r="9.3" fill={cima ? COR_ENTRA : COR_SAI} />
+      <path d={cima ? 'M10 15 V5.5 M5.8 9.4 L10 5.2 L14.2 9.4' : 'M10 5 V14.5 M5.8 10.6 L10 14.8 L14.2 10.6'}
+        stroke="#fff" strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function iconeTrocaHtml(tipo, size = 12) {
+  const cima = tipo === 'entra';
+  return `<svg width="${size}" height="${size}" viewBox="0 0 20 20" style="vertical-align:-2px" aria-hidden="true"><circle cx="10" cy="10" r="9.3" fill="${cima ? COR_ENTRA : COR_SAI}"/>`
+    + `<path d="${cima ? 'M10 15 V5.5 M5.8 9.4 L10 5.2 L14.2 9.4' : 'M10 5 V14.5 M5.8 10.6 L10 14.8 L14.2 10.6'}" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
 function quemSaiuPara(x, eventos, players) {
   if (!x || x.entrouAo == null) return [];
   return eventos.titulares.filter(t => t.saiuAo === x.entrouAo).map(t => shortPlayerName(t.player, players));
@@ -297,9 +317,7 @@ function extraEventosPrint(eventos, players) {
   const porId = new Map(eventos.todos.map(x => [x.player.id, x]));
   return (pid, onde) => {
     const x = porId.get(pid);
-    if (!x || !x.jogou) {
-      return onde === 'banco' ? <span style={{ fontSize: '8.5pt', color: '#bbb' }}>não jogou</span> : null;
-    }
+    if (!x || !x.jogou) return null; // quem não jogou fica só com o nome
     const icones = [
       ...Array.from({ length: Math.min(x.golos, 3) }).map((_, i) => <IconeGoloPrint key={`g${i}`} size={9} />),
       x.golos > 3 ? <span key="gx" style={{ fontSize: '7pt' }}>×{x.golos}</span> : null,
@@ -311,7 +329,7 @@ function extraEventosPrint(eventos, players) {
       return (
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.6mm', marginTop: '0.3mm', background: '#fff', padding: '0 0.8mm', borderRadius: '1mm', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
           {icones}
-          {x.saiuAo != null && <span style={{ display: 'flex', alignItems: 'center', gap: '0.3mm', fontSize: '7pt', color: '#555' }}><IconeSubstituicaoPrint size={8} />{x.saiuAo}'</span>}
+          {x.saiuAo != null && <span style={{ display: 'flex', alignItems: 'center', gap: '0.4mm', fontSize: '7pt', color: '#333', whiteSpace: 'nowrap' }}><IconeTrocaPrint tipo="sai" size={10} />{x.saiuAo}'</span>}
         </span>
       );
     }
@@ -320,8 +338,8 @@ function extraEventosPrint(eventos, players) {
       <>
         {icones}
         {x.entrouAo != null && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '0.6mm', fontSize: '8.5pt', color: '#555' }}>
-            <IconeSubstituicaoPrint size={9} />{x.entrouAo}'{saiu.length ? ` · por ${saiu.join(', ')}` : ''}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.8mm', fontSize: '8.5pt', color: '#333', whiteSpace: 'nowrap' }}>
+            <IconeTrocaPrint tipo="entra" size={11} />{x.entrouAo}'{saiu.length ? <span style={{ color: '#666' }}>{` · por ${saiu.join(', ')}`}</span> : null}
           </span>
         )}
         <span style={{ fontSize: '8.5pt', color: '#111', minWidth: '7mm', textAlign: 'right' }}>{x.minutos}'</span>
@@ -457,19 +475,19 @@ export function escalacaoComFotosHtml(match, players) {
   const eventosNoCampo = (p) => {
     const x = comEventos ? evDe.get(p.id) : null;
     if (!x || !x.jogou) return '';
-    const partes = [iconesHtml(x), x.saiuAo != null ? `<span style="color:#ffb4b4">↓${x.saiuAo}'</span>` : ''].filter(Boolean).join(' ');
+    const partes = [iconesHtml(x), x.saiuAo != null ? `<span style="white-space:nowrap">${iconeTrocaHtml('sai', 11)} ${x.saiuAo}'</span>` : ''].filter(Boolean).join(' ');
     return partes ? `<span style="font-size:10px;color:#fff;background:#00000066;border-radius:6px;padding:0 4px;margin-top:1px;white-space:nowrap">${partes}</span>` : '';
   };
   const eventosNoBanco = (p) => {
     const x = comEventos ? evDe.get(p.id) : null;
     if (!comEventos) return '';
-    if (!x || !x.jogou) return '<span style="display:block;font-size:11px;opacity:.45">não jogou</span>';
+    if (!x || !x.jogou) return ''; // quem não jogou fica só com o nome
     const saiu = eventos.titulares.filter(t => t.saiuAo != null && t.saiuAo === x.entrouAo).map(t => escapeHtmlText(shortPlayerName(t.player, players)));
     const linha = [
-      x.entrouAo != null ? `<span style="color:#9fe0b0">↑${x.entrouAo}'</span>${saiu.length ? ` por ${saiu.join(', ')}` : ''}` : '',
-      `${x.minutos}' jogados`,
+      x.entrouAo != null ? `<span style="white-space:nowrap">${iconeTrocaHtml('entra', 12)} ${x.entrouAo}'</span>${saiu.length ? ` <span style="opacity:.7">por ${saiu.join(', ')}</span>` : ''}` : '',
       iconesHtml(x),
     ].filter(Boolean).join(' · ');
+    if (!linha) return '';
     return `<span style="display:block;font-size:11px;opacity:.85">${linha}</span>`;
   };
   const bola = (p, tam) => {
