@@ -202,7 +202,7 @@ async function seguirJogadorAssincrono(pedido) {
 // a cada vez que o próprio vídeo avisa — o aviso do vídeo só chega
 // umas 4 vezes por segundo, o que fazia o efeito "saltar" em vez de
 // deslizar continuamente.
-function MarcadorTrajetoria({ videoRef, pontos }) {
+function MarcadorTrajetoria({ videoRef, pontos, cor }) {
   const [tempo, setTempo] = useState(0);
   useEffect(() => {
     let ativo = true;
@@ -226,7 +226,7 @@ function MarcadorTrajetoria({ videoRef, pontos }) {
       {/* holofote — um tubo de luz, transparência igual de cima a baixo,
          a tocar no relvado mesmo por baixo dos pés do jogador (que
          ficam sempre exatamente ao centro, na horizontal) */}
-      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={TV.crimsonBright} opacity={0.22} />
+      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={cor || TV.crimsonBright} opacity={0.22} />
     </g>
   );
 }
@@ -1945,7 +1945,8 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
         const antigos = clip.trajetoriaFoco.pontos.filter(p => p.t < tInicial);
         novosPontos = [...antigos, ...novosPontos];
       }
-      onChangeTrajetoria({ pontos: novosPontos, duracao: resultado.duracao });
+      // Mantém a cor escolhida no Estúdio (os clipes antigos não têm: ficam a vermelho).
+      onChangeTrajetoria({ pontos: novosPontos, duracao: resultado.duracao, ...(clip.trajetoriaFoco?.cor ? { cor: clip.trajetoriaFoco.cor } : {}) });
       setModoSeguir('normal');
     } catch (e) {
       setErroSeguir(`Não consegui seguir o jogador: ${e.message || e}`);
@@ -1997,7 +1998,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
             <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ ...estiloSobreImagem(retClipe), pointerEvents: 'none' }}>
               {formasClipeVisiveis.map(renderShape)}
-              {temTrajetoria && <MarcadorTrajetoria videoRef={videoRef} pontos={clip.trajetoriaFoco.pontos} />}
+              {temTrajetoria && <MarcadorTrajetoria videoRef={videoRef} pontos={clip.trajetoriaFoco.pontos} cor={clip.trajetoriaFoco.cor} />}
             </svg>
             {(modoSeguir === 'a_escolher' || modoSeguir === 'a_corrigir') && (
               <div onClick={aoTocarNoVideo}
@@ -2883,7 +2884,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         // se já havia uma trajetória pendente, este toque conta como
         // reancorar a partir daqui — mantém a parte anterior a tInicial
         const anteriores = prev ? prev.pontos.filter(p => p.t < tInicial) : [];
-        return { pontos: [...anteriores, ...novosPontos], duracao: resultado.duracao };
+        // A cor do tubo é a que está escolhida em COR quando se segue.
+        return { pontos: [...anteriores, ...novosPontos], duracao: resultado.duracao, cor: (prev && prev.cor) || corAtual };
       });
     } catch (e) {
       setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
@@ -3559,6 +3561,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             .filter(pt => pt.t >= ini && pt.t <= fim)
             .map(pt => ({ ...pt, t: Math.max(0, pt.t - ini) })),
           duracao: fim - ini,
+          ...(trajetoriaFocoPendente.cor ? { cor: trajetoriaFocoPendente.cor } : {}),
         } : null,
         originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
         // De que equipa é a ação: o corte vai sozinho para a ficha dela em
@@ -4019,6 +4022,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Cor: com um desenho selecionado, muda também a cor dele.
   const mudarCor = (cor) => {
     setCorAtual(cor);
+    // Com a ferramenta Seguir, a cor muda também o tubo do jogador seguido.
+    if (tool === 'seguir' && trajetoriaFocoPendente) setTrajetoriaFocoPendente(t => (t ? { ...t, cor } : t));
     if (editandoDuracaoIndex != null && shapes[editandoDuracaoIndex]) {
       pushHistorico();
       setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, color: cor } : sh)));
@@ -4318,7 +4323,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       : { width: 190, flexShrink: 0, padding: 10, display: 'flex', flexDirection: 'column', gap: 6, borderLeft: `1px solid ${TV.line}`, overflowY: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
       <Btn variant="ghost" onClick={abrirDesenho} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}>
         <Pencil size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
-        {trajetoriaFocoPendente && <Target size={13} color={TV.crimsonBright} style={{ marginLeft: 2 }} />}
+        {trajetoriaFocoPendente && <Target size={13} color={trajetoriaFocoPendente.cor || TV.crimsonBright} style={{ marginLeft: 2 }} />}
       </Btn>
       {trajetoriaFocoPendente && !processandoFoco && (
         <>
@@ -4675,7 +4680,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               )}
               <svg ref={svgDesenhoRef} viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ ...estiloSobreImagem(retEditor), overflow: 'visible', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
-                {trajetoriaFocoPendente && <MarcadorTrajetoria videoRef={videoRef} pontos={trajetoriaFocoPendente.pontos} />}
+                {trajetoriaFocoPendente && <MarcadorTrajetoria videoRef={videoRef} pontos={trajetoriaFocoPendente.pontos} cor={trajetoriaFocoPendente.cor} />}
                 {modoDesenho && (
                   <CamadaRelvado calibrando={calibrando} calibracao={grelhaRelvado ? calibracao : null}
                     cantosCrus={cantosCrus(calibrando)} cantos={cantosCalib(calibrando)}
