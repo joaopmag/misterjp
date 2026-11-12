@@ -3240,6 +3240,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // guardados — são invisíveis e só faziam o vídeo parar.
     return (o && Array.isArray(o.desenhos)) ? o.desenhos.filter(sh => !formaAcidental(sh)) : [];
   };
+  // O seguimento (tubo) também fica guardado no vídeo, como os desenhos.
+  const seguimentoDoOriginalAtivo = () => {
+    const o = videosOriginais.find(v => v.id === originalAtivoId);
+    return (o && o.seguimento && Array.isArray(o.seguimento.pontos) && o.seguimento.pontos.length) ? o.seguimento : null;
+  };
   // Ao abrir um vídeo, vêm os desenhos que lá ficaram (a não ser que se
   // esteja a desenhar num clipe, que traz os seus).
   const clipeEmDesenhoRef = useRef(null);
@@ -3249,6 +3254,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   useEffect(() => {
     if (clipeEmDesenhoRef.current) return;
     setShapes(desenhosDoOriginalAtivo());
+    setTrajetoriaFocoPendente(seguimentoDoOriginalAtivo());
     setHistorico([]); setFuturo([]); // o "Retroceder" não passa de um vídeo para outro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [originalAtivoId]);
@@ -3268,6 +3274,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return () => clearTimeout(tm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shapes, originalAtivoId, clipeEmDesenho]);
+  // O seguimento grava-se no vídeo da mesma forma (null = tirado).
+  const trajetoriaFocoPendenteRef = useRef(null);
+  trajetoriaFocoPendenteRef.current = trajetoriaFocoPendente;
+  useEffect(() => {
+    if (!originalAtivoId || clipeEmDesenho) return undefined;
+    const id = originalAtivoId;
+    const tm = setTimeout(() => {
+      if (clipeEmDesenhoRef.current) return;
+      const atual = trajetoriaFocoPendenteRef.current || null;
+      setVideosOriginais(prev => prev.map(v => {
+        if (v.id !== id) return v;
+        if (JSON.stringify(v.seguimento || null) === JSON.stringify(atual)) return v;
+        return { ...v, seguimento: atual };
+      }));
+    }, 700);
+    return () => clearTimeout(tm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trajetoriaFocoPendente, originalAtivoId, clipeEmDesenho]);
   // Só entram no clipe os desenhos que caem dentro dele.
   const dentroDoClipe = (sh, ini, fim) => {
     const a = sh.criadoEmTempo ?? 0;
@@ -3437,8 +3461,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      clipe: limpar as marcas de início/fim já não os apaga. Só ao sair de
      "desenhar num clipe" é que se repõem os desenhos do vídeo. */
   const limparMarcas = () => {
-    if (clipeEmDesenho) setShapes(desenhosDoOriginalAtivo());
-    setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco('');
+    // O seguimento é do vídeo (como os desenhos): limpar as marcas não o
+    // apaga; ao sair de "desenhar num clipe", volta o do vídeo.
+    if (clipeEmDesenho) { setShapes(desenhosDoOriginalAtivo()); setTrajetoriaFocoPendente(seguimentoDoOriginalAtivo()); }
+    setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setTextoPendente(null); setErroSeguirFoco('');
   };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
