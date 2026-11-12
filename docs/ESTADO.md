@@ -9,17 +9,31 @@ Todas as alterações protegem as funções que já existem. Sem regressões,
 sempre como prioridade. Cada mudança é a mínima necessária, compila, passa
 o verificador e é testada pela Adelaide antes de avançar.
 
-## Como se trabalha (até o repositório ser ligado ao Claude)
+## Como se trabalha (até os repositórios serem ligados ao Claude)
+
+Há **dois repositórios**, ambos no GitHub Desktop da Adelaide:
+- **misterjp:** a app (Vercel), as funções `api/`, o Modal (`modal/`) e
+  os SQL (`supabase/`);
+- **video-worker:** o serviço de vídeo no Railway.
+
+Cada passo diz sempre a que repositório pertence.
 
 1. **Partir sempre do que está no GitHub.** No início de cada passo, a
-   Adelaide descarrega o repositório (Code → Download ZIP) e envia-o. Não
-   se parte de cópias antigas, porque pode ter havido trabalho noutra conta.
-2. O Claude devolve um `.zip` com as pastas alteradas. No GitHub, a
-   Adelaide substitui essas pastas inteiras, arrastando-as para o upload,
-   que mantém as subpastas.
-3. A Vercel publica sozinha. A Adelaide testa a lista do passo e diz "ok".
-   Só depois se passa ao passo seguinte.
-4. Nunca duas contas ou sessões a mexer no mesmo passo ao mesmo tempo.
+   Adelaide faz "Fetch origin" e "Pull" no GitHub Desktop, para trazer
+   eventuais alterações feitas com a outra conta. Depois, em "Repository →
+   Show in Finder/Explorer", comprime a pasta do repositório **sem**
+   `node_modules`, `.git` e ficheiros `.env`, e envia-a. Não se parte de
+   cópias antigas.
+2. O Claude devolve um `.zip` com os ficheiros e pastas alterados, na
+   mesma estrutura do repositório.
+3. A Adelaide copia esse conteúdo para a pasta do repositório,
+   substituindo o que lá está. No GitHub Desktop, confirma na lista de
+   alterações que só mudou o que o passo diz, escreve o resumo do passo,
+   faz "Commit to main" e depois "Push origin". O histórico do GitHub
+   Desktop permite reverter um passo ("Revert changes in commit").
+4. A Vercel (misterjp) ou o Railway (video-worker) publica sozinho. A
+   Adelaide testa a lista do passo e diz "ok". Só depois se avança.
+5. Nunca duas contas ou sessões a mexer no mesmo passo ao mesmo tempo.
 
 ## Verificações obrigatórias em cada entrega
 
@@ -77,7 +91,8 @@ pelo `server.js`.
 
 ## Peças fora deste repositório
 
-- **video-worker** (repositório próprio, no Railway): o código real está
+- **video-worker** (repositório próprio, no Railway, também no GitHub
+  Desktop): o código real está
   em `server.js`; `server.js.js` é só um ponto de entrada provisório.
   Tem fila justa por equipa (`MAX_EM_PARALELO`) e o endereço `/estado`.
 - **Modal**: o código está em `modal/servico_seguidor_v2.py`. Publica-se
