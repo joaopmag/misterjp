@@ -121,7 +121,7 @@ function posicaoNaTrajetoria(pontos, tempo) {
   for (let i = 0; i < pontos.length - 1; i++) {
     const a = pontos[i], b = pontos[i + 1];
     if (tempo >= a.t && tempo <= b.t) {
-      if (b.t - a.t > BURACO_SEGUIR) return null;
+      if (b.t - a.t > BURACO_SEGUIR) return tempo >= b.t - 0.05 ? b : null; // no próprio instante da retoma já se vê
       const frac = b.t === a.t ? 0 : (tempo - a.t) / (b.t - a.t);
       return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
     }
@@ -1801,7 +1801,7 @@ function estudioForaDaVista(el) {
   return r.bottom < 80 || r.top > window.innerHeight - 80;
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, embutido, onEcraInteiro, ecraInteiroExterno, equipasDoClipe, onChangeEquipa, nomeNossaEquipa = '', aMudarEquipa }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, onSeguirNoDesenho, embutido, onEcraInteiro, ecraInteiroExterno, equipasDoClipe, onChangeEquipa, nomeNossaEquipa = '', aMudarEquipa }) {
   // Ecrã estreito (telemóvel): o painel vai para baixo do vídeo.
   const [estreitoPlayer, setEstreitoPlayer] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
   useEffect(() => {
@@ -2138,16 +2138,23 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             <>
               <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: TV.mutedDim, margin: '14px 0 8px', ...body }}>Seguir jogador</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {onSeguirNoDesenho ? (
+                  // Uma só maneira de seguir: no desenho do clipe, como os outros desenhos.
+                  <Btn variant={temTrajetoria ? 'ghost' : 'solid'} onClick={onSeguirNoDesenho} style={{ padding: '6px 10px', fontSize: 12 }}>
+                    <Target size={13} /> {temTrajetoria ? 'Mudar seguimento' : 'Seguir jogador'}
+                  </Btn>
+                ) : (
                 <Btn variant={temTrajetoria ? 'ghost' : 'solid'} onClick={comecarEscolha} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12 }}>
                   <Target size={13} /> {temTrajetoria ? 'Seguir outra vez' : 'Seguir jogador'}
                 </Btn>
-                {temTrajetoria && (
+                )}
+                {temTrajetoria && !onSeguirNoDesenho && (
                   <Btn variant="ghost" onClick={comecarCorrecao} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12 }}>
                     <Crosshair size={13} /> Continuar seguimento
                   </Btn>
                 )}
               </div>
-              {temTrajetoria && modoSeguir === 'normal' && (
+              {temTrajetoria && modoSeguir === 'normal' && !onSeguirNoDesenho && (
                 <div style={{ marginTop: 8 }}>
                   <AvisoSeguimentoParou pontos={clip.trajetoriaFoco.pontos} fim={duracaoVideo}
                     onIr={(tp) => { const v = videoRef.current; if (v) { v.pause(); v.currentTime = tp; } }} />
@@ -3728,7 +3735,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* ORIGINAL DE UM CLIPE — pelo id (clipes novos) ou, nos antigos que
      não o guardavam, pelo título, só se houver exatamente um com esse
      título (dois vídeos com o mesmo nome e o corte podia sair do errado). */
-  const desenharNoClipe = (clip) => {
+  const desenharNoClipe = (clip, opcoes = {}) => {
     const orig = originalDoClipe(clip);
     if (!orig || !orig.storagePath) {
       window.alert('Não encontrei o vídeo original deste clipe, por isso não dá para desenhar nele. Abre o clipe, carrega no lápis e escolhe o vídeo original.');
@@ -3739,7 +3746,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setClipeAReproduzir(null);
     setEditarClipeAoAbrir(false);
     setTextoPendente(null);
-    setTrajetoriaFocoPendente(null);
+    // O seguimento do clipe entra no desenho (no tempo do jogo) e é guardado
+    // com os desenhos: seguir aqui é seguir NO CLIPE, como os outros desenhos.
+    const tf = clip.trajetoriaFoco;
+    setTrajetoriaFocoPendente(tf && tf.pontos && tf.pontos.length
+      ? { pontos: tf.pontos.map(pt => ({ ...pt, t: pt.t + ini })), duracao: fim, cor: tf.cor, tFimPedido: fim }
+      : null);
     setInPoint(ini); setOutPoint(fim);
     setPendingTag(clip.tagId || null);
     setNote(clip.note || '');
@@ -3756,6 +3768,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       setOriginalAtivoId(orig.id);
     }
     setModoDesenho(true);
+    if (opcoes.seguir) setTool('seguir');
     // A página só se mexe se o Estúdio estiver fora da vista (ex.: veio de um corte lá em baixo).
     setTimeout(() => { if (containerRef.current && estudioForaDaVista(containerRef.current)) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   };
@@ -3768,12 +3781,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
       mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
     }));
-    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, shapes: novos, note, tagId: pendingTag || null } : c)));
+    const fimClipe = typeof clip.origemFim === 'number' ? clip.origemFim : ini + (clip.duracao || 0);
+    const tf = trajetoriaFocoPendente;
+    const pontosClipe = tf ? tf.pontos.filter(pt => pt.t >= ini - 0.05 && pt.t <= fimClipe + 0.05).map(pt => ({ ...pt, t: Math.max(0, pt.t - ini) })) : [];
+    const trajetoriaFoco = pontosClipe.length ? { pontos: pontosClipe, duracao: fimClipe - ini, ...(tf.cor ? { cor: tf.cor } : {}) } : null;
+    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, shapes: novos, note, tagId: pendingTag || null, trajetoriaFoco } : c)));
+    setTrajetoriaFocoPendente(null);
     setClipeEmDesenho(null);
     limparMarcas();
     fecharDesenho();
   };
-  const cancelarDesenhosClipe = () => { setClipeEmDesenho(null); limparMarcas(); };
+  const cancelarDesenhosClipe = () => { setClipeEmDesenho(null); setTrajetoriaFocoPendente(null); limparMarcas(); };
   const originalDoClipe = (clip) => {
     if (!clip) return null;
     if (clip.originalId) return videosOriginais.find(v => v.id === clip.originalId) || null;
@@ -5534,6 +5552,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
           onEnviarSala={enviarParaSala ? () => { sairDoEcraInteiro(); setClipeParaSala(clipeAReproduzir); } : undefined}
           onDesenhar={() => desenharNoClipe(clipeAReproduzir)}
+          onSeguirNoDesenho={() => desenharNoClipe(clipeAReproduzir, { seguir: true })}
           embutido={!!estudioEl}
           onEcraInteiro={estudioEl ? alternarEcraInteiro : undefined}
           ecraInteiroExterno={fullscreen}
