@@ -117,15 +117,22 @@ export function IconeGoloPrint({ size = 11 }) {
 
 /* Chuteira de perfil, para a assistência: calcanhar alto à esquerda,
    bico baixo à direita, sola com pitons por baixo. */
+/* Bota de futebol (assistência), dourada, de lado: cano, biqueira, sola e
+   pitões. A mesma forma na partilha (`BOTA_SVG`). */
+const BOTA_PATHS = '<path d="M2.4 8.2 C2.4 5.6 3.5 4.3 5.3 4.3 H8.3 C9 6.1 10.5 7.3 12.6 7.6 L18.8 8.5 C21.3 8.9 22.6 10.2 22.6 12.1 V12.7 H2.4 Z" fill="#D4A72C" stroke="#7A5B10" stroke-width="0.9" stroke-linejoin="round"/>'
+  + '<path d="M9.6 6.3 l1.5-1.3 M11.4 7.1 l1.4-1.2 M13.3 7.6 l1.3-1.1" stroke="#fff" stroke-width="0.8" stroke-linecap="round"/>'
+  + '<rect x="1.8" y="12.6" width="21.4" height="1.9" rx="0.9" fill="#7A5B10"/>'
+  + '<rect x="3.6" y="14.3" width="1.9" height="2" rx="0.5" fill="#7A5B10"/><rect x="9" y="14.3" width="1.9" height="2" rx="0.5" fill="#7A5B10"/>'
+  + '<rect x="14.6" y="14.3" width="1.9" height="2" rx="0.5" fill="#7A5B10"/><rect x="19.4" y="14.3" width="1.9" height="2" rx="0.5" fill="#7A5B10"/>';
+// A chuteira é mais larga do que alta: `size` é a LARGURA.
+export function botaSvgHtml(size = 16) {
+  return `<svg width="${size}" height="${Math.round(size * 17 / 24)}" viewBox="0 0 24 17" style="vertical-align:-1px" aria-hidden="true">${BOTA_PATHS}</svg>`;
+}
 export function IconeAssistenciaPrint({ size = 11 }) {
+  const w = size * 1.35;
   return (
-    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }} aria-hidden="true">
-      <path d="M2.6 4.2 h3.6 l1.7 4.3 c.5 1.3 1.6 2.2 3 2.4 l4.6 .7 c1.6 .25 2.5 1.2 2.5 2.5 v.7 h-15.4 z" fill="#111" />
-      <rect x="1.8" y="15.1" width="16.4" height="1.5" rx=".5" fill="#111" />
-      <rect x="4" y="16.9" width="1.6" height="1.6" fill="#111" />
-      <rect x="9.2" y="16.9" width="1.6" height="1.6" fill="#111" />
-      <rect x="14.4" y="16.9" width="1.6" height="1.6" fill="#111" />
-    </svg>
+    <svg width={w} height={w * 17 / 24} viewBox="0 0 24 17" style={{ display: 'block', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: BOTA_PATHS }} />
   );
 }
 
@@ -321,7 +328,7 @@ function extraEventosPrint(eventos, players) {
     const icones = [
       ...Array.from({ length: Math.min(x.golos, 3) }).map((_, i) => <IconeGoloPrint key={`g${i}`} size={9} />),
       x.golos > 3 ? <span key="gx" style={{ fontSize: '7pt' }}>×{x.golos}</span> : null,
-      ...Array.from({ length: Math.min(x.assistencias, 3) }).map((_, i) => <IconeAssistenciaPrint key={`a${i}`} size={9} />),
+      ...Array.from({ length: Math.min(x.assistencias, 3) }).map((_, i) => <IconeAssistenciaPrint key={`a${i}`} size={10} />),
       x.cartao ? <IconeCartaoPrint key="c" card={x.cartao} size={9} /> : null,
     ].filter(Boolean);
     if (onde === 'campo') {
@@ -469,7 +476,7 @@ export function escalacaoComFotosHtml(match, players) {
   const cartaoHtml = (c) => `<span title="${c === 'yellow' ? 'Amarelo' : c === 'red' ? 'Vermelho' : 'Duplo amarelo'}" style="display:inline-block;width:7px;height:10px;border-radius:1.5px;vertical-align:-1px;background:${c === 'red' ? '#C0392B' : '#E8C33A'};${c === 'yellow2' ? 'box-shadow:2px 0 0 #C0392B;' : ''}"></span>`;
   const iconesHtml = (x) => [
     x.golos ? `<span title="${x.golos} golo${x.golos > 1 ? 's' : ''}">${'⚽'.repeat(Math.min(x.golos, 3))}${x.golos > 3 ? '×' + x.golos : ''}</span>` : '',
-    x.assistencias ? `<span title="assistência" style="font-weight:700">A${x.assistencias > 1 ? x.assistencias : ''}</span>` : '',
+    x.assistencias ? `<span title="${x.assistencias} assistência${x.assistencias > 1 ? 's' : ''}" style="white-space:nowrap">${botaSvgHtml(17).repeat(Math.min(x.assistencias, 3))}${x.assistencias > 3 ? '×' + x.assistencias : ''}</span>` : '',
     x.cartao ? cartaoHtml(x.cartao) : '',
   ].filter(Boolean).join(' ');
   const eventosNoCampo = (p) => {
@@ -484,11 +491,11 @@ export function escalacaoComFotosHtml(match, players) {
     if (!x || !x.jogou) return ''; // quem não jogou fica só com o nome
     const saiu = eventos.titulares.filter(t => t.saiuAo != null && t.saiuAo === x.entrouAo).map(t => escapeHtmlText(shortPlayerName(t.player, players)));
     const linha = [
-      x.entrouAo != null ? `<span style="white-space:nowrap">${iconeTrocaHtml('entra', 12)} ${x.entrouAo}'</span>${saiu.length ? ` <span style="opacity:.7">por ${saiu.join(', ')}</span>` : ''}` : '',
-      iconesHtml(x),
-    ].filter(Boolean).join(' · ');
+      [iconesHtml(x), x.entrouAo != null ? `<span style="white-space:nowrap">${iconeTrocaHtml('entra', 13)} ${x.entrouAo}'</span>` : ''].filter(Boolean).join(' '),
+      x.entrouAo != null && saiu.length ? `<span style="display:block;font-size:11px;opacity:.65">por ${saiu.join(', ')}</span>` : '',
+    ].filter(Boolean).join('');
     if (!linha) return '';
-    return `<span style="display:block;font-size:11px;opacity:.85">${linha}</span>`;
+    return `<span style="margin-left:auto;flex-shrink:0;text-align:right;font-size:12px;line-height:1.35;padding-left:8px">${linha}</span>`;
   };
   const bola = (p, tam) => {
     const conteudo = p.photo
@@ -511,7 +518,7 @@ export function escalacaoComFotosHtml(match, players) {
   const campo = `<div style="position:relative;width:100%;max-width:340px;aspect-ratio:68/105;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(180deg,#2b5a33 0 7.5%,#275230 7.5% 15%)">${linhas}${noCampo}</div>`;
   const suplentes = banco.length
     ? banco.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid #ffffff22;border-radius:8px;background:#ffffff08">${bola(p, 30)}`
-      + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span>${eventosNoBanco(p)}</span></div>`).join('')
+      + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span></span>${eventosNoBanco(p)}</div>`).join('')
     : '<p class="desc">Sem suplentes.</p>';
   return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">`
     + `<div style="flex:1 1 280px;max-width:340px"><div style="font-size:14px;font-weight:600;margin:0 0 8px">Onze inicial</div>${campo}<div style="font-size:12px;opacity:.6;margin-top:6px">Sistema ${escapeHtmlText(formacao)}</div></div>`
