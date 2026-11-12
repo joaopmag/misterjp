@@ -5,7 +5,7 @@ import { Input, Select, Btn, useIsMobile, EmptyState, TextArea, Modal } from '..
 import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
 import { shortPlayerName, sortByPosition } from '../dominio/jogadores';
 import { todayStr, addDays, fmtShort, uid, fmtDate } from '../base/utilidades';
-import { AlertTriangle, Plus, MessageCircle, ChevronDown, ChevronRight, Check, Pencil, Trash2, BookOpen } from 'lucide-react';
+import { AlertTriangle, Plus, MessageCircle, ChevronDown, ChevronRight, Check, Pencil, Trash2, BookOpen, Printer, Share2 } from 'lucide-react';
 import { competitionLabel, FRIENDLY } from '../dominio/jogos';
 import React, { useState } from 'react';
 import { UrlAnexo, hrefDescarga } from '../base/anexos';
@@ -266,7 +266,7 @@ export function AlertaRelatorios({ emFalta, onCriar }) {
   );
 }
 
-export function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches, abrirAnaliseId, onAnaliseAberta }) {
+export function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches, abrirAnaliseId, onAnaliseAberta, onImprimirFicha, onPartilharFicha }) {
   const hoje = todayStr();
   const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -365,6 +365,20 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
             // À direita: o relatório (estatísticas).
             const acoes = (
               <div onClick={parar} style={{ display: 'flex', alignItems: 'center', gap: estreito ? 6 : 10, flexShrink: 0, marginLeft: 'auto' }}>
+                {/* Atalhos para a ficha do jogo (a mesma impressão e partilha
+                    do separador Jogos), sem ter de ir lá procurar o jogo. */}
+                {onImprimirFicha && (
+                  <button type="button" onClick={() => onImprimirFicha(m)} title="Imprimir a ficha do jogo" aria-label="Imprimir a ficha do jogo"
+                    style={{ display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: T.muted }}>
+                    <Printer size={16} />
+                  </button>
+                )}
+                {onPartilharFicha && (
+                  <button type="button" onClick={() => onPartilharFicha(m)} title="Partilhar a ficha do jogo" aria-label="Partilhar a ficha do jogo"
+                    style={{ display: 'inline-flex', background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: T.muted }}>
+                    <Share2 size={16} />
+                  </button>
+                )}
                 <button type="button" onClick={() => setAberto(m)} title="Abrir o relatório do jogo" style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, ...body,
                   fontSize: estreito ? 12 : 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', maxWidth: estreito ? 130 : 220,

@@ -199,7 +199,12 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
           userEmail={userEmail} setMatches={setMatches}
           abrirAnaliseId={abrirAnalise} onAnaliseAberta={() => setAbrirAnalise(null)}
+          onImprimirFicha={doPrintMatch} onPartilharFicha={doShareMatch}
         />
+        {printMatch && createPortal(
+          <PrintFichaJogo match={printMatch} players={players} season={season} />,
+          document.body,
+        )}
       </div>
     );
   }

@@ -115,6 +115,11 @@ reduz o peso inicial da app e do Portal.
   nos suplentes, entrada, quem substituíram (pelo minuto da saída),
   acontecimentos e minutos; a impressão ganha os Destaques.
   `EscalacaoPrint` aceita `extra(pid, 'campo'|'banco')`.
+- 12/11: Relatórios de jogo: cada jogo tem atalhos para imprimir e
+  partilhar a ficha do jogo (as mesmas do separador Jogos).
+- 12/11: Ficha de jogo: substituição com ícone (círculo verde ↑ entra,
+  vermelho ↓ sai) e assistência com chuteira dourada; na partilha, os
+  acontecimentos dos suplentes ficam à direita do cartão.
 - 12/11: Gravação (`base/sincronizacao.jsx`): erros de sessão ("JWT
   issued at future", "JWT expired") tentam de novo até 2 vezes, com uns
   segundos de intervalo, antes de mostrar o aviso.
