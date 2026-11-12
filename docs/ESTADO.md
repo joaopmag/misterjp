@@ -19,11 +19,12 @@ Há **dois repositórios**, ambos no GitHub Desktop da Adelaide:
 Cada passo diz sempre a que repositório pertence.
 
 1. **Partir sempre do que está no GitHub.** No início de cada passo, a
-   Adelaide faz "Fetch origin" e "Pull" no GitHub Desktop, para trazer
-   eventuais alterações feitas com a outra conta. Depois, em "Repository →
-   Show in Finder/Explorer", comprime a pasta do repositório **sem**
-   `node_modules`, `.git` e ficheiros `.env`, e envia-a. Não se parte de
-   cópias antigas.
+   Adelaide faz "Fetch origin" e "Pull" no GitHub Desktop. Se o último
+   commit do histórico for o do passo anterior deste trabalho, a sessão
+   continua da sua cópia. Se houver commits de outra conta ou sessão, a
+   Adelaide comprime a pasta do repositório **sem** `node_modules`, `.git`
+   e ficheiros `.env` (em "Repository → Show in Finder/Explorer") e envia-a,
+   e parte-se dela. Nunca se parte de cópias antigas.
 2. O Claude devolve um `.zip` com os ficheiros e pastas alterados, na
    mesma estrutura do repositório.
 3. A Adelaide copia esse conteúdo para a pasta do repositório,
@@ -58,8 +59,8 @@ ganha as importações de que precisa. Ordem combinada:
 | Passo | O que sai do `App.jsx` | Estado |
 |---|---|---|
 | 0 | Nada. Verificador, este ficheiro, servidor do Modal e SQL no repositório | feito |
-| 1 | Base → `src/base/`: `tema.jsx`, `utilidades.js`, `ui.jsx`, `sincronizacao.jsx` | feito, à espera de "ok" |
-| 2 | Tático: editor de diagramas, Quadro tático, Simulador | por fazer |
+| 1 | Base → `src/base/`: `tema.jsx`, `utilidades.js`, `ui.jsx`, `sincronizacao.jsx` | feito |
+| 2 | Tático → `src/tatico/` (campo, DiagramEditor, QuadroTaticoLivre, Simulador, prancheta); regras partilhadas → `src/dominio/` (jogadores, clínico, jogos, treino); `base/impressao.js`, `base/arrastar.js` | feito, à espera de "ok" |
 | 3 | Biblioteca de média | por fazer |
 | 4 | Treino: Planeamento, Exercícios, Sessões, Ideia de jogo | por fazer |
 | 5 | Competição: Jogos, Convocatórias, Ficha de jogo, Escalação, Classificação | por fazer |
@@ -86,6 +87,14 @@ Provas feitas no passo 1, a repetir nos seguintes:
 - a app antiga e a nova, arrancadas com um Supabase fictício (sem rede),
   mostram o mesmo nas páginas `/`, `/app/` e `/portal/`, nos temas escuro
   e claro, sem erros.
+
+**A seguir à divisão (combinado a 12/11):** rascunhos nos formulários
+longos (Diário, Sessões, relatórios e notas de jogo, Tarefas, Scouting,
+Desenvolvimento individual). Hoje só existem em Exercício, Ideia de jogo
+e Dinâmica tática (`useRascunho`, em `base/sincronizacao.jsx`). Os
+rascunhos ficam no dispositivo: nas áreas sensíveis (clínico, diário)
+apagam-se ao sair da sessão e nunca ficam em dispositivos de atletas.
+Fica num passo próprio, sem misturar com a divisão.
 
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.
