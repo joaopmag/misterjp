@@ -129,6 +129,27 @@ function posicaoNaTrajetoria(pontos, tempo) {
   return tempo < pontos[0].t ? pontos[0] : pontos[pontos.length - 1];
 }
 
+/* SEGUIMENTO QUE PAROU ANTES DO FIM: o serviço pára quando perde o
+   jogador (aglomerado, tapado) em vez de adivinhar quem é. Este aviso diz
+   onde parou e leva lá; o treinador avança até o jogador voltar a
+   aparecer e toca nele ("Continuar seguimento"): o tubo segue daí. */
+function AvisoSeguimentoParou({ pontos, fim, onIr }) {
+  const ps = limparTrajetoria(pontos);
+  if (!ps.length || !(fim > 0)) return null;
+  const tParou = ps[ps.length - 1].t;
+  if (tParou >= fim - 0.8) return null;
+  return (
+    <div style={{ background: TV.surfaceRaise, border: `1px solid ${TV.line}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12, lineHeight: 1.4, ...body }}>
+      O seguimento parou em {fmt(tParou)}: o jogador ficou tapado ou saiu da imagem. Avança até ele voltar a aparecer, para o vídeo e toca em «Continuar seguimento».
+      {onIr && (
+        <button type="button" onClick={() => onIr(tParou)} style={{ display: 'block', marginTop: 6, background: 'transparent', border: `1px solid ${TV.line}`, borderRadius: 6, color: TV.cream, padding: '4px 9px', fontSize: 11.5, cursor: 'pointer', ...body }}>
+          Ir para {fmt(tParou)}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // TEMPORÁRIO — enquanto o Upstash não estiver configurado (ver
 // seguir-jogador-iniciar.js / seguir-jogador-estado.js), chama-se
 // diretamente o endpoint antigo (/api/seguir-jogador), que espera pela
@@ -2004,7 +2025,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               <div onClick={aoTocarNoVideo}
                 style={{ position: 'absolute', inset: 0, cursor: 'crosshair', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
                 <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
-                  Toca no jogador {modoSeguir === 'a_corrigir' ? 'certo, neste momento' : 'que queres seguir'}
+                  Toca no jogador {modoSeguir === 'a_corrigir' ? 'neste momento: o seguimento continua daqui' : 'que queres seguir'}
                 </span>
               </div>
             )}
@@ -2122,10 +2143,16 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
                 </Btn>
                 {temTrajetoria && (
                   <Btn variant="ghost" onClick={comecarCorrecao} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12 }}>
-                    <Crosshair size={13} /> Corrigir aqui
+                    <Crosshair size={13} /> Continuar seguimento
                   </Btn>
                 )}
               </div>
+              {temTrajetoria && modoSeguir === 'normal' && (
+                <div style={{ marginTop: 8 }}>
+                  <AvisoSeguimentoParou pontos={clip.trajetoriaFoco.pontos} fim={duracaoVideo}
+                    onIr={(tp) => { const v = videoRef.current; if (v) { v.pause(); v.currentTime = tp; } }} />
+                </div>
+              )}
               {erroSeguir && (
                 <div style={{ marginTop: 8, background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12 }}>{erroSeguir}</div>
               )}
@@ -2885,7 +2912,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         // reancorar a partir daqui — mantém a parte anterior a tInicial
         const anteriores = prev ? prev.pontos.filter(p => p.t < tInicial) : [];
         // A cor do tubo é a que está escolhida em COR quando se segue.
-        return { pontos: [...anteriores, ...novosPontos], duracao: resultado.duracao, cor: (prev && prev.cor) || corAtual };
+        return { pontos: [...anteriores, ...novosPontos], duracao: resultado.duracao, cor: (prev && prev.cor) || corAtual, tFimPedido: tFim };
       });
     } catch (e) {
       setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
@@ -4328,9 +4355,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       {trajetoriaFocoPendente && !processandoFoco && (
         <>
           <Btn variant="ghost" onClick={() => { videoRef.current?.pause(); setModoDesenho(true); setTool('seguir'); }} style={baixo ? {} : btnPainel}>
-            <Target size={14} color={TV.crimsonBright} /> Corrigir seguimento
+            <Target size={14} color={TV.crimsonBright} /> Continuar seguimento
           </Btn>
           <Btn variant="plain" onClick={() => setTrajetoriaFocoPendente(null)} style={baixo ? {} : btnPainel}><X size={14} /> Tirar seguimento</Btn>
+          <AvisoSeguimentoParou pontos={trajetoriaFocoPendente.pontos} fim={Math.min(duration || 0, trajetoriaFocoPendente.tFimPedido ?? Infinity)}
+            onIr={(tp) => { videoRef.current?.pause(); seekTo(tp); }} />
         </>
       )}
       {!baixo && <div style={{ height: 4 }} />}
@@ -4769,7 +4798,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {modoDesenho && tool === 'seguir' && !processandoFoco && (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pointerEvents: 'none' }}>
                   <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
-                    {trajetoriaFocoPendente ? 'Toca no jogador certo, neste momento: o seguimento recomeça daqui' : 'Toca no jogador que queres seguir'}
+                    {trajetoriaFocoPendente ? 'Toca no jogador, neste momento: o seguimento continua daqui' : 'Toca no jogador que queres seguir'}
                   </span>
                 </div>
               )}
@@ -5155,8 +5184,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </div>
                   {trajetoriaFocoPendente && !processandoFoco && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => { videoRef.current?.pause(); setTool('seguir'); }} style={botaoBarra}><Target size={14} color={TV.crimsonBright} /> Corrigir seguimento aqui</button>
+                      <button type="button" onClick={() => { videoRef.current?.pause(); setTool('seguir'); }} style={botaoBarra}><Target size={14} color={TV.crimsonBright} /> Continuar seguimento aqui</button>
                       <button type="button" onClick={() => setTrajetoriaFocoPendente(null)} style={botaoBarra}><X size={14} /> Tirar seguimento</button>
+                    </div>
+                  )}
+                  {trajetoriaFocoPendente && !processandoFoco && (
+                    <div style={{ marginTop: 8 }}>
+                      <AvisoSeguimentoParou pontos={trajetoriaFocoPendente.pontos} fim={Math.min(duration || 0, trajetoriaFocoPendente.tFimPedido ?? Infinity)}
+                        onIr={(tp) => { videoRef.current?.pause(); seekTo(tp); }} />
                     </div>
                   )}
                   {tituloSecao(`Paragens neste vídeo · ${paragensDoVideo.length}`, 14)}
