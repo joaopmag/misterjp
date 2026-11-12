@@ -53,7 +53,7 @@ Referência antes da divisão: `main` com 2.488 kB (723 kB comprimido),
 
 ## Plano em curso: partir o `App.jsx` (ponto 6)
 
-Só se muda código de sítio: nenhuma lógica muda. Cada ficheiro novo só
+Só se muda código de sítio: nenhuma lógica muda. (A Competição passou à frente do Treino porque o Planeamento abre fichas de jogo: assim não há ficheiros a depender uns dos outros em círculo.) Cada ficheiro novo só
 ganha as importações de que precisa. Ordem combinada:
 
 | Passo | O que sai do `App.jsx` | Estado |
@@ -61,9 +61,9 @@ ganha as importações de que precisa. Ordem combinada:
 | 0 | Nada. Verificador, este ficheiro, servidor do Modal e SQL no repositório | feito |
 | 1 | Base → `src/base/`: `tema.jsx`, `utilidades.js`, `ui.jsx`, `sincronizacao.jsx` | feito |
 | 2 | Tático → `src/tatico/` (campo, DiagramEditor, QuadroTaticoLivre, Simulador, prancheta); regras partilhadas → `src/dominio/` (jogadores, clínico, jogos, treino); `base/impressao.js`, `base/arrastar.js` | feito |
-| 3 | Média → `src/media/` (MediaLibrary, MediaModal, LeitorJunto, leitores, social, organização, ações); `base/anexos.jsx`, `base/kiosk.js` | feito, à espera de "ok" |
-| 4 | Treino: Planeamento, Exercícios, Sessões, Ideia de jogo | por fazer |
-| 5 | Competição: Jogos, Convocatórias, Ficha de jogo, Escalação, Classificação | por fazer |
+| 3 | Média → `src/media/` (MediaLibrary, MediaModal, LeitorJunto, leitores, social, organização, ações); `base/anexos.jsx`, `base/kiosk.js` | feito |
+| 4 | Competição → `src/competicao/` (Jogos, MatchModal, FichaJogo, Escalacao, Convocatorias, Classificacao, RelatoriosJogo, MatchDashboard, dados); partilhados → `dominio/` (plantel, estatisticas, convidados, estadoJogos), `base/` (partilha, ui-extra), `tatico/impressaoCampo.jsx`. Função nova `consumirMissaoPendente()` (Tarefas limpa o pedido de missão) | feito, à espera de "ok" |
+| 5 | Treino: Planeamento, Exercícios, Sessões, Ideia de jogo | por fazer |
 | 6 | Plantel: Plantel, Presenças, Monitorização, Desenvolvimento, Clínico | por fazer |
 | 7 | Scouting, Diário, Tarefas, Gestão de equipa | por fazer |
 | 8 | Atleta: Portal, Check-in, Cacifo | por fazer |
@@ -95,6 +95,11 @@ e Dinâmica tática (`useRascunho`, em `base/sincronizacao.jsx`). Os
 rascunhos ficam no dispositivo: nas áreas sensíveis (clínico, diário)
 apagam-se ao sair da sessão e nunca ficam em dispositivos de atletas.
 Fica num passo próprio, sem misturar com a divisão.
+
+**Também a seguir à divisão:** "Criar clipe" na Biblioteca para vídeos
+carregados como ficheiro. Hoje só existe para o YouTube (cortes com início
+e fim sobre o vídeo, sem cortar ficheiro). Fazer o mesmo para ficheiros,
+com as mesmas ferramentas (desenhos, paragens, partilha).
 
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.
