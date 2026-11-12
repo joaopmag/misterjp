@@ -36,7 +36,7 @@ import { BotaoTopo, Btn, ConfirmDialog, EmptyState, FIELD_FULL, FIELD_GRID, Fiel
 import { BannerRascunho, SyncErrorBanner, ensureSession, jsonEstavel, loadSingleton, saveSingleton, useCollectionSync, useRascunho, useSingletonSync } from './base/sincronizacao';
 // Tático, domínio e base (divisão do App.jsx, passo 2): src/tatico/, src/dominio/, src/base/.
 import { momentoTexto, momentosDe, temMomento } from './dominio/treino';
-import { NIVEIS_CLINICOS, estadoClinicoEm, nivelClinico, nivelNoDia, ordenarEvolucao } from './dominio/clinico';
+import { NIVEIS_CLINICOS, estadoClinicoEm, nivelClinico, nivelNoDia, ordenarEvolucao, resumoClinico } from './dominio/clinico';
 import { FRIENDLY, competitionLabel, isFriendlyMatch, jogoRealDaSessao } from './dominio/jogos';
 import { esperarImagensDoStorage, imprimirComNome } from './base/impressao';
 import { useArrastarParaTrocar } from './base/arrastar';
@@ -26761,8 +26761,17 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
                   const wellnessToday = wellnessAvg(todayWellness);
                   const avg = wellnessAvg(lastWellness);
-                  const statusColor = avg === null ? T.good : avg >= 3.5 ? T.good : avg >= 2.2 ? T.warn : T.bad;
-                  const statusLabel = avg === null ? 'Apto' : avg >= 3.5 ? 'Apto' : avg >= 2.2 ? 'Atenção' : 'Risco';
+                  const corWellness = avg === null ? T.good : avg >= 3.5 ? T.good : avg >= 2.2 ? T.warn : T.bad;
+                  const rotuloWellness = avg === null ? 'Apto' : avg >= 3.5 ? 'Apto' : avg >= 2.2 ? 'Atenção' : 'Risco';
+                  /* O boletim clínico manda: com uma ocorrência aberta hoje
+                     (lesão, doença…), o estado é o nível dela, mesmo que o
+                     wellness diga "Apto". Sem ocorrência, decide o wellness. */
+                  const clinicoHoje = estadoClinicoEm(p.id, todayDateStr, clinico);
+                  const statusColor = clinicoHoje ? clinicoHoje.cor : corWellness;
+                  const statusLabel = clinicoHoje ? clinicoHoje.curto : rotuloWellness;
+                  const statusTitulo = clinicoHoje
+                    ? `${resumoClinico(clinicoHoje)}${avg !== null ? ` · Wellness: ${rotuloWellness}` : ''}`
+                    : undefined;
                   // Só faz sentido lembrar quem ainda não respondeu hoje e
                   // tem um contacto guardado — sem as duas coisas, não há
                   // nada para onde mandar nem nada por que lembrar.
@@ -26775,7 +26784,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                     : null;
                   return (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                      <td style={td2}>
+                      <td style={td2} title={statusTitulo}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
                           {statusLabel}

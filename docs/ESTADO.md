@@ -99,6 +99,13 @@ Fica num passo próprio, sem misturar com a divisão.
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.
 
+## Correções fora da divisão (commits próprios)
+
+- 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
+  mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
+  Condicionado ou Vigilância, com o resumo ao passar o rato). Sem
+  ocorrência, decide o wellness como antes.
+
 ## Pontos para a versão comercial
 
 1. **Marca no código:** feito. "MisterJP" é o nome provisório e o nome da
