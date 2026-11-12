@@ -156,6 +156,21 @@ function AvisoSeguimentoParou({ pontos, fim, onIr }) {
 // resposta toda de uma vez. Quando o Upstash estiver pronto, troca-se
 // só o corpo desta função pela versão com fila (guardada mais abaixo,
 // em comentário) — nada mais precisa de mudar.
+/* ONDE COMEÇA MESMO UM CORTE no tempo do jogo. O corte não recodifica e
+   começa no fotograma-chave anterior ao marcado (às vezes segundos antes):
+   `origemInicioReal` (medido no servidor) é o 0 do ficheiro do corte.
+   Cortes antigos sem essa medida usam o marcado (e são medidos depois). */
+export function inicioRealDoCorte(c) {
+  if (!c) return 0;
+  if (typeof c.origemInicioReal === 'number') return c.origemInicioReal;
+  return typeof c.origemInicio === 'number' ? c.origemInicio : 0;
+}
+function duracaoDoCorte(c) {
+  if (!c) return 0;
+  if (typeof c.origemFim === 'number') return Math.max(0, c.origemFim - inicioRealDoCorte(c));
+  return c.duracao || 0;
+}
+
 /* As funções do servidor (/api/cortar-clipe, /api/seguir-jogador) só
    aceitam pedidos de quem tem sessão iniciada: vai o token da sessão do
    Supabase, que o servidor confirma. Sem isto, qualquer pessoa com o
@@ -1834,12 +1849,12 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   // consegue marcar dentro do que já está neste clipe; para alargar
   // para fora disso, ainda é preciso escolher outro vídeo original.
   const marcarInicioEd = () => {
-    const novo = (clip.origemInicio || 0) + (videoRef.current?.currentTime || 0);
+    const novo = inicioRealDoCorte(clip) + (videoRef.current?.currentTime || 0);
     setInicioEd(novo);
     if (fimEd <= novo) setFimEd(novo + 1);
   };
   const marcarFimEd = () => {
-    const novo = (clip.origemInicio || 0) + (videoRef.current?.currentTime || 0);
+    const novo = inicioRealDoCorte(clip) + (videoRef.current?.currentTime || 0);
     setFimEd(novo);
     if (inicioEd >= novo) setInicioEd(Math.max(0, novo - 1));
   };
@@ -1848,7 +1863,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const escreverInicioEd = (novo) => {
     setInicioEd(novo);
     if (fimEd <= novo) setFimEd(novo + 1);
-    const rel = novo - (clip.origemInicio || 0);
+    const rel = novo - inicioRealDoCorte(clip);
     if (rel >= 0 && (!duracaoVideo || rel <= duracaoVideo)) irPara(rel);
   };
   const escreverFimEd = (novo) => {
@@ -3616,21 +3631,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       let json = {};
       try { json = await resp.json(); } catch (e) { /* resposta sem JSON (ex.: tempo esgotado no servidor) */ }
       if (!resp.ok) throw new Error(json.error || `o servidor respondeu ${resp.status}${resp.status === 504 ? ' (demorou demasiado)' : ''}`);
+      // O 0 do ficheiro do corte (pode ser uns segundos antes do marcado).
+      const k0 = typeof json.inicioReal === 'number' ? json.inicioReal : ini;
       const novoClipe = {
         id: uid(), tagId: tag ? tag.id : null, storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
-        origemInicio: ini, origemFim: fim, duracao: fim - ini,
+        origemInicio: ini, origemFim: fim, duracao: fim - k0,
+        ...(typeof json.inicioReal === 'number' ? { origemInicioReal: json.inicioReal } : {}),
         note: nota || '',
-        // Os tempos dos desenhos passam a contar a partir do início do clipe.
+        // Os tempos dos desenhos passam a contar a partir do 0 do ficheiro do corte.
         shapes: shapesFinais.map(sh => ({
           ...sh,
-          criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
-          mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
+          criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - k0),
+          mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - k0),
         })),
         trajetoriaFoco: trajetoriaFocoPendente ? {
           pontos: trajetoriaFocoPendente.pontos
-            .filter(pt => pt.t >= ini && pt.t <= fim)
-            .map(pt => ({ ...pt, t: Math.max(0, pt.t - ini) })),
-          duracao: fim - ini,
+            .filter(pt => pt.t >= k0 && pt.t <= fim)
+            .map(pt => ({ ...pt, t: Math.max(0, pt.t - k0) })),
+          duracao: fim - k0,
           ...(trajetoriaFocoPendente.cor ? { cor: trajetoriaFocoPendente.cor } : {}),
         } : null,
         originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
@@ -3781,8 +3799,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       window.alert('Não encontrei o vídeo original deste clipe, por isso não dá para desenhar nele. Abre o clipe, carrega no lápis e escolhe o vídeo original.');
       return;
     }
-    const durClipe = (typeof clip.origemFim === 'number' && typeof clip.origemInicio === 'number')
-      ? clip.origemFim - clip.origemInicio : (clip.duracao || 0);
+    const durClipe = duracaoDoCorte(clip);
     const ini = 0;
     const fim = durClipe;
     setClipeAReproduzir(null);
@@ -3814,8 +3831,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // Já se desenhou no tempo do próprio corte: guarda-se tal e qual.
     const novos = shapesComTextoPendente();
     const tf = trajetoriaFocoPendente;
-    const durClipe = (typeof clip.origemFim === 'number' && typeof clip.origemInicio === 'number')
-      ? clip.origemFim - clip.origemInicio : (clip.duracao || 0);
+    const durClipe = duracaoDoCorte(clip);
     const trajetoriaFoco = tf && tf.pontos && tf.pontos.length
       ? { pontos: tf.pontos.map(({ ...pt }) => pt), duracao: durClipe, ...(tf.cor ? { cor: tf.cor } : {}) } : null;
     const atualizado = { ...clip, shapes: novos, note, tagId: pendingTag || null, trajetoriaFoco };
@@ -3878,13 +3894,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     let json = {};
     try { json = await resp.json(); } catch (e) { /* resposta sem corpo */ }
     if (!resp.ok) throw new Error(`Não consegui voltar a cortar o clipe: ${json.error || resp.status}`);
-    // Os desenhos estão guardados relativos ao início do clipe: acompanham a mudança.
-    const desvio = (clip.origemInicio || 0) - inicio;
+    // Os desenhos estão guardados relativos ao 0 do ficheiro: acompanham a mudança.
+    const k0Novo = typeof json.inicioReal === 'number' ? json.inicioReal : inicio;
+    const desvio = inicioRealDoCorte(clip) - k0Novo;
+    const { origemInicioReal: _antigoReal, ...clipSemReal } = clip; // eslint-disable-line no-unused-vars
     const novo = {
-      ...clip,
+      ...clipSemReal,
       note: novaNota,
       storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
-      origemInicio: inicio, origemFim: fim, duracao: fim - inicio,
+      origemInicio: inicio, origemFim: fim, duracao: fim - k0Novo,
+      ...(typeof json.inicioReal === 'number' ? { origemInicioReal: json.inicioReal } : {}),
       originalId: original.id, originalTitulo: original.titulo,
       shapes: (clip.shapes || []).map(sh => ({
         ...sh,
@@ -3894,8 +3913,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       trajetoriaFoco: (clip.trajetoriaFoco && !mudouOriginal) ? {
         pontos: clip.trajetoriaFoco.pontos
           .map(p => ({ ...p, t: p.t + desvio }))
-          .filter(p => p.t >= 0 && p.t <= fim - inicio),
-        duracao: fim - inicio,
+          .filter(p => p.t >= 0 && p.t <= fim - k0Novo),
+        duracao: fim - k0Novo,
       } : null,
       editadoEm: new Date().toISOString(),
     };
@@ -4553,7 +4572,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      cada corte (só para ver: muda-se no próprio corte). Não se copia nada,
      por isso não há duas versões do mesmo desenho. */
   const formasDosCortes = React.useMemo(() => (clipeEmDesenho ? [] : clipesDoVideo.flatMap(c => {
-    const ini = c.origemInicio || 0;
+    const ini = inicioRealDoCorte(c);
     const fimCorte = typeof c.origemFim === 'number' ? c.origemFim : null;
     return (c.shapes || []).filter(sh => !formaAcidental(sh)).map(sh => {
       const a = (sh.criadoEmTempo ?? 0) + ini;
@@ -4569,7 +4588,33 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const formasDosCortesVisiveis = formasDosCortes.filter(sh => formaVisivel(sh, current, !playing, null));
   const tubosDosCortes = React.useMemo(() => (clipeEmDesenho ? [] : clipesDoVideo
     .filter(c => c.trajetoriaFoco && Array.isArray(c.trajetoriaFoco.pontos) && c.trajetoriaFoco.pontos.length)
-    .map(c => ({ id: c.id, cor: c.trajetoriaFoco.cor, pontos: c.trajetoriaFoco.pontos.map(pt => ({ ...pt, t: pt.t + (c.origemInicio || 0) })) }))), [clipesDoVideo, clipeEmDesenho]);
+    .map(c => ({ id: c.id, cor: c.trajetoriaFoco.cor, pontos: c.trajetoriaFoco.pontos.map(pt => ({ ...pt, t: pt.t + inicioRealDoCorte(c) })) }))), [clipesDoVideo, clipeEmDesenho]);
+  /* Cortes antigos (sem `origemInicioReal`) com desenhos ou seguimento:
+     mede-se uma vez, no servidor, onde começam de facto, e guarda-se. */
+  const cortesMedidosRef = useRef(new Set());
+  useEffect(() => {
+    if (!originalAtivo || !originalAtivo.storagePath || clipeEmDesenho) return;
+    const porMedir = clipesDoVideo.filter(c => typeof c.origemInicioReal !== 'number' && typeof c.origemInicio === 'number'
+      && !cortesMedidosRef.current.has(c.id)
+      && ((c.shapes || []).length || (c.trajetoriaFoco && (c.trajetoriaFoco.pontos || []).length)));
+    if (!porMedir.length) return;
+    porMedir.forEach(c => cortesMedidosRef.current.add(c.id));
+    (async () => {
+      for (const c of porMedir) {
+        try {
+          const resp = await fetch('/api/cortar-clipe', {
+            method: 'POST', headers: await cabecalhosComSessao(),
+            body: JSON.stringify({ teamId, storagePath: originalAtivo.storagePath, start: c.origemInicio, medir: true }),
+          });
+          const json = await resp.json().catch(() => ({}));
+          if (resp.ok && typeof json.inicioReal === 'number') {
+            setClipes(prev => prev.map(x => (x.id === c.id ? { ...x, origemInicioReal: json.inicioReal } : x)));
+          }
+        } catch (e) { /* fica com o tempo marcado; tenta-se noutra sessão */ }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalAtivo && originalAtivo.id, clipesDoVideo.length, clipeEmDesenho]);
   // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no
   // clipe final. A desenhar, escolher o zoom de um círculo mostra-o logo
   // uns segundos (pré-visualização).

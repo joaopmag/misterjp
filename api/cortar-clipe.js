@@ -15,10 +15,13 @@
 // de espaço temporário (/tmp) das funções serverless com vídeos de
 // jogo que pesam vários gigabytes.
 //
-// Limitação a aceitar: por não recodificar, o corte "encosta" ao
-// keyframe mais próximo ANTES do início pedido — por vezes começa
-// meio segundo mais cedo do que o marcado no ecrã. Para clipes de
-// análise (não para transmissão), isto não é problema.
+// Por não recodificar, o corte "encosta" ao keyframe mais próximo ANTES
+// do início pedido (em vídeos Veo, às vezes vários segundos antes). Por
+// isso mede-se ANTES de cortar em que instante do jogo o corte começa
+// mesmo (`inicioReal`) e corta-se até ao fim pedido a partir daí. A app
+// usa `inicioReal` para pôr no sítio certo, no jogo completo, os desenhos
+// e o seguimento feitos no corte (e vice-versa).
+// Com { medir: true } só mede (para cortes antigos), sem cortar nada.
 //
 // Dependências a instalar no projeto:
 //   npm install fluent-ffmpeg ffmpeg-static @supabase/supabase-js
@@ -38,6 +41,7 @@ import { createClient } from '@supabase/supabase-js';
 import ffmpegPath from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import os from 'os';
 import path from 'path';
 
@@ -51,6 +55,30 @@ const supabaseAdmin = createClient(
   SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Instante (no tempo do vídeo, em s) do fotograma-chave onde um corte
+// "-ss start -c copy" começa de facto. null se não der para medir.
+function medirInicioReal(url, start) {
+  return new Promise((resolve) => {
+    let texto = '';
+    let terminou = false;
+    const acabar = (v) => { if (!terminou) { terminou = true; resolve(v); } };
+    const proc = spawn(ffmpegPath, ['-hide_banner', '-noaccurate_seek', '-copyts', '-ss', String(start), '-i', url,
+      '-map', '0:v:0', '-frames:v', '1', '-vf', 'showinfo', '-f', 'null', '-']);
+    const relogio = setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) { /* já acabou */ } acabar(null); }, 20000);
+    proc.stderr.on('data', (d) => { texto += d.toString(); });
+    proc.on('error', () => { clearTimeout(relogio); acabar(null); });
+    proc.on('close', () => {
+      clearTimeout(relogio);
+      const pts = texto.match(/pts_time:\s*(-?[0-9.]+)/);
+      const ini = texto.match(/start:\s*(-?[0-9.]+)/);
+      if (!pts) return acabar(null);
+      const k = parseFloat(pts[1]) - (ini ? parseFloat(ini[1]) : 0);
+      // Só se aceita um valor que faça sentido (no máximo 20 s antes do pedido).
+      acabar(Number.isFinite(k) && k <= start + 0.05 && k >= start - 20 ? Math.max(0, Math.round(k * 1000) / 1000) : null);
+    });
+  });
+}
 
 export const config = {
   api: { bodyParser: true },
@@ -68,8 +96,8 @@ export default async function handler(req, res) {
   }
   console.log('cortar-clipe: a usar SUPABASE_URL =', SUPABASE_URL);
 
-  const { teamId, storagePath, start, end } = req.body || {};
-  if (!teamId || !storagePath || start == null || end == null || end <= start) {
+  const { teamId, storagePath, start, end, medir } = req.body || {};
+  if (!teamId || !storagePath || start == null || (!medir && (end == null || end <= start))) {
     return res.status(400).json({ error: 'Parâmetros em falta ou inválidos' });
   }
 
@@ -87,7 +115,19 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Este vídeo não pertence a esta equipa.' });
   }
 
-  const duracao = end - start;
+  if (medir) {
+    // Só medir (cortes antigos): onde começa de facto o corte feito em `start`.
+    try {
+      const { data: s1, error: e1 } = await supabaseAdmin.storage.from('videos-originais').createSignedUrl(storagePath, 120);
+      if (e1) throw e1;
+      const url = s1.signedUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
+      return res.status(200).json({ inicioReal: await medirInicioReal(url, Number(start)) });
+    } catch (e) {
+      return res.status(500).json({ error: e.message || 'Não consegui medir' });
+    }
+  }
+
+  let duracao = end - start;
   if (duracao > 180) {
     return res.status(400).json({ error: 'Clipe demasiado longo (máx. 3 min por corte)' });
   }
@@ -116,6 +156,11 @@ export default async function handler(req, res) {
     // quebra momentânea da rede a meio da leitura do vídeo original (que
     // pode ter vários GB), não um problema real com o pedido. Repetir
     // resolve a esmagadora maioria dessas falhas sozinho.
+    // Onde o corte vai começar de facto; o corte vai daí até ao FIM pedido
+    // (antes ia só `duracao` a partir daí e acabava mais cedo).
+    const inicioReal = await medirInicioReal(urlLeituraDireta, Number(start));
+    if (inicioReal != null) duracao = Math.max(duracao, end - inicioReal);
+
     let ultimoErro = null;
     for (let tentativa = 1; tentativa <= 3; tentativa++) {
       try {
@@ -177,7 +222,7 @@ export default async function handler(req, res) {
       console.error('cortar-clipe: falhou a miniatura (não crítico)', eThumb.message || eThumb);
     }
 
-    return res.status(200).json({ storagePath: nomeSaida, publicUrl: publicUrlDireto, thumbUrl: thumbUrlDireto });
+    return res.status(200).json({ storagePath: nomeSaida, publicUrl: publicUrlDireto, thumbUrl: thumbUrlDireto, inicioReal });
   } catch (e) {
     console.error('cortar-clipe:', e);
     return res.status(500).json({ error: e.message || 'Falha ao cortar o clipe' });
