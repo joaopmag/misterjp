@@ -3444,7 +3444,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   semParagemNoPlayRef.current = modoDesenho;
   const retEditor = useRetanguloVideo(videoRef);
   const svgDesenhoRef = useRef(null);
-  const [congeladoEditor, largarParagemEditor] = usePausasDesenho(videoRef, shapes, editandoDuracaoIndex == null && !textoPendente, semParagemNoPlayRef);
+  // (as paragens — usePausasDesenho — calculam-se mais abaixo, junto dos
+  // desenhos dos cortes, que também param o jogo completo)
   const visivelNoEditor = (sh, i) => editandoDuracaoIndex === i || formaVisivel(sh, current, !playing, congeladoEditor);
   const togglePlay = () => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause(); } };
   const seekTo = (t) => { const v = videoRef.current; if (v) { v.currentTime = Math.max(0, Math.min(duration || t, t)); setCurrent(v.currentTime); } };
@@ -4567,25 +4568,27 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     );
   };
 
-  const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
   /* O QUE SE FEZ NOS CORTES TAMBÉM SE VÊ NO JOGO COMPLETO, no momento de
-     cada corte (só para ver: muda-se no próprio corte). Não se copia nada,
-     por isso não há duas versões do mesmo desenho. */
+     cada corte, e comporta-se como lá: paragens, zoom do círculo, duração
+     (só para ver: muda-se no próprio corte). Não se copia nada, por isso
+     não há duas versões do mesmo desenho. */
   const formasDosCortes = React.useMemo(() => (clipeEmDesenho ? [] : clipesDoVideo.flatMap(c => {
     const ini = inicioRealDoCorte(c);
     const fimCorte = typeof c.origemFim === 'number' ? c.origemFim : null;
     return (c.shapes || []).filter(sh => !formaAcidental(sh)).map(sh => {
       const a = (sh.criadoEmTempo ?? 0) + ini;
-      // No jogo completo o vídeo não para nos desenhos do corte: um desenho
-      // "com paragem" fica à vista os seus segundos, com o vídeo a andar.
-      const ate = temParagem(sh) ? a + segDe(sh)
-        : sh.mostrarAte != null ? sh.mostrarAte + ini
+      const ate = sh.mostrarAte != null ? sh.mostrarAte + ini
         : sh.duracao != null ? a + sh.duracao
-        : fimCorte;
-      return { ...sh, id: `corte-${c.id}-${sh.id}`, semParar: true, criadoEmTempo: a, mostrarAte: ate, duracao: undefined };
+        // "sempre visível" dentro do corte = até ao fim do corte no jogo
+        : (!temParagem(sh) ? fimCorte : null);
+      return { ...sh, id: `corte-${c.id}-${sh.id}`, criadoEmTempo: a, mostrarAte: ate, duracao: undefined, doCorte: true };
     });
   })), [clipesDoVideo, clipeEmDesenho]);
-  const formasDosCortesVisiveis = formasDosCortes.filter(sh => formaVisivel(sh, current, !playing, null));
+  // Paragens dos desenhos: os do vídeo e os dos cortes.
+  const formasComParagem = React.useMemo(() => (formasDosCortes.length ? [...shapes, ...formasDosCortes] : shapes), [shapes, formasDosCortes]);
+  const [congeladoEditor, largarParagemEditor] = usePausasDesenho(videoRef, formasComParagem, editandoDuracaoIndex == null && !textoPendente, semParagemNoPlayRef);
+  const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
+  const formasDosCortesVisiveis = formasDosCortes.filter(sh => formaVisivel(sh, current, !playing, congeladoEditor));
   const tubosDosCortes = React.useMemo(() => (clipeEmDesenho ? [] : clipesDoVideo
     .filter(c => c.trajetoriaFoco && Array.isArray(c.trajetoriaFoco.pontos) && c.trajetoriaFoco.pontos.length)
     .map(c => ({ id: c.id, cor: c.trajetoriaFoco.cor, pontos: c.trajetoriaFoco.pontos.map(pt => ({ ...pt, t: pt.t + inicioRealDoCorte(c) })) }))), [clipesDoVideo, clipeEmDesenho]);
@@ -4620,7 +4623,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // uns segundos (pré-visualização).
   const formaZoomPrevia = zoomPrevia ? shapes.find(sh => sh.id === zoomPrevia) : null;
   const estiloZoomEditor = useZoomCirculo(
-    formaZoomPrevia ? [formaZoomPrevia] : formasParaZoom(shapesVisiveis, congeladoEditor),
+    formaZoomPrevia ? [formaZoomPrevia] : formasParaZoom(formasDosCortesVisiveis.length ? [...shapesVisiveis, ...formasDosCortesVisiveis] : shapesVisiveis, congeladoEditor),
     // Também a desenhar quando o vídeo para sozinho num item (a ver como
     // ficou): o zoom tem de aparecer igual ao da reprodução final.
     !!formaZoomPrevia || !modoDesenho || !!congeladoEditor,
