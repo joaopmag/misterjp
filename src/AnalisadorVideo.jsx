@@ -225,11 +225,14 @@ async function seguirJogadorAssincrono(pedido) {
 // deslizar continuamente.
 function MarcadorTrajetoria({ videoRef, pontos, cor }) {
   const [tempo, setTempo] = useState(0);
+  // Só aparece quando já há imagem (antes, o tubo surgia sobre o preto
+  // enquanto o vídeo ainda carregava).
+  const [comImagem, setComImagem] = useState(false);
   useEffect(() => {
     let ativo = true;
     const passo = () => {
       if (!ativo) return;
-      if (videoRef.current) setTempo(videoRef.current.currentTime);
+      if (videoRef.current) { setTempo(videoRef.current.currentTime); setComImagem(videoRef.current.readyState >= 2); }
       requestAnimationFrame(passo);
     };
     const id = requestAnimationFrame(passo);
@@ -238,7 +241,7 @@ function MarcadorTrajetoria({ videoRef, pontos, cor }) {
 
   const limpos = React.useMemo(() => limparTrajetoria(pontos), [pontos]);
   const pos = posicaoNaTrajetoria(limpos, tempo);
-  if (!pos) return null;
+  if (!pos || !comImagem) return null;
   const px = pos.x * 100, py = pos.y * 56.25;
   const largTopo = 3.4;  // metade da largura do tubo lá em cima do ecrã
   const largBase = 2.2;  // metade da largura mesmo por cima dos pés — mais estreito, não converge num ponto
@@ -2912,7 +2915,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setProcessandoFoco(true);
     setErroSeguirFoco('');
     try {
-      const resultado = await seguirJogadorAssincrono({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim });
+      const resultado = await seguirJogadorAssincrono({ video_url: urlEditorRef.current || signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim });
       setTrajetoriaFocoPendente(prev => {
         const novosPontos = (resultado.pontos || []).map((p, i) => (i === 0 ? { ...p, ancora: true } : p));
         // se já havia uma trajetória pendente, este toque conta como
@@ -2934,6 +2937,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      tempo do jogo). Ao guardar, só mudam os desenhos (e o texto e a
      etiqueta): o vídeo do clipe não volta a ser cortado. */
   const [clipeEmDesenho, setClipeEmDesenho] = useState(null);
+  // O vídeo do editor: o do corte, quando se desenha/segue num corte.
+  const urlEditor = clipeEmDesenho && clipeEmDesenho.publicUrl ? clipeEmDesenho.publicUrl : signedUrl;
+  const urlEditorRef = useRef(null);
+  urlEditorRef.current = urlEditor;
   const [zoomPrevia, setZoomPrevia] = useState(null); // id do círculo cujo zoom se está a pré-visualizar
   const zoomPreviaTimer = useRef(null);
   const seekPendenteRef = useRef(null);
@@ -3413,7 +3420,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       v.removeEventListener('play', onPlay);
       v.removeEventListener('pause', onPause);
     };
-  }, [signedUrl]);
+  }, [urlEditor]);
 
   // Paragens dos desenhos também no editor, fora do modo de desenho.
   // Também a desenhar (como na Sala de Vídeo): puxar a barra para trás e
@@ -3463,7 +3470,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const limparMarcas = () => {
     // O seguimento é do vídeo (como os desenhos): limpar as marcas não o
     // apaga; ao sair de "desenhar num clipe", volta o do vídeo.
-    if (clipeEmDesenho) { setShapes(desenhosDoOriginalAtivo()); setTrajetoriaFocoPendente(seguimentoDoOriginalAtivo()); }
+    if (clipeEmDesenho) {
+      setShapes(desenhosDoOriginalAtivo()); setTrajetoriaFocoPendente(seguimentoDoOriginalAtivo());
+      if (typeof clipeEmDesenho.origemInicio === 'number') seekPendenteRef.current = clipeEmDesenho.origemInicio;
+    }
     setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setTextoPendente(null); setErroSeguirFoco('');
   };
 
@@ -3761,14 +3771,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* ORIGINAL DE UM CLIPE — pelo id (clipes novos) ou, nos antigos que
      não o guardavam, pelo título, só se houver exatamente um com esse
      título (dois vídeos com o mesmo nome e o corte podia sair do errado). */
+  /* DESENHAR / SEGUIR NUM CORTE: trabalha-se sobre o ficheiro do próprio
+     corte (clip.publicUrl), no tempo do corte — não sobre o jogo inteiro.
+     O Estúdio do vídeo original serve só de "mesa" (ferramentas, painel). */
   const desenharNoClipe = (clip, opcoes = {}) => {
     const orig = originalDoClipe(clip);
+    if (!clip.publicUrl) { window.alert('Este corte ainda não tem vídeo disponível.'); return; }
     if (!orig || !orig.storagePath) {
       window.alert('Não encontrei o vídeo original deste clipe, por isso não dá para desenhar nele. Abre o clipe, carrega no lápis e escolhe o vídeo original.');
       return;
     }
-    const ini = typeof clip.origemInicio === 'number' ? clip.origemInicio : 0;
-    const fim = typeof clip.origemFim === 'number' ? clip.origemFim : ini + (clip.duracao || 0);
+    const durClipe = (typeof clip.origemFim === 'number' && typeof clip.origemInicio === 'number')
+      ? clip.origemFim - clip.origemInicio : (clip.duracao || 0);
+    const ini = 0;
+    const fim = durClipe;
     setClipeAReproduzir(null);
     setEditarClipeAoAbrir(false);
     setTextoPendente(null);
@@ -3776,23 +3792,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // com os desenhos: seguir aqui é seguir NO CLIPE, como os outros desenhos.
     const tf = clip.trajetoriaFoco;
     setTrajetoriaFocoPendente(tf && tf.pontos && tf.pontos.length
-      ? { pontos: tf.pontos.map(pt => ({ ...pt, t: pt.t + ini })), duracao: fim, cor: tf.cor, tFimPedido: fim }
+      ? { pontos: tf.pontos, duracao: fim, cor: tf.cor, tFimPedido: fim }
       : null);
     setInPoint(ini); setOutPoint(fim);
     setPendingTag(clip.tagId || null);
     setNote(clip.note || '');
-    setShapes((clip.shapes || []).filter(sh => !formaAcidental(sh)).map(sh => ({
-      ...sh,
-      criadoEmTempo: sh.criadoEmTempo == null ? null : sh.criadoEmTempo + ini,
-      mostrarAte: sh.mostrarAte == null ? null : sh.mostrarAte + ini,
-    })));
+    setShapes((clip.shapes || []).filter(sh => !formaAcidental(sh)));
     setClipeEmDesenho(clip);
-    if (originalAtivoId === orig.id && videoRef.current && videoRef.current.readyState >= 1) {
-      videoRef.current.pause(); videoRef.current.currentTime = ini; setCurrent(ini);
-    } else {
-      seekPendenteRef.current = ini;
-      setOriginalAtivoId(orig.id);
-    }
+    // O vídeo passa a ser o do corte (ver urlEditor): começa no 0 dele.
+    videoRef.current?.pause();
+    seekPendenteRef.current = 0; setCurrent(0);
+    if (originalAtivoId !== orig.id) setOriginalAtivoId(orig.id);
     setModoDesenho(true);
     if (opcoes.seguir) setTool('seguir');
     // A página só se mexe se o Estúdio estiver fora da vista (ex.: veio de um corte lá em baixo).
@@ -3801,16 +3811,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const guardarDesenhosClipe = () => {
     const clip = clipeEmDesenho;
     if (!clip) return;
-    const ini = typeof clip.origemInicio === 'number' ? clip.origemInicio : 0;
-    const novos = shapesComTextoPendente().map(sh => ({
-      ...sh,
-      criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
-      mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
-    }));
-    const fimClipe = typeof clip.origemFim === 'number' ? clip.origemFim : ini + (clip.duracao || 0);
+    // Já se desenhou no tempo do próprio corte: guarda-se tal e qual.
+    const novos = shapesComTextoPendente();
     const tf = trajetoriaFocoPendente;
-    const pontosClipe = tf ? tf.pontos.filter(pt => pt.t >= ini - 0.05 && pt.t <= fimClipe + 0.05).map(pt => ({ ...pt, t: Math.max(0, pt.t - ini) })) : [];
-    const trajetoriaFoco = pontosClipe.length ? { pontos: pontosClipe, duracao: fimClipe - ini, ...(tf.cor ? { cor: tf.cor } : {}) } : null;
+    const durClipe = (typeof clip.origemFim === 'number' && typeof clip.origemInicio === 'number')
+      ? clip.origemFim - clip.origemInicio : (clip.duracao || 0);
+    const trajetoriaFoco = tf && tf.pontos && tf.pontos.length
+      ? { pontos: tf.pontos.map(({ ...pt }) => pt), duracao: durClipe, ...(tf.cor ? { cor: tf.cor } : {}) } : null;
     setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, shapes: novos, note, tagId: pendingTag || null, trajetoriaFoco } : c)));
     setTrajetoriaFocoPendente(null);
     setClipeEmDesenho(null);
@@ -3919,6 +3926,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (e.key !== 'Escape') return;
       const alvo = e.target;
       if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return;
+      if (clipeEmDesenhoRef.current) return; // no corte sai-se por "Guardar no clipe" ou "Cancelar"
       fecharDesenhoRef.current();
     };
     window.addEventListener('keydown', aoTeclar);
@@ -4442,7 +4450,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   }, [clipeAReproduzir && clipeAReproduzir.id]);
   const [velocidade, setVelocidade] = useState(1);
   const mudarVelocidade = (v) => { setVelocidade(v); if (videoRef.current) videoRef.current.playbackRate = v; };
-  useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = velocidade; }, [signedUrl, velocidade]);
+  useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = velocidade; }, [urlEditor, velocidade]);
   const saltarVideo = (d) => { const v = videoRef.current; if (v) seekTo((v.currentTime || 0) + d); };
   const irParaTempo = (t) => { const v = videoRef.current; if (v) v.pause(); seekTo(t); };
   const [verTemposCodif, setVerTemposCodif] = useState(false);
@@ -4724,7 +4732,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {/* (Sem a margem de 18px à direita em ecrã inteiro — era a barra preta;
                  servia quando a coluna da direita desaparecia em ecrã inteiro.) */}
               <div style={{ position: 'absolute', inset: 0, ...estiloZoomEditor }}>
-              {originalAtivo?.pronto === false && !abrirSemEsperar.has(originalAtivo.id) ? (
+              {!clipeEmDesenho && originalAtivo?.pronto === false && !abrirSemEsperar.has(originalAtivo.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: TV.muted, gap: 10, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
                   <span style={{ fontSize: 12.5, ...body, maxWidth: 460, lineHeight: 1.5 }}>
@@ -4737,9 +4745,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     Abrir já
                   </button>
                 </div>
-              ) : signedUrl ? (
+              ) : urlEditor ? (
                 <>
-                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} playsInline
+                  <video ref={videoRef} src={urlEditor} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} playsInline
                     onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
                   {!videoPronto && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: TV.muted, pointerEvents: 'none' }}>
@@ -5031,7 +5039,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       {inPoint != null && outPoint != null && outPoint > inPoint && (
                         <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, width: `${Math.max(0.4, pct(outPoint) - pct(inPoint))}%`, top: 3, bottom: 3, border: `1px dashed ${TV.cream}`, borderRadius: 3 }} />
                       )}
-                      {clipesDoVideo.map(c => {
+                      {!clipeEmDesenho && clipesDoVideo.map(c => {
                         const tg = TAGS.find(t => t.id === c.tagId);
                         return (
                           <button key={c.id} type="button" title={`${tg ? tg.label : 'Sem etiqueta'} · ${fmt(c.origemInicio)}–${fmt(c.origemFim)}`}
@@ -5064,7 +5072,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             width: estreitoBancada ? '100%' : 310, flexShrink: 0, minHeight: 0, height: estreitoBancada ? 560 : undefined, display: 'flex', flexDirection: 'column',
             borderLeft: estreitoBancada ? 'none' : `1px solid ${TV.line}`, borderTop: estreitoBancada ? `1px solid ${TV.line}` : 'none', background: TV.surface,
           }}>
-            <div role="tablist" style={{ display: 'flex', gap: 4, padding: 10, borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
+            <div role="tablist" style={{ display: clipeEmDesenho ? 'none' : 'flex', gap: 4, padding: 10, borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
               {[['codificar', 'Codificar'], ['desenhar', 'Desenhar'], ['clipes', `Clipes · ${clipesDoVideo.length}`]].map(([id, rotulo]) => {
                 const on = abaAtiva === id;
                 return (
@@ -5185,7 +5193,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <>
                   {clipeEmDesenho && (
                     <div style={{ background: TV.surfaceRaise, border: `1px solid ${TV.gold}`, borderRadius: 8, padding: 10, marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, color: TV.cream, marginBottom: 8, ...body }}>A desenhar no clipe {fmt(inPoint)}–{fmt(outPoint)}</div>
+                      <div style={{ fontSize: 12, color: TV.cream, marginBottom: 8, ...body }}>A desenhar no corte {typeof clipeEmDesenho.origemInicio === 'number' ? `${fmt(clipeEmDesenho.origemInicio)}–${fmt(clipeEmDesenho.origemFim)}` : ''} (só neste corte)</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <Btn variant="solid" onClick={guardarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><Check size={13} /> Guardar no clipe</Btn>
                         <Btn variant="plain" onClick={cancelarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><X size={13} /> Cancelar</Btn>
