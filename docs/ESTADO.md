@@ -63,8 +63,8 @@ ganha as importações de que precisa. Ordem combinada:
 | 2 | Tático → `src/tatico/` (campo, DiagramEditor, QuadroTaticoLivre, Simulador, prancheta); regras partilhadas → `src/dominio/` (jogadores, clínico, jogos, treino); `base/impressao.js`, `base/arrastar.js` | feito |
 | 3 | Média → `src/media/` (MediaLibrary, MediaModal, LeitorJunto, leitores, social, organização, ações); `base/anexos.jsx`, `base/kiosk.js` | feito |
 | 4 | Competição → `src/competicao/` (Jogos, MatchModal, FichaJogo, Escalacao, Convocatorias, Classificacao, RelatoriosJogo, MatchDashboard, dados); partilhados → `dominio/` (plantel, estatisticas, convidados, estadoJogos), `base/` (partilha, ui-extra), `tatico/impressaoCampo.jsx`. Função nova `consumirMissaoPendente()` (Tarefas limpa o pedido de missão) | feito |
-| 5 | Treino → `src/treino/` (Planeamento, SessionModal, Exercicios, ExerciseModal, ExercisePresentation, IdeiaJogo, IdeiaModal, EscolherParaCopiar, diagramas, comum); `plantel/Prancheta.jsx`; partilhados `dominio/relato.jsx`, `base/historico.jsx`, `base/botoes.jsx`, `media/pdf.jsx` | feito, à espera de "ok" |
-| 6 | Plantel: Plantel, Presenças, Monitorização, Desenvolvimento, Clínico | por fazer |
+| 5 | Treino → `src/treino/` (Planeamento, SessionModal, Exercicios, ExerciseModal, ExercisePresentation, IdeiaJogo, IdeiaModal, EscolherParaCopiar, diagramas, comum); `plantel/Prancheta.jsx`; partilhados `dominio/relato.jsx`, `base/historico.jsx`, `base/botoes.jsx`, `media/pdf.jsx` | feito |
+| 6 | Plantel → `src/plantel/` (Plantel, PlayerProfilePage, PlayerModal, avaliacao, Desenvolvimento, Clinico, clinicoDados, Presencas, Monitorizacao, Gps, Composicao, Historico, CheckinManual, comum); questionários do quiosque → `atleta/questionarios.jsx`; partilhados `base/fotos.jsx`, `dominio/mensagens.js`, `dominio/faltas.jsx` | feito, à espera de "ok" |
 | 7 | Scouting, Diário, Tarefas, Gestão de equipa | por fazer |
 | 8 | Atleta: Portal, Check-in, Cacifo | por fazer |
 
