@@ -185,6 +185,15 @@ reduz o peso inicial da app e do Portal.
   pelo histórico e propôs jogadores errados (Roque, Rui). A causa que eu
   tinha suposto para o DD (L/falta) não era a verdadeira.
   Minutos no campo num selo na foto (ao lado do nome encavalitavam).
+- 13/11: Plantel → repor jogador APAGADO como "saiu do clube"
+  (`plantel/RecuperarApagados.jsx`): a partir do Relato, refaz a ficha
+  (mesmo id, data de saída = dia em que foi apagado, sem fotografia) e
+  devolve-o aos jogos, treinos e convocatórias de onde a limpeza
+  (`limparRastoDoJogador`) o tirou: lugar no onze (se livre; senão banco),
+  titulares, convocados, presenças e, quando o histórico os guardou,
+  minutos e notas (`report`). Não volta o que é de saúde (bem-estar, PSE,
+  clínico, desenvolvimento): o histórico não guarda esses valores. Pedido
+  para o João Passos (apagado a 21/10, devia ter saído do clube).
 - 13/11: Documentos: os modelos saíam sem o emblema do clube (com a
   inicial ou o nome no lugar). O emblema é um endereço de outro site, e o
   browser não deixa ler os pixéis dessa imagem (CORS). Nova função

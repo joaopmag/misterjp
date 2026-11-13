@@ -14,6 +14,7 @@ import { CaptainArmband } from '../dominio/plantel';
 import { createPortal } from 'react-dom';
 import { PlayerPrintSheet, PlayerProfilePage, buildPlayerReportHtml, jogosOficiaisDe } from './PlayerProfilePage';
 import { Badge, contarRastoDoJogador, limparRastoDoJogador } from './comum';
+import { RecuperarApagados } from './RecuperarApagados';
 import { FichaOcorrencia, OcorrenciaModal, proporMarcacaoClinica } from './Clinico';
 import { PlayerModal, playerBirthLine } from './PlayerModal';
 
@@ -207,6 +208,10 @@ export function Plantel({ players, setPlayers, sessions, setSessions, matches, s
 
   return (
     <div>
+      {!statsFor && (
+        <RecuperarApagados players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches}
+          sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} teamId={teamId} />
+      )}
       {totalOrfaos > 0 && !statsFor && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '10px 14px', borderRadius: 10, border: `1px solid ${T.warn}`, background: T.surface }}>
           <span style={{ fontSize: 13, color: T.cream, flex: 1, minWidth: 220 }}>
