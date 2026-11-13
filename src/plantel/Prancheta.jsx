@@ -11,7 +11,9 @@ import { RefreshCw } from 'lucide-react';
 
 /* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
    para ler, que é o que a folha impressa precisa. */
-export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala = 1, maxLargura = 640, tela = false }) {
+/* `cor` (opcional): cor das bolas. Por omissão a da nossa equipa; a
+   estrutura habitual do ADVERSÁRIO passa a cor do clube dele. */
+export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala = 1, maxLargura = 640, tela = false, cor }) {
   const editavel = typeof aoTocar === 'function';
   const arrasto = useArrastarParaTrocar((origemChave, destinoLugarId) => {
     if (aoArrastar) aoArrastar(origemChave, destinoLugarId);
@@ -67,7 +69,14 @@ export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, 
   const contornoLetra = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]
     .map(([x, y]) => `${x}px ${y}px 0 ${halo}`).join(', ') + `, 0 0 3px ${halo}`;
 
-  const corDoTexto = escuro ? '#fff' : T.corEquipa;
+  const corBola = /^#[0-9a-f]{6}$/i.test(String(cor || '')) ? cor : T.corEquipa;
+  // Cor clara (branco, amarelo…): letra escura por cima e, no papel, a
+  // tinta do contorno/letra passa a cinzento escuro (branco não se vê).
+  const clara = (() => { const h = String(corBola); if (!/^#[0-9a-f]{6}$/i.test(h)) return false;
+    const r = parseInt(h.slice(1, 3), 16), g = parseInt(h.slice(3, 5), 16), b = parseInt(h.slice(5, 7), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 170; })();
+  const tintaPapel = clara ? '#444' : corBola;
+  const corDoTexto = escuro ? (clara ? '#1A1A1A' : '#fff') : tintaPapel;
   // O CÍRCULO TEM SEMPRE O MESMO TAMANHO, em qualquer sítio da app —
   // não acompanha `escala`. Antes acompanhava, e a mesma bola saía
   // visivelmente maior na folha do Plantel (escala 1.35) do que na do
@@ -83,8 +92,8 @@ export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, 
     // branco sobre fundo branco desaparece por completo. Por isso,
     // impresso, é uma cor de tinta a sério (contorno + texto), que se
     // vê com ou sem cor de fundo.
-    background: escuro ? T.corEquipa : 'transparent',
-    border: escuro ? 'none' : `1px solid ${T.corEquipa}`,
+    background: escuro ? corBola : 'transparent',
+    border: escuro ? 'none' : `1px solid ${tintaPapel}`,
     color: corDoTexto, fontSize: 7, fontWeight: 700, letterSpacing: '.01em',
   };
   const nomeStyle = (on) => ({
@@ -103,7 +112,7 @@ export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, 
 
   const conteudoDoLugar = (l, nomesPorCima) => (
     <>
-      <div style={{ ...tagStyle, background: escuro ? T.corEquipa : '#fff' }}>{l.rotulo}</div>
+      <div style={{ ...tagStyle, background: escuro ? corBola : (clara ? corBola : '#fff') }}>{l.rotulo}</div>
       <div style={nomesPorCima ? { marginBottom: 2 } : { marginTop: 2 }}>
         {l.lista.map(j => (
           <div
@@ -215,7 +224,7 @@ export function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, 
    nomes de 8 px o alvo é pequeno de mais para o dedo.
 
    Só o que se move fica guardado. */
-export function EditorPrancheta({ players, attendance, convidados, overrides, tatica, onChange, onTatica, titulo = 'Quadro de posições' }) {
+export function EditorPrancheta({ players, attendance, convidados, overrides, tatica, onChange, onTatica, titulo = 'Quadro de posições', cor }) {
   const [escolhido, setEscolhido] = useState(null);
   const lugares = distribuirPlantel({ players, attendance, convidados, overrides, tatica });
 
@@ -249,6 +258,7 @@ export function EditorPrancheta({ players, attendance, convidados, overrides, ta
       <PrancheteDoPlantel
         lugares={lugares} aoTocar={tocar} selecionado={escolhido} escala={1.25}
         aoArrastar={(chave, lugarId) => onChange({ ...(overrides || {}), [chave]: lugarId })}
+        cor={cor}
       />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
         <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 180, lineHeight: 1.6 }}>

@@ -267,6 +267,7 @@ export function FolhaImpressaoAdversario({ adversario: printAdversario, chave: c
                 overrides: printAdversario.quadroOverrides, tatica: printAdversario.quadroTatica,
               })}
               maxLargura={480}
+              cor={printAdversario.cor}
             />
           </div>
         </>
@@ -374,6 +375,7 @@ export function AdversarioPage({ adversario: a, scouting, videos, setVideos, onB
                 escala={1.25}
                 maxLargura={900}
                 tela
+                cor={a.cor}
               />
             </div>
           )}
@@ -705,6 +707,7 @@ export function AdversarioForm({ adversario, scouting, adversarios, onBack, onSa
           tatica={quadroTatica}
           onChange={setQuadroOverrides}
           onTatica={setQuadroTatica}
+          cor={f.cor}
         />
       </div>
 

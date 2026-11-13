@@ -109,6 +109,11 @@ carregados como ficheiro. Hoje só existe para o YouTube (cortes com início
 e fim sobre o vídeo, sem cortar ficheiro). Fazer o mesmo para ficheiros,
 com as mesmas ferramentas (desenhos, paragens, partilha).
 
+**Também a seguir à divisão (pedido a 13/11):** a cor de destaque da app
+(Definições) deve chegar a tudo o que hoje fica vermelho fixo: as barras de
+escolha de jogadores, as pílulas dos separadores e os botões de adicionar
+campos. Trocar o vermelho escrito no código pela cor do tema.
+
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.
 
@@ -130,6 +135,10 @@ reduz o peso inicial da app e do Portal.
   acontecimentos dos suplentes ficam à direita do cartão.
 - 13/11: "Copiar ideia/exercício existente": a pré-visualização cresce para
   mostrar o esquema e os botões inteiros (antes ficava com scroll).
+- 13/11: Adversários: as bolas da estrutura habitual usam a cor do clube
+  adversário no ecrã, na edição e na impressão (cores claras, como o
+  branco ou o amarelo, levam contorno e texto escuro).
+  `PrancheteDoPlantel` e `EditorPrancheta` aceitam `cor`.
 - 12/11: Gravação (`base/sincronizacao.jsx`): erros de sessão ("JWT
   issued at future", "JWT expired") tentam de novo até 2 vezes, com uns
   segundos de intervalo, antes de mostrar o aviso.
