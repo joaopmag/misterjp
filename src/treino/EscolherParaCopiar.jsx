@@ -159,7 +159,9 @@ export function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe
     return (
       <div style={{ marginTop: 10, border: `1px solid ${T.gold}`, borderRadius: 10, background: T.surface, padding: 12,
         boxSizing: 'border-box', overflowAnchor: 'none',
-        ...(alturaListaRef.current ? { height: alturaListaRef.current, overflowY: 'auto' } : {}) }}>
+        // Pelo menos a altura da lista (para a janela não saltar), mas cresce
+        // para mostrar o esquema e os botões inteiros, sem barra de scroll.
+        ...(alturaListaRef.current ? { minHeight: alturaListaRef.current } : {}) }}>
         <div style={{ display: 'flex', gap: 14, flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ flex: isMobile ? 'none' : '0 0 46%' }}>
             {temEsquema(atual)

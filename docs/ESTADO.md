@@ -120,6 +120,8 @@ reduz o peso inicial da app e do Portal.
 - 12/11: Ficha de jogo: substituição com ícone (círculo verde ↑ entra,
   vermelho ↓ sai) e assistência com chuteira dourada; na partilha, os
   acontecimentos dos suplentes ficam à direita do cartão.
+- 13/11: "Copiar ideia/exercício existente": a pré-visualização cresce para
+  mostrar o esquema e os botões inteiros (antes ficava com scroll).
 - 12/11: Gravação (`base/sincronizacao.jsx`): erros de sessão ("JWT
   issued at future", "JWT expired") tentam de novo até 2 vezes, com uns
   segundos de intervalo, antes de mostrar o aviso.
