@@ -1,6 +1,7 @@
 // scouting/ScoutSheet.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import { T, body, display } from '../base/tema';
 import { age } from '../plantel/PlayerModal';
 import { ChevronLeft, Share2, Printer, Pencil, Check } from 'lucide-react';
@@ -328,6 +329,7 @@ export const emptyScout = {
 
 export function ScoutPlayerForm({ player, onBack, onSave }) {
   const [f, setF] = useState(player ? { ...emptyScout, ...player } : { ...emptyScout });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_scout_${player?.id || 'novo'}`, f, setF);
   const playerAge = f.birthYear ? age(f.birthYear) : null;
   const avg = pillarAverage(f);
 
@@ -339,6 +341,7 @@ export function ScoutPlayerForm({ player, onBack, onSave }) {
       }}>
         <ChevronLeft size={15} /> Jogadores
       </button>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
 
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 20 }}>
         {player ? 'Editar jogador adversário' : 'Novo jogador adversário'}
@@ -429,7 +432,7 @@ export function ScoutPlayerForm({ player, onBack, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
-        <Btn disabled={!f.name} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
     </div>
   );

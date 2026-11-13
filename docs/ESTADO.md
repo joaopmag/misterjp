@@ -66,7 +66,7 @@ ganha as importações de que precisa. Ordem combinada:
 | 5 | Treino → `src/treino/` (Planeamento, SessionModal, Exercicios, ExerciseModal, ExercisePresentation, IdeiaJogo, IdeiaModal, EscolherParaCopiar, diagramas, comum); `plantel/Prancheta.jsx`; partilhados `dominio/relato.jsx`, `base/historico.jsx`, `base/botoes.jsx`, `media/pdf.jsx` | feito |
 | 6 | Plantel → `src/plantel/` (Plantel, PlayerProfilePage, PlayerModal, avaliacao, Desenvolvimento, Clinico, clinicoDados, Presencas, Monitorizacao, Gps, Composicao, Historico, CheckinManual, comum); questionários do quiosque → `atleta/questionarios.jsx`; partilhados `base/fotos.jsx`, `dominio/mensagens.js`, `dominio/faltas.jsx` | feito |
 | 7 | `src/scouting/` (Scouting, Necessidades, ScoutSheet, comum), `src/adversarios/`, `src/tarefas/` (Tarefas, TarefaModal, MissaoModal, Calendario, regras, missoesRegras), `src/diario/Diario.jsx`, `src/gestao/` (GestaoEquipa, membros, documentos Word/Excel); `base/subcolecao.js`, `dominio/aniversarios.js` | feito |
-| 8 | Atleta → `src/atleta/`: CheckinApp (entrada do Portal e o arranque instalável), PortalEntrada (porta, cartão, PIN, biometria), temaPorta, CheckinKiosk, CheckinLogin, KioskHome, balneario, ecras (aniversário, jogo, missão), Cacifo, vistas (treino, biblioteca, jogos, competição, desenvolvimento, tarefas), separadoresJogo (convocatória, plano de jogo, adversário, ideia de jogo), VisualizadorVideoPortal, portalRpc, janelas; partilhados `base/formatos.js`, `base/equipaGuardada.js` | feito, à espera de "ok" |
+| 8 | Atleta → `src/atleta/`: CheckinApp (entrada do Portal e o arranque instalável), PortalEntrada (porta, cartão, PIN, biometria), temaPorta, CheckinKiosk, CheckinLogin, KioskHome, balneario, ecras (aniversário, jogo, missão), Cacifo, vistas (treino, biblioteca, jogos, competição, desenvolvimento, tarefas), separadoresJogo (convocatória, plano de jogo, adversário, ideia de jogo), VisualizadorVideoPortal, portalRpc, janelas; partilhados `base/formatos.js`, `base/equipaGuardada.js` | feito |
 
 ### Como se move código (ferramenta usada no passo 1)
 
@@ -93,13 +93,21 @@ Provas feitas no passo 1, a repetir nos seguintes:
   mostram o mesmo nas páginas `/`, `/app/` e `/portal/`, nos temas escuro
   e claro, sem erros.
 
-**A seguir à divisão (combinado a 12/11):** rascunhos nos formulários
-longos (Diário, Sessões, relatórios e notas de jogo, Tarefas, Scouting,
-Desenvolvimento individual). Hoje só existem em Exercício, Ideia de jogo
-e Dinâmica tática (`useRascunho`, em `base/sincronizacao.jsx`). Os
-rascunhos ficam no dispositivo: nas áreas sensíveis (clínico, diário)
-apagam-se ao sair da sessão e nunca ficam em dispositivos de atletas.
-Fica num passo próprio, sem misturar com a divisão.
+**Rascunhos nos formulários longos (13/11, à espera de "ok"):**
+`useRascunho` (em `base/sincronizacao.jsx`) passa a ser usado também em
+Sessão, Jogo, Relatório de jogo, Tarefa, ficha de Scouting, Diário e
+Boletim Clínico (nova ocorrência e atualização/alta/recaída), além de
+Exercício, Ideia de jogo e Dinâmica tática. Regras novas do rascunho:
+só se guarda com alterações reais (o que a app preenche no primeiro meio
+segundo conta como ponto de partida); chave com a equipa ativa (os
+rascunhos antigos passam para a chave nova); esquecido aos 14 dias;
+grava logo ao fechar ou esconder a página. Áreas sensíveis
+(`{ sensivel: true }`: Diário e Clínico): apagam-se ao sair da sessão
+(`limparRascunhosSensiveis`, no evento SIGNED_OUT), duram no máximo 12 h e
+nunca se guardam em páginas do Portal/Check-in.
+Ficaram de fora, de propósito: Desenvolvimento individual (cada resposta
+já se grava na hora), notas de jogo (texto curto) e MissaoModal (estado
+repartido; ver depois, se fizer falta).
 
 **Também a seguir à divisão (13/11), junto com as "Fotos Fase B":**
 enquadrar a foto do jogador sem perder a original. Hoje, "Usar" guarda só
@@ -171,7 +179,7 @@ reduz o peso inicial da app e do Portal.
    `anexos-privados` (10 MB), com envio retomável acima de 6 MB e
    "fallback" para base64.
 5. **Seguimento, fila, worker e limites:** feito (ver abaixo).
-6. **Partir o `App.jsx`:** passos 0 a 8 feitos (o 8 à espera de "ok").
+6. **Partir o `App.jsx`:** feito (13/11). O `App.jsx` passou de 62 101 para 5 499 linhas.
 
 Pendentes já identificados: links que não expiram em `videos-clipes`
 (bucket público); apagar ficheiros do Storage quando se apaga um atleta

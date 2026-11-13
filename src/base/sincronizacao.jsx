@@ -325,41 +325,127 @@ export async function fetchAllRows(table, teamId) {
   return todas;
 }
 
-/* Guarda um rascunho da edição em curso no localStorage deste dispositivo,
+/* RASCUNHOS: guarda a edição em curso no localStorage deste dispositivo,
    para não se perder trabalho se saíres da página a meio (troca de
-   separador, botão de retroceder do browser, fechar sem querer). Usado nos
-   três sítios que usam o editor tático 2D: Exercícios, Ideia de Jogo, e as
-   dinâmicas do Scouting.
+   separador, botão de retroceder do browser, fechar sem querer, a bateria
+   acabar). Ao voltar a abrir o mesmo formulário, aparece a pergunta
+   "Continuar rascunho / Começar do zero".
 
-   Isto é só local ao dispositivo (localStorage) — não sincroniza com o
-   Supabase nem aparece para outras pessoas da equipa; é só uma rede de
-   segurança para ti, neste computador. */
-export function useRascunho(chave, f, setF, ativo = true) {
+   Só local ao dispositivo: não sincroniza com o Supabase nem aparece para
+   outras pessoas da equipa. É uma rede de segurança para ti, neste
+   aparelho.
+
+   Regras:
+   · só se guarda quando há mesmo alterações (abrir e fechar sem mexer não
+     deixa rascunho, nem pergunta da próxima vez);
+   · a chave leva a equipa ativa: rascunhos de uma equipa nunca aparecem
+     noutra, no mesmo aparelho;
+   · apaga-se ao guardar (`limpar`) e ao escolher "Começar do zero";
+   · rascunhos com mais de 14 dias são esquecidos;
+   · ÁREAS SENSÍVEIS (`{ sensivel: true }`: Diário, Boletim Clínico): o
+     rascunho apaga-se ao sair da sessão, dura no máximo 12 horas, e
+     nunca se guarda em páginas do Portal/Check-in (aparelhos de atletas).
+   · o que a app preenche sozinha no primeiro meio segundo (ex.: o
+     próximo adversário da sessão) conta como ponto de partida;
+   · ao fechar ou esconder a página, o que ainda não tinha sido guardado
+     (os últimos 0,8 s) grava-se logo. */
+const RASCUNHO_PREFIXO_SENSIVEL = 'mjp-rascunho-sensivel:';
+const RASCUNHO_VALIDADE = 14 * 24 * 3600 * 1000;
+const RASCUNHO_VALIDADE_SENSIVEL = 12 * 3600 * 1000;
+
+function paginaDeAtleta() {
+  try {
+    const l = window.location;
+    return /^\/portal(\/|$)/.test(l.pathname) || /[?&](portal|checkin)=/.test(l.search);
+  } catch (e) { return false; }
+}
+
+export function limparRascunhosSensiveis() {
+  try {
+    const chaves = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(RASCUNHO_PREFIXO_SENSIVEL)) chaves.push(k);
+    }
+    chaves.forEach(k => localStorage.removeItem(k));
+  } catch (e) { /* sem localStorage: nada a limpar */ }
+}
+
+// Ao sair da sessão (botão Sair, inatividade, sessão expirada), os
+// rascunhos das áreas sensíveis desaparecem deste aparelho.
+if (typeof window !== 'undefined') {
+  try {
+    supabase.auth.onAuthStateChange((evento) => { if (evento === 'SIGNED_OUT') limparRascunhosSensiveis(); });
+  } catch (e) { /* sem cliente: os rascunhos sensíveis caducam sozinhos (12 h) */ }
+}
+
+export function useRascunho(chave, f, setF, ativo = true, opcoes = {}) {
+  const sensivel = !!(opcoes && opcoes.sensivel);
+  const ligado = ativo && !(sensivel && paginaDeAtleta());
+  const equipa = T.equipaId || '';
+  const chaveFinal = (sensivel ? RASCUNHO_PREFIXO_SENSIVEL : '') + chave + (equipa ? `@${equipa}` : '');
+  const validade = sensivel ? RASCUNHO_VALIDADE_SENSIVEL : RASCUNHO_VALIDADE;
   const [rascunhoEncontrado, setRascunhoEncontrado] = useState(null);
-  const jaVerificou = useRef(false);
+  const verificada = useRef(null); // chave já lida nesta abertura
+  const base = useRef(null);       // o formulário tal como abriu (JSON)
+  const pendente = useRef(null);   // gravação à espera dos 0,8 s
+  const abertoEm = useRef(0);
 
+  // Ao abrir (ou ao mudar de registo): procura rascunho e fixa o ponto de partida.
   useEffect(() => {
-    if (!ativo || jaVerificou.current) return;
-    jaVerificou.current = true;
+    if (!ligado) { verificada.current = null; setRascunhoEncontrado(null); return; }
+    if (verificada.current === chaveFinal) return;
+    verificada.current = chaveFinal;
+    base.current = jsonEstavel(f);
+    abertoEm.current = Date.now();
+    setRascunhoEncontrado(null);
     try {
-      const bruto = localStorage.getItem(chave);
-      if (bruto) {
-        const guardado = JSON.parse(bruto);
-        if (guardado && guardado.f) setRascunhoEncontrado(guardado);
+      let bruto = localStorage.getItem(chaveFinal);
+      // Rascunhos de antes desta regra (sem equipa na chave): passam para a chave nova.
+      if (!bruto && !sensivel && equipa) {
+        bruto = localStorage.getItem(chave);
+        if (bruto) { localStorage.removeItem(chave); localStorage.setItem(chaveFinal, bruto); }
       }
+      if (!bruto) return;
+      const guardado = JSON.parse(bruto);
+      const velho = !guardado || !guardado.f || Date.now() - (guardado.guardadoEm || 0) > validade;
+      if (velho || jsonEstavel(guardado.f) === base.current) { localStorage.removeItem(chaveFinal); return; }
+      setRascunhoEncontrado(guardado);
     } catch (e) { /* rascunho corrompido — ignora, como se não existisse */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chave, ativo]);
+  }, [chaveFinal, ligado]);
 
   useEffect(() => {
-    if (!ativo) return;
-    const t = setTimeout(() => {
-      try { localStorage.setItem(chave, JSON.stringify({ f, guardadoEm: Date.now() })); } catch (e) { /* ex.: localStorage cheio — sem drama, só não fica rascunho desta vez */ }
-    }, 800);
+    if (!ligado || verificada.current !== chaveFinal) return undefined;
+    /* O que muda sozinho logo ao abrir (ex.: o próximo adversário que a
+       sessão preenche) faz parte do ponto de partida, não é edição. */
+    if (Date.now() - abertoEm.current < 500) { base.current = jsonEstavel(f); return undefined; }
+    if (jsonEstavel(f) === base.current) { pendente.current = null; return undefined; }
+    const gravar = () => {
+      if (pendente.current !== gravar) return; // entretanto guardou-se ou descartou-se
+      pendente.current = null;
+      try { localStorage.setItem(chaveFinal, JSON.stringify({ f, guardadoEm: Date.now() })); } catch (e) { /* ex.: localStorage cheio — sem drama, só não fica rascunho desta vez */ }
+    };
+    pendente.current = gravar;
+    const t = setTimeout(gravar, 800);
     return () => clearTimeout(t);
-  }, [chave, f, ativo]);
+  }, [chaveFinal, f, ligado]);
 
-  const limpar = () => { try { localStorage.removeItem(chave); } catch (e) {} };
+  // Fechar o separador ou mudar de app no telemóvel: grava já o que faltava.
+  useEffect(() => {
+    if (!ligado) return undefined;
+    const agora = () => { if (pendente.current) pendente.current(); };
+    const aoEsconder = () => { if (document.visibilityState === 'hidden') agora(); };
+    window.addEventListener('pagehide', agora);
+    document.addEventListener('visibilitychange', aoEsconder);
+    return () => { window.removeEventListener('pagehide', agora); document.removeEventListener('visibilitychange', aoEsconder); };
+  }, [ligado]);
+
+  const limpar = () => {
+    pendente.current = null;
+    base.current = jsonEstavel(f);
+    try { localStorage.removeItem(chaveFinal); } catch (e) { /* nada */ }
+  };
   const restaurar = () => { if (rascunhoEncontrado) { setF(rascunhoEncontrado.f); setRascunhoEncontrado(null); } };
   const descartar = () => { limpar(); setRascunhoEncontrado(null); };
 

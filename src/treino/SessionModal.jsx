@@ -1,6 +1,7 @@
 // treino/SessionModal.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState, useRef, useEffect } from 'react';
 import { comQuemLaEsteve } from '../competicao/Escalacao';
 import { todayStr, uid, fmtDate } from '../base/utilidades';
@@ -30,6 +31,7 @@ export function SessionModal({ session, presetDate, exercises, players: playersA
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
   });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_sessao_${session?.id || `novo_${presetDate || ''}`}`, f, setF);
 
   const toggleExercise = (exId) => {
     const exists = f.exerciseIds.find(e => e.exId === exId);
@@ -137,6 +139,7 @@ export function SessionModal({ session, presetDate, exercises, players: playersA
 
   return (
     <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide xwide fullPage>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Fase de jogo (foco)">
@@ -300,7 +303,7 @@ export function SessionModal({ session, presetDate, exercises, players: playersA
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.date} onClick={() => onSave(f)}><Check size={15} /> Guardar sessão</Btn>
+        <Btn disabled={!f.date} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar sessão</Btn>
       </div>
 
       {/* O editor fica montado enquanto se escolhe como guardar: "Voltar

@@ -1,6 +1,7 @@
 // competicao/MatchModal.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState } from 'react';
 import { useIsMobile, Modal, FIELD_GRID, Field, Select, Input, Btn } from '../base/ui';
 import { todayStr } from '../base/utilidades';
@@ -36,6 +37,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
     starters: (match && match.starters) || [],
     report: (match && match.report) || {},
   }));
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_jogo_${match?.id || 'novo'}`, f, setF);
   // Lista das competições configuradas + "Amigável" (valor por omissão).
   // Se o jogo tiver uma competição antiga que já não está configurada, ela
   // continua a aparecer na lista para não se perder.
@@ -151,6 +153,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
 
   return (
     <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide xwide fullPage>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginBottom: 12 }}>
         <Field label="Competição">
           <Select value={compAtual} onChange={e => setF({ ...f, competition: e.target.value, opponent: '', jornada: '' })}>
@@ -322,7 +325,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.date} onClick={() => onSave(withConvocadosInAttendance(f))}><Check size={15} /> Guardar jogo</Btn>
+        <Btn disabled={!f.date} onClick={() => { limpar(); onSave(withConvocadosInAttendance(f)); }}><Check size={15} /> Guardar jogo</Btn>
       </div>
     </Modal>
   );

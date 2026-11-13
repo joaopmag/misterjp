@@ -1,6 +1,7 @@
 // plantel/Clinico.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState } from 'react';
 import { todayStr, uid, fmtDate, fmtShort } from '../base/utilidades';
 import { Modal, FIELD_GRID, Field, Select, Input, TextArea, Btn, askConfirm, trocarJanela, offerUndo, removeWithUndo, SectionHeader, Panel, EmptyState } from '../base/ui';
@@ -52,6 +53,7 @@ export function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetDat
        resto da app comportar-se de uma maneira ou de outra. */
     nivel: '', tipo: '', zona: '', previsaoRetorno: '', restricoes: '', nota: '',
   });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_clinico_${ocorrencia ? ocorrencia.id : `novo_${presetPlayerId || ''}`}`, f, setF, true, { sensivel: true });
   const valido = f.playerId && f.inicio && f.nivel;
 
   // Mesmo jogador, mesma zona, alta há pouco: provavelmente é uma recaída.
@@ -71,6 +73,7 @@ export function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetDat
 
   const guardar = () => {
     if (!valido) return;
+    limpar();
     if (aEditar) {
       onSave(recalcularOcorrencia({
         ...base, playerId: f.playerId, inicio: f.inicio, tipo: f.tipo, zona: f.zona, nivelInicial: f.nivel,
@@ -82,6 +85,7 @@ export function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetDat
 
   const guardarComoRecaida = () => {
     if (!valido || !anterior) return;
+    limpar();
     onRecaida(juntarComoRecaida(anterior, { ...novaAPartirDoForm(), id: uid() }));
   };
 
@@ -92,6 +96,7 @@ export function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetDat
       onClose={onClose}
       wide
     >
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
         <Field label="Jogador">
           <Select value={f.playerId} onChange={e => setF({ ...f, playerId: e.target.value })}>
@@ -411,6 +416,7 @@ export function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onG
     nivel: '', previsaoRetorno: ocorrencia.previsaoRetorno || '', restricoes: ocorrencia.restricoes || '',
   });
   const [form, setForm] = useState(modoInicial === 'atualizar' && aberta ? formVazio('atualizar') : null);
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_clinico_${ocorrencia.id}_${form ? `${form.modo}_${form.entradaId || 'nova'}` : ''}`, form, setForm, !!form, { sensivel: true });
   const [erro, setErro] = useState('');
 
   const editarEntrada = (e) => {
@@ -455,6 +461,7 @@ export function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onG
     // Com recaídas uma lesão pode ter várias altas (uma por período), por
     // isso nada se substitui: "Dar alta" só aparece com a lesão aberta.
     const antigas = o.evolucao.filter(e => e.id !== entrada.id);
+    limpar();
     onGuardar(recalcularOcorrencia({ ...o, evolucao: [...antigas, entrada] }));
     setForm(null); setErro('');
   };
@@ -515,6 +522,7 @@ export function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onG
       {/* FORMULÁRIO DE ATUALIZAÇÃO / ALTA */}
       {form && (
         <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
             {form.modo === 'alta' ? (form.entradaId ? 'Corrigir a alta' : 'Dar alta')
               : form.modo === 'recaida' ? (form.entradaId ? 'Corrigir a recaída' : 'Registar recaída')

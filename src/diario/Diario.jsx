@@ -1,6 +1,7 @@
 // diario/Diario.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import { AlertTriangle, Clock, Users, Dumbbell, Building2, Wrench, FileText, Tag, CheckCircle2, Circle, Plus, Upload, BookOpen, X, Check, Search, Printer, Trophy, Pencil, Trash2 } from 'lucide-react';
 import { T, body, mono, display } from '../base/tema';
 import { faltaDoAtleta, chaveDoTipo, COR_CARTAO, MiniCartao } from '../dominio/faltas';
@@ -235,6 +236,8 @@ export function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players 
   // id dela; a null significa que se está a criar uma nova.
   const [editingId, setEditingId] = useState(null);
   const [f, setF] = useState(EMPTY_OCORRENCIA);
+  // Rascunho (área sensível: apaga-se ao sair da sessão; ver useRascunho).
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_diario_${editingId || 'novo'}`, f, setF, formOpen, { sensivel: true });
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [attachError, setAttachError] = useState('');
@@ -315,6 +318,7 @@ export function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players 
 
   const save = () => {
     if (!podeGravar) return;
+    limpar();
     const limpo = limparOcorrencia({ ...f, resolvidaPor: f.estado === 'resolvida' ? (f.resolvidaPor || userEmail) : undefined });
     if (editingId) {
       // Ao editar, o autor e a data de criação originais mantêm-se;
@@ -508,6 +512,7 @@ export function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players 
           baixo (placard, por resolver, lista). */}
       {formOpen && (
         <Modal title={editingId ? 'Editar ocorrência' : 'Nova ocorrência'} onClose={closeForm} fullPage larguraMax="860px">
+        <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
         <div style={{ borderLeft: `3px solid ${infoForm ? infoForm.corHex : 'transparent'}`, paddingLeft: 14 }}>
           {/* 1. O TIPO — um toque; o resto do formulário depende dele. */}
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, ...body }}>Tipo</div>

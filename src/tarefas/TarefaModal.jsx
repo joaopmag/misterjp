@@ -1,6 +1,7 @@
 // tarefas/TarefaModal.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import { useState } from 'react';
 import { uid, fmtShort, addDays, todayStr, fmtDate } from '../base/utilidades';
 import { useFecharSemSaltar } from '../treino/comum';
@@ -17,6 +18,7 @@ export function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, 
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
     ...(inicial || {}),
   });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_tarefa_${tarefa?.id || 'novo'}`, f, setF);
   /* VÁRIAS MISSÕES NA MESMA TAREFA. Uma tarefa para um jogador pode ter
      vários passos (ex.: 1. fazer a autoavaliação, 2. ver o vídeo do jogo,
      3. responder ao Wellness amanhã) — cada um com o seu destino e as suas
@@ -67,6 +69,7 @@ export function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, 
 
   return (
     <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} fullPage larguraMax={1100}>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       {/* DUAS COLUNAS — à esquerda a tarefa; à direita o jogador e as
           missões dele. Mais larga e mais baixa: cabe sem scroll. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 22, alignItems: 'start' }}>
@@ -378,6 +381,7 @@ export function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, 
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={() => {
           if (!valido) return;
+          limpar();
           // As missões gravam-se sempre que há jogador (mesmo sem lhes mexer).
           const { destinoManual, tituloAuto, ...resto } = f; // eslint-disable-line no-unused-vars
           if (repete) {

@@ -1,6 +1,7 @@
 // competicao/RelatoriosJogo.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import { Input, Select, Btn, useIsMobile, EmptyState, TextArea, Modal } from '../base/ui';
 import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
 import { shortPlayerName, sortByPosition } from '../dominio/jogadores';
@@ -574,6 +575,7 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
     ...match,
     convocados: match.convocados || [], starters: match.starters || [], report: match.report || {}, result: match.result || '',
   }));
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_relatorio_${match.id}`, f, setF);
   const ordenados = sortByPosition(players || []);
   const conv = ordenados.filter(p => f.convocados.includes(p.id));
   const setR = (pid, campo, val) => setF(prev => {
@@ -604,6 +606,7 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
 
   return (
     <Modal title={`Relatório · vs ${match.opponent || 'Adversário'}`} onClose={onClose} fullPage larguraMax={980}>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ fontSize: 13, color: T.mutedDim, flex: '1 1 200px' }}>
           {fmtDate(match.date)} · {[competitionLabel(match.competition), match.jornada].filter(Boolean).join(' · ')}
@@ -669,7 +672,7 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
         ...(estreito ? { position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))' } : {}),
       }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onSave(withConvocadosInAttendance(f))}><Check size={15} /> Guardar relatório</Btn>
+        <Btn onClick={() => { limpar(); onSave(withConvocadosInAttendance(f)); }}><Check size={15} /> Guardar relatório</Btn>
       </div>
     </Modal>
   );
