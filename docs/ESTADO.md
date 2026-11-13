@@ -65,8 +65,8 @@ ganha as importações de que precisa. Ordem combinada:
 | 4 | Competição → `src/competicao/` (Jogos, MatchModal, FichaJogo, Escalacao, Convocatorias, Classificacao, RelatoriosJogo, MatchDashboard, dados); partilhados → `dominio/` (plantel, estatisticas, convidados, estadoJogos), `base/` (partilha, ui-extra), `tatico/impressaoCampo.jsx`. Função nova `consumirMissaoPendente()` (Tarefas limpa o pedido de missão) | feito |
 | 5 | Treino → `src/treino/` (Planeamento, SessionModal, Exercicios, ExerciseModal, ExercisePresentation, IdeiaJogo, IdeiaModal, EscolherParaCopiar, diagramas, comum); `plantel/Prancheta.jsx`; partilhados `dominio/relato.jsx`, `base/historico.jsx`, `base/botoes.jsx`, `media/pdf.jsx` | feito |
 | 6 | Plantel → `src/plantel/` (Plantel, PlayerProfilePage, PlayerModal, avaliacao, Desenvolvimento, Clinico, clinicoDados, Presencas, Monitorizacao, Gps, Composicao, Historico, CheckinManual, comum); questionários do quiosque → `atleta/questionarios.jsx`; partilhados `base/fotos.jsx`, `dominio/mensagens.js`, `dominio/faltas.jsx` | feito |
-| 7 | `src/scouting/` (Scouting, Necessidades, ScoutSheet, comum), `src/adversarios/`, `src/tarefas/` (Tarefas, TarefaModal, MissaoModal, Calendario, regras, missoesRegras), `src/diario/Diario.jsx`, `src/gestao/` (GestaoEquipa, membros, documentos Word/Excel); `base/subcolecao.js`, `dominio/aniversarios.js` | feito, à espera de "ok" |
-| 8 | Atleta: Portal, Check-in, Cacifo | por fazer |
+| 7 | `src/scouting/` (Scouting, Necessidades, ScoutSheet, comum), `src/adversarios/`, `src/tarefas/` (Tarefas, TarefaModal, MissaoModal, Calendario, regras, missoesRegras), `src/diario/Diario.jsx`, `src/gestao/` (GestaoEquipa, membros, documentos Word/Excel); `base/subcolecao.js`, `dominio/aniversarios.js` | feito |
+| 8 | Atleta → `src/atleta/`: CheckinApp (entrada do Portal e o arranque instalável), PortalEntrada (porta, cartão, PIN, biometria), temaPorta, CheckinKiosk, CheckinLogin, KioskHome, balneario, ecras (aniversário, jogo, missão), Cacifo, vistas (treino, biblioteca, jogos, competição, desenvolvimento, tarefas), separadoresJogo (convocatória, plano de jogo, adversário, ideia de jogo), VisualizadorVideoPortal, portalRpc, janelas; partilhados `base/formatos.js`, `base/equipaGuardada.js` | feito, à espera de "ok" |
 
 ### Como se move código (ferramenta usada no passo 1)
 
@@ -79,6 +79,11 @@ A divisão faz-se com uma ferramenta que lê o código (não à mão):
   para a alterar. No passo 1: `definirModalHandoff()`, em `base/ui.jsx`.
 - as instruções soltas de topo (ex.: aplicar o tema claro) vão com o
   módulo de que dependem.
+
+No passo 8 a ferramenta passou a aceitar `__soltas__` no plano (linha de
+início → módulo) para as instruções soltas que não usam nada do topo (a
+fonte do Cacifo e os estilos do Portal), que de outra forma ficavam no
+`App.jsx`.
 
 Provas feitas no passo 1, a repetir nos seguintes:
 - as linhas de código antes e depois são as mesmas (58.885), só mudam as
@@ -113,6 +118,12 @@ com as mesmas ferramentas (desenhos, paragens, partilha).
 (Definições) deve chegar a tudo o que hoje fica vermelho fixo: as barras de
 escolha de jogadores, as pílulas dos separadores e os botões de adicionar
 campos. Trocar o vermelho escrito no código pela cor do tema.
+
+**Código que nada usa (visto no passo 8, fica para decidir depois):**
+`CheckinLogin`, `sequenciaWellness`, `StreakCard`, `PkhSequencia`,
+`PkhBotaoQuestionario`, `pkhXDoMinuto`, `pkhY`, `PKH_TICKER` (foram para
+`src/atleta/` tal como estavam), `POTENTIAL_LEVELS` e `ESTADOS_TAREFA`
+(ficaram no `App.jsx`). Confirmar e apagar num commit próprio.
 
 Depois, como decisão à parte: carregar cada área só quando é usada, o que
 reduz o peso inicial da app e do Portal.
@@ -154,7 +165,7 @@ reduz o peso inicial da app e do Portal.
    `anexos-privados` (10 MB), com envio retomável acima de 6 MB e
    "fallback" para base64.
 5. **Seguimento, fila, worker e limites:** feito (ver abaixo).
-6. **Partir o `App.jsx`:** em curso.
+6. **Partir o `App.jsx`:** passos 0 a 8 feitos (o 8 à espera de "ok").
 
 Pendentes já identificados: links que não expiram em `videos-clipes`
 (bucket público); apagar ficheiros do Storage quando se apaga um atleta
