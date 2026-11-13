@@ -11,8 +11,9 @@
 // Como se encontra: o Relato (`activity_log`) guarda, para cada gravação
 // de um jogo, o antes e o depois de cada campo. Procura-se, em cada jogo,
 // quem:
-//   1. saiu dos convocados numa gravação que NÃO mexeu no onze (foi a
-//      marcação nas Presenças ou no Boletim, não o "Editar jogo");
+//   1. saiu dos convocados numa gravação que NÃO mexeu no onze e que, ao
+//      mesmo tempo, lhe pôs falta, L ou escalão (a marcação nas Presenças
+//      ou no Boletim — não o "Editar jogo" nem a convocatória);
 //   2. e depois saiu do onze (ou do banco) numa gravação seguinte;
 //   3. e continua fora do jogo agora.
 // Nada se repõe sozinho: aparece a lista, e o treinador escolhe o que repor.
@@ -34,14 +35,15 @@ import { tamanhoDaFormacao } from '../tatico/Simulador';
 
 const PAGINA = 1000;
 let CACHE = null; // { equipa, linhas } — lê-se uma vez por sessão
+export function esquecerHistoricoDosJogos() { CACHE = null; }
 
-async function lerHistoricoDosJogos(equipa) {
+export async function lerHistoricoDosJogos(equipa) {
   if (CACHE && CACHE.equipa === equipa) return CACHE.linhas;
   await ensureSession();
   const linhas = [];
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await supabase.from('activity_log')
-      .select('registo_id, em, campos')
+      .select('registo_id, em, campos, ator_email')
       .eq('team_id', String(equipa)).eq('tabela', 'matches')
       .order('em', { ascending: true }).order('id', { ascending: true })
       .range(de, de + PAGINA - 1);
@@ -54,7 +56,7 @@ async function lerHistoricoDosJogos(equipa) {
 }
 
 const lista = (v) => (Array.isArray(v) ? v : []);
-const MOTIVO = { faltas: 'Falta', lesionados: 'Lesionado (L)', escalao: 'Escalão', attendance: 'Presenças' };
+const MOTIVO = { faltas: 'Falta', lesionados: 'Lesionado (L)', escalao: 'Escalão' };
 
 /* Para um jogo: quem foi tirado e onde estava. */
 function perdidosDoJogo(jogo, linhas) {
@@ -66,9 +68,13 @@ function perdidosDoJogo(jogo, linhas) {
     const mexeuNoOnze = !!(c.alinhamento || c.starters);
     if (c.convocados && !c.convocados.grande && !mexeuNoOnze) {
       const sairam = lista(c.convocados.de).filter(id => !lista(c.convocados.para).includes(id));
+      /* Só conta quando, na MESMA gravação, o jogador recebeu falta, L ou
+         escalão: é a marca das Presenças / do Boletim. Uma saída dos
+         convocados sem isso (ex.: tirado da convocatória, que acerta o
+         jogo sem mexer no onze) foi uma decisão do treinador. */
       sairam.forEach(id => {
         const motivo = ['lesionados', 'faltas', 'escalao'].find(k => c[k] && lista(c[k].para).includes(id) && !lista(c[k].de).includes(id));
-        tiradosSemOnze.set(id, MOTIVO[motivo] || 'Presenças');
+        if (motivo) tiradosSemOnze.set(id, MOTIVO[motivo]);
       });
     }
     // Saída do onze/banco DEPOIS de ter sido tirado dos convocados.
@@ -214,5 +220,31 @@ export function RepararJogos({ matches, players, onSave }) {
   );
 }
 
+// Histórico de UM jogo, sempre fresco (sem a cache de cima).
+export async function lerHistoricoDoJogo(equipa, jogoId) {
+  await ensureSession();
+  const { data, error } = await supabase.from('activity_log')
+    .select('registo_id, em, campos, ator_email')
+    .eq('team_id', String(equipa)).eq('tabela', 'matches').eq('registo_id', String(jogoId))
+    .order('em', { ascending: true }).order('id', { ascending: true })
+    .limit(2000);
+  if (error) throw error;
+  return data || [];
+}
+
+/* QUEM ESTAVA NESTE LUGAR. Para um lugar do campo que está vazio, o último
+   jogador que lá esteve, segundo o histórico do jogo, e quando saiu (e
+   quem fez a alteração). null se o histórico não disser nada. */
+export function quemEstavaNoLugar(linhas, i) {
+  let ultimo = null; let saida = null;
+  for (const l of linhas) {
+    const c = (Array.isArray(l.campos) ? l.campos : []).find(x => x && x.k === 'alinhamento' && !x.grande);
+    if (!c) continue;
+    const de = lista(c.de); const para = lista(c.para);
+    if (para[i]) { ultimo = para[i]; saida = null; } else if (de[i]) { ultimo = de[i]; saida = { em: l.em, por: l.ator_email || '' }; }
+  }
+  return ultimo && saida ? { id: ultimo, ...saida } : null;
+}
+
 // Para testes.
-export const _interno = { perdidosDoJogo, reporNoJogo };
+export const _interno = { perdidosDoJogo, reporNoJogo, quemEstavaNoLugar };

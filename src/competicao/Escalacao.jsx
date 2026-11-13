@@ -364,8 +364,17 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
                 {p ? (
                   <div {...props({ de: 'slot', i, id: p.id })} onClick={undefined}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation' }}>
-                    <div style={{ outline: realce ? `2px dashed ${T.gold}` : 'none', outlineOffset: 3, borderRadius: '50%' }}>{fotoBola(p, 38, escolhido)}</div>
-                    <span style={{ fontSize: 10.5, color: '#fff', marginTop: 2, maxWidth: 70, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px #000', ...body }}>{shortPlayerName(p, players)}{minDe(p) != null && <span style={{ color: T.gold, ...mono }}>{` ${minDe(p)}'`}</span>}</span>
+                    <div style={{ position: 'relative', outline: realce ? `2px dashed ${T.gold}` : 'none', outlineOffset: 3, borderRadius: '50%' }}>
+                      {fotoBola(p, 38, escolhido)}
+                      {/* Minutos num selo na foto: ao lado do nome encavalitavam nos vizinhos. */}
+                      {minDe(p) != null && (
+                        <span style={{
+                          position: 'absolute', right: -9, bottom: -3, padding: '0 4px', borderRadius: 7, background: '#111c', border: `1px solid ${T.gold}`,
+                          color: T.gold, fontSize: 9, lineHeight: '13px', pointerEvents: 'none', ...mono,
+                        }}>{minDe(p)}'</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 10.5, color: '#fff', marginTop: 2, maxWidth: 70, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px #000', ...body }}>{shortPlayerName(p, players)}</span>
                   </div>
                 ) : (
                   <>

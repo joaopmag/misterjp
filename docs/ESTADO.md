@@ -172,9 +172,13 @@ reduz o peso inicial da app e do Portal.
     indisponíveis e quem tem falta, L ou escalão marcado nas Presenças
     desse jogo (que no amigável já não se apagam ao gravar).
   Reparação dos jogos antigos: `competicao/RepararJogos.jsx` lê o Relato
-  (`activity_log`) e lista quem saiu do onze por uma marcação de falta/L
-  sem ninguém o tirar no "Editar jogo"; aviso em Jogos, "Rever e repor"
-  (volta ao mesmo lugar, ou ao banco se o lugar estiver ocupado).
+  (`activity_log`) e lista quem saiu do onze depois de uma gravação que,
+  ao mesmo tempo, o tirou dos convocados E lhe pôs falta, L ou escalão
+  (a 1.ª versão também apanhava quem foi tirado da convocatória pelo
+  treinador: Roque e Rui apareceram por engano). Aviso em Jogos, "Rever e
+  repor". No "Editar jogo", cada lugar vazio do onze mostra quem lá estava
+  segundo o histórico, quando saiu e quem alterou, com "Repor no lugar".
+  Minutos no campo num selo na foto (ao lado do nome encavalitavam).
 - 13/11: Documentos: os modelos saíam sem o emblema do clube (com a
   inicial ou o nome no lugar). O emblema é um endereço de outro site, e o
   browser não deixa ler os pixéis dessa imagem (CORS). Nova função

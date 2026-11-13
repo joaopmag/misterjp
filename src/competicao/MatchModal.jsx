@@ -1,14 +1,16 @@
 // competicao/MatchModal.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { lerHistoricoDoJogo, quemEstavaNoLugar } from './RepararJogos';
+import { rotuloDoLugar, FORMACOES } from '../tatico/Simulador';
 import { useRascunho, BannerRascunho } from '../base/sincronizacao';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMobile, Modal, FIELD_GRID, Field, Select, Input, Btn } from '../base/ui';
-import { todayStr } from '../base/utilidades';
+import { todayStr, fmtShort } from '../base/utilidades';
 import { FRIENDLY, competitionLabel, convocadosDoJogo } from '../dominio/jogos';
 import { T } from '../base/tema';
 import { estadoClinicoParaJogo } from '../dominio/clinico';
-import { sortByPosition } from '../dominio/jogadores';
+import { sortByPosition, shortPlayerName } from '../dominio/jogadores';
 import { Check } from 'lucide-react';
 import { CartaoPlanoDoJogo, EscalacaoNoCampo, castigadosParaJogo, comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao, withConvocadosInAttendance } from './Escalacao';
 import { competitionByName, competitionGameDate, competitionOptions, competitionRoundLabels, competitionTeamNames, onzeProvavel } from './dados';
@@ -116,6 +118,28 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
       && !((estadoClinicoParaJogo(p.id, f.date, clinico) || {}).avisaJogo))).map(p => p.id);
     return { ...escalacaoBase, banco: [...escalacaoBase.banco, ...extra] };
   })();
+  /* LUGAR VAZIO NO ONZE: quem lá estava antes, segundo o histórico do jogo
+     (Relato). Mostra-se e repõe-se com um toque; nada muda sozinho. */
+  const [historicoJogo, setHistoricoJogo] = useState(null);
+  const temLugarVazio = escalacao.slots.some(x => !x);
+  useEffect(() => {
+    if (!f.id || !temLugarVazio || historicoJogo || !T.equipaId) return undefined;
+    let cancelado = false;
+    lerHistoricoDoJogo(T.equipaId, f.id).then(l => { if (!cancelado) setHistoricoJogo(l); }).catch(() => { if (!cancelado) setHistoricoJogo([]); });
+    return () => { cancelado = true; };
+  }, [f.id, temLugarVazio, historicoJogo]);
+  const lugaresPerdidos = (historicoJogo || []).length ? escalacao.slots.map((id, i) => {
+    if (id) return null;
+    const q = quemEstavaNoLugar(historicoJogo, i);
+    if (!q || escalacao.slots.includes(q.id)) return null;
+    return { i, ...q, p: players.find(x => x.id === q.id) || null };
+  }).filter(Boolean) : [];
+  const reporNoLugar = (i, id) => aplicarEscalacao({
+    slots: escalacao.slots.map((x, k) => (k === i ? id : x)),
+    banco: escalacao.banco.filter(x => x !== id),
+  });
+  const lugaresDaFormacao = FORMACOES[escalacao.formacao] || FORMACOES['4-3-3'];
+
   // O que se grava: num amigável, os convocados são o onze e o banco todo.
   const paraGravar = () => withConvocadosInAttendance(eAmigavel
     ? { ...f, convocados: [...new Set([...(f.convocados || []), ...escalacao.slots.filter(Boolean), ...escalacao.banco])] }
@@ -312,6 +336,15 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
             segundo jogador tem de perceber porque é que ele não ficou
             titular como os anteriores. Vale para qualquer jogo, não só
             amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
+        {lugaresPerdidos.map(l => (
+          <div key={l.i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 10px', padding: '9px 12px', borderRadius: 9, background: `${T.gold}14`, border: `1px solid ${T.gold}66`, fontSize: 13, color: T.cream }}>
+            <span style={{ flex: '1 1 260px' }}>
+              Lugar <strong>{rotuloDoLugar(lugaresDaFormacao[l.i])}</strong> vazio: estava {l.p ? <strong>{shortPlayerName(l.p, players)}</strong> : 'um jogador que já não está no plantel'}
+              <span style={{ color: T.mutedDim }}> · saiu a {fmtShort(String(l.em).slice(0, 10))}{l.por ? ` (alteração de ${l.por})` : ''}</span>
+            </span>
+            {l.p && <Btn variant="ghost" onClick={() => reporNoLugar(l.i, l.id)} style={{ padding: '5px 12px', fontSize: 12.5 }}>Repor no lugar</Btn>}
+          </div>
+        ))}
         <EscalacaoNoCampo
           acao={f.id ? <CartaoPlanoDoJogo jogo={f} /> : null}
           players={players}
