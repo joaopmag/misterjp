@@ -424,14 +424,22 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const [mp4Ativo, setMp4Ativo] = useState(false);
   const [esperaMp4, setEsperaMp4] = useState(null); // { nome, ids } — aviso "a preparar"
   const pedidosMp4 = useRef(new Set());
+  // Porque é que não há MP4 (para se ver, em vez de gravar às escondidas).
+  const [falhaMp4, setFalhaMp4] = useState('');
   const lerMp4 = React.useCallback(async () => {
-    if (!api || !api.ficheiros) return;
+    if (!api || !api.ficheiros) {
+      if (api && api.ler) setFalhaMp4('MP4 no servidor desligado nesta versão da app (falta o endereço do serviço de vídeo).');
+      return;
+    }
     try {
       const l = await api.ficheiros();
       const m = {};
       l.forEach(x => { if (x && x.id) m[x.id] = x; });
-      setMp4(m); setMp4Ativo(true);
-    } catch (e) { setMp4Ativo(false); }
+      setMp4(m); setMp4Ativo(true); setFalhaMp4('');
+    } catch (e) {
+      setMp4Ativo(false);
+      setFalhaMp4(`MP4 no servidor indisponível: a base não respondeu (${(e && e.message) || 'erro'}). Correu o SQL checkin_video_ficheiros?`);
+    }
   }, [api]);
   useEffect(() => {
     let cancelado = false;
@@ -489,16 +497,19 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       if (!soClipesDeFicheiro(ids, porId)) {
         if (!(f && f.url)) return;
       } else if (f && f.assinatura === a) {
-        if (f.estado === 'pronto' || f.estado === 'erro' || f.estado === 'muito_longo') return;
+        // Um erro tenta-se outra vez uma vez por sessão (pode ter sido passageiro).
+        if (f.estado === 'pronto' || f.estado === 'muito_longo') return;
+        if (f.estado === 'erro' && pedidosMp4.current.has(`${v.id}|${a}|erro`)) return;
+        if (f.estado === 'erro') pedidosMp4.current.add(`${v.id}|${a}|erro`);
         const parado = f.estado === 'a_preparar' && f.pedidoEm && Date.now() - new Date(f.pedidoEm).getTime() > 30 * 60 * 1000;
         if (f.estado === 'a_preparar' && !parado) return;
       }
-      const chave = `${v.id}|${a}`;
+      const chave = `${v.id}|${a}|${f && f.estado === 'erro' ? 'novo' : ''}`;
       if (pedidosMp4.current.has(chave)) return;
       pedidosMp4.current.add(chave);
       api.prepararMp4(v.id)
         .then(() => setMp4(m => ({ ...m, [v.id]: { ...(m[v.id] || {}), id: v.id, estado: 'a_preparar', assinatura: a, pedidoEm: new Date().toISOString() } })))
-        .catch(() => { /* serviço em baixo: o Descarregar grava no browser */ });
+        .catch((e) => { setFalhaMp4(`MP4 no servidor indisponível: o serviço de vídeo não aceitou o pedido (${(e && e.message) || 'erro'}).`); });
     });
     // `porId` muda a cada render; os clipes entram pela lista e pelo mp4.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,6 +529,17 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
     if (!v || !mp4AVir(v, validos(v.ids))) setEsperaMp4(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mp4, lista, esperaMp4]);
+
+  // Uma linha por vídeo a dizer o que se passa com o MP4.
+  const estadoMp4 = (v, ids) => {
+    if (!mp4Ativo || !noServidor || !ids.length) return null;
+    if (mp4Pronto(v, ids)) return { txt: 'MP4 pronto', cor: T.gold };
+    if (!soClipesDeFicheiro(ids, porId)) return { txt: 'tem clipes do YouTube: grava ao descarregar', cor: T.mutedDim };
+    const f = mp4[v.id];
+    if (f && f.assinatura === assin(ids) && f.estado === 'muito_longo') return { txt: 'demasiado longo para MP4 (máx. 30 min)', cor: T.warn };
+    if (f && f.assinatura === assin(ids) && f.estado === 'erro') return { txt: 'o MP4 falhou', cor: T.warn, titulo: f.erro || '' };
+    return { txt: 'a preparar MP4…', cor: T.muted };
+  };
 
   const descarregar = (v, ids) => {
     const pronto = mp4Pronto(v, ids);
@@ -597,6 +619,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
         <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, com uma barra só, como se fosse um clipe.</div>
       )}
       {aviso && <div style={{ fontSize: 12, color: T.warn, margin: '4px 0 8px' }}>{aviso}</div>}
+      {falhaMp4 && noServidor && !editar && <div style={{ fontSize: 11.5, color: T.mutedDim, margin: '4px 0 8px' }}>{falhaMp4}</div>}
       {esperaMp4 && !editar && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: T.muted, margin: '4px 0 8px', lineHeight: 1.5 }}>
           <Loader2 size={13} className="spin" color={T.gold} />
@@ -635,7 +658,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
             <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}{(() => { const e = estadoMp4(v, ids); return e ? <span title={e.titulo || ''} style={{ color: e.cor }}> · {e.txt}</span> : null; })()}</div>
             {aberto === v.id ? (
               <Btn variant="ghost" onClick={onFecharAberto} style={{ minWidth: 96, justifyContent: 'center' }}><X size={13} /> Fechar</Btn>
             ) : (
