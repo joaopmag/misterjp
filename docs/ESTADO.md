@@ -146,6 +146,12 @@ reduz o peso inicial da app e do Portal.
   acontecimentos dos suplentes ficam à direita do cartão.
 - 13/11: "Copiar ideia/exercício existente": a pré-visualização cresce para
   mostrar o esquema e os botões inteiros (antes ficava com scroll).
+- 13/11: Documentos: os modelos saíam sem o emblema do clube (com a
+  inicial ou o nome no lugar). O emblema é um endereço de outro site, e o
+  browser não deixa ler os pixéis dessa imagem (CORS). Nova função
+  `api/emblema.js`: vai buscar o emblema gravado na equipa do lado do
+  servidor (sessão e membro da equipa; só https público, só imagens, até
+  3 MB) e `carregarLogoEquipaParaDoc` usa-a quando a leitura direta falha.
 - 13/11: Adversários: as bolas da estrutura habitual usam a cor do clube
   adversário no ecrã, na edição e na impressão (cores claras, como o
   branco ou o amarelo, levam contorno e texto escuro).

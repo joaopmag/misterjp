@@ -430,14 +430,30 @@ export async function carregarLogoEquipaParaDoc() {
     if (cors) im.crossOrigin = 'anonymous';
     im.onload = () => res(im); im.onerror = rej; im.src = url;
   });
+  const doBlob = async (blob) => {
+    const url = URL.createObjectURL(blob);
+    try { return await doImg(url, false); } finally { setTimeout(() => URL.revokeObjectURL(url), 2000); }
+  };
   try {
     const r = await fetch(src);
     if (!r.ok) throw new Error('logo');
-    const url = URL.createObjectURL(await r.blob());
-    try { return await doImg(url, false); } finally { setTimeout(() => URL.revokeObjectURL(url), 2000); }
+    return await doBlob(await r.blob());
   } catch (e) {
-    try { return await doImg(src, true); } catch (e2) { return null; }
+    try { return await doImg(src, true); } catch (e2) { /* segue para o servidor */ }
   }
+  /* A maior parte dos sites não deixa a app ler os pixéis da imagem (CORS):
+     a <img> mostra-a, mas não dá para a pôr no Word/Excel. O servidor vai
+     buscá-la (ver api/emblema.js) e devolve-a daqui. */
+  if (!T.equipaId) return null;
+  try {
+    const h = { 'Content-Type': 'application/json' };
+    const { data } = await supabase.auth.getSession();
+    const t = data && data.session && data.session.access_token;
+    if (t) h.Authorization = `Bearer ${t}`;
+    const r = await fetch('/api/emblema', { method: 'POST', headers: h, body: JSON.stringify({ teamId: T.equipaId }) });
+    if (!r.ok || !/^image\//i.test(r.headers.get('content-type') || '')) return null;
+    return await doBlob(await r.blob());
+  } catch (e3) { return null; }
 }
 
 // Como é a imagem de exemplo: tem cor? é transparente? é clara?
