@@ -16,6 +16,18 @@ import { CompilacoesAtleta, LeitorJunto } from './LeitorJunto';
 import { AttachmentPreview, BarraTempoSala, FimDoClipe, LeitorClipeSala } from './leitores';
 import { MediaModal } from './MediaModal';
 
+/* VÍDEO CARREGADO COMO FICHEIRO (link http): usa o MESMO leitor da
+   Biblioteca que os vídeos do YouTube — barra própria, cortes, cortes em
+   seguida, desenhos, ecrã inteiro. Os clipes da Análise de Vídeo também
+   têm `clipInicio`, mas são ficheiros próprios (o tempo é o do jogo, não
+   o do ficheiro), por isso continuam no leitor de clipes MP4. */
+function eVideoFicheiroBib(v) {
+  return !!v && !v.youtubeId && v.kind === 'video' && /^https?:/.test(String(v.dataUrl || '')) && (!ehClipe(v) || !!v.clipNoFicheiro);
+}
+function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v)); }
+// O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
+function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
+
 export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
@@ -1135,12 +1147,28 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // o vídeo — foi retirada a pedido. Anotações já gravadas em itens
   // antigos ficam no registo, mas deixam de ser desenhadas.)
   const enviarComandoYoutube = (func, args) => {
+    /* VÍDEO CARREGADO (ficheiro): o MESMO leitor da Biblioteca, com um
+       <video> no lugar do iframe do YouTube. Os comandos são os mesmos
+       quatro (saltar, tocar, pausar, velocidade), por isso tudo o resto
+       — barra do clipe, cortes em seguida, desenhos, ecrã inteiro — é o
+       mesmo código para os dois. */
+    const vid = inlineVideoRef.current;
+    if (vid) {
+      try {
+        if (func === 'seekTo') vid.currentTime = Math.max(0, Number(args && args[0]) || 0);
+        else if (func === 'playVideo') { const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {}); }
+        else if (func === 'pauseVideo') vid.pause();
+        else if (func === 'setPlaybackRate') vid.playbackRate = Number(args && args[0]) || 1;
+      } catch (e) { /* nada */ }
+      return;
+    }
     const win = inlineIframeRef.current && inlineIframeRef.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
 
   const inlineIframeRef = React.useRef(null);
+  const inlineVideoRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
 
   // Ecrã inteiro para vídeos do Instagram/TikTok: aplica-se ao MESMO
@@ -1268,6 +1296,24 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
+
+  // VÍDEO CARREGADO: o equivalente ao 'infoDelivery' do YouTube.
+  const infoDoVideoBib = (vid) => {
+    if (!vid) return;
+    const t = vid.currentTime;
+    currentTimeRef.current = t;
+    if (precisaTempoAoVivoRef.current) setLiveTime(t);
+    if (precisaTempoJogoRef.current) setTempoJogo(t);
+    if (vid.duration > 0) setDuracaoJogo(vid.duration);
+  };
+  // O 'timeupdate' do browser vem de ~¼ em ¼ de segundo (como o YouTube);
+  // a tocar, lê-se também a cada 100 ms, para a barra andar suave.
+  useEffect(() => {
+    if (!ytATocar) return undefined;
+    const h = setInterval(() => { if (inlineVideoRef.current) infoDoVideoBib(inlineVideoRef.current); }, 100);
+    return () => clearInterval(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytATocar]);
 
   /* ECRÃ INTEIRO DO YOUTUBE — sobre o MESMO leitor que já está a tocar.
 
@@ -1707,7 +1753,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     else setItems(fn);
   };
 
-  const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  const ativoEClipe = !!(temLeitorBib(active) && typeof active.clipInicio === 'number');
   // Partilhar um corte que não estava aberto: quando o leitor já o tem, arranca.
   useEffect(() => {
     const g = gravacaoBibRef.current;
@@ -1801,7 +1847,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // reproduzir (barra própria + limites do corte).
   useEffect(() => {
     precisaTempoAoVivoRef.current = ativoEClipe;
-    precisaTempoJogoRef.current = !!(active && active.youtubeId && !ativoEClipe);
+    precisaTempoJogoRef.current = !!(temLeitorBib(active) && !ativoEClipe);
     setTempoJogo(0); setDuracaoJogo(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ativoEClipe, active && active.id]);
@@ -2336,6 +2382,10 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
               <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
             ) : v.thumbUrl ? (
               <img src={v.thumbUrl} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000' }} />
+            ) : eVideoFicheiroBib(v) ? (
+              // Vídeo carregado: o fotograma do próprio ficheiro (no início do corte, num clipe).
+              <video src={`${v.dataUrl}#t=${(ehClipe(v) ? Number(v.clipInicio) || 0 : 0) + 0.5}`} muted playsInline preload="metadata"
+                style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000', pointerEvents: 'none' }} />
             ) : v.social ? (
               <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}
@@ -2406,7 +2456,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             onClick={(e) => {
               e.stopPropagation();
               // No telemóvel (não grava) partilha logo o link, como sempre — sem menu.
-              if (ehClipe(v) && v.youtubeId && podeGravarSeparador()) {
+              if (ehClipe(v) && temLeitorBib(v) && podeGravarSeparador()) {
                 if (menuPartilhaId === v.id) { setMenuPartilha(null); return; }
                 const r = e.currentTarget.getBoundingClientRect();
                 const cabeBaixo = window.innerHeight - r.bottom > 150;
@@ -2512,7 +2562,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   };
 
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
-  temVideoBibRef.current = !!(active && active.youtubeId && !isBlocked); // para a barra de espaço
+  temVideoBibRef.current = !!(temLeitorBib(active) && !isBlocked); // para a barra de espaço
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
 
   useEffect(() => {
@@ -2548,7 +2598,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // instante, o endereço do corte anterior.
   const leitorBibRef = useRef(null);
   const leitorBib = (() => {
-    if (!active || !active.youtubeId) return null;
+    if (!temLeitorBib(active)) return null;
     const atual = leitorBibRef.current;
     // O leitor que já está a mostrar ESTE corte mantém-se sempre (senão,
     // pausar depois de uma troca "a tocar" recarregava o leitor).
@@ -2559,7 +2609,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     // imagem nem a miniatura depois de um salto sem reprodução. Parado,
     // recarrega-se como antes: aparece logo a miniatura do corte.
     const emSeqAgora = !!(sequencia && sequencia.includes(active.id));
-    const reaproveita = atual && ativoEClipe && atual.eClipe && atual.youtubeId === active.youtubeId
+    const reaproveita = atual && ativoEClipe && atual.eClipe && atual.fonte === fonteBib(active)
       && (ytATocarRef.current || emSeqAgora);
     if (reaproveita) { atual.servindo = active.id; atual.saltarPara = active.id; return atual; }
     const emSeq = sequencia && sequencia.includes(active.id);
@@ -2572,8 +2622,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     const auto = emSeq;
     if (autoplayIdRef.current === active.id) { tocarAoCarregarRef.current = active.id; autoplayIdRef.current = null; }
     const novo = {
-      chave: active.id, servindo: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
-      src: youtubeEmbedSrc(active, auto ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
+      chave: active.id, servindo: active.id, youtubeId: active.youtubeId, fonte: fonteBib(active), eClipe: ativoEClipe,
+      src: active.youtubeId ? youtubeEmbedSrc(active, auto ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0') : active.dataUrl,
     };
     leitorBibRef.current = novo;
     return novo;
@@ -2664,7 +2714,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     || eqsAtivo[0] || '';
 
   const guardarClipe = () => {
-    if (!active || (!active.youtubeId && !podeCortarFicheiro(active)) || clipMarcas.inicio == null || clipMarcas.fim == null) return;
+    if (!temLeitorBib(active) || clipMarcas.inicio == null || clipMarcas.fim == null) return;
     const inicio = Math.min(clipMarcas.inicio, clipMarcas.fim);
     const fim = Math.max(clipMarcas.inicio, clipMarcas.fim);
     if (fim - inicio < 1) return;
@@ -2789,17 +2839,10 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     setGrupo(`e:${semAcentos(equipa)}`);
   };
 
-  /* VÍDEO CARREGADO COMO FICHEIRO (público, com link http): o staff
-     também lhe pode criar clipes. Os vídeos privados (só com link
-     temporário) e os que ainda estão dentro do registo (base64) ficam de
-     fora; os clipes não se cortam de novo (vai-se ao vídeo completo). */
-  function podeCortarFicheiro(v) {
-    return !soLeitura && !!v && v.kind === 'video' && !v.youtubeId && !ehClipe(v) && /^https?:/.test(String(v.dataUrl || ''));
-  }
   // Quem pode criar clipes neste vídeo: o staff em qualquer vídeo do
   // YouTube; no Portal, o jogador só em vídeos de JOGOS da equipa.
   const podeCriarClipe = !soLeitura
-    || (!!criarClipeAtleta && !!active && !!active.youtubeId
+    || (!!criarClipeAtleta && !!active && temLeitorBib(active)
       && (!!edicaoClipeId || (!active.deAtleta && catDe(active) === 'jogo')));
 
   // Abre a edição de um clipe do atleta: vai para o vídeo completo de
@@ -2970,12 +3013,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     const g = gruposDaSecao.find(x => x.key === key);
     if (g && g.itens[0]) setActiveId(g.itens[0].id);
   };
-  const cortesDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => ehClipe(v) && v.youtubeId) : [];
+  const cortesDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => ehClipe(v) && temLeitorBib(v)) : [];
   // Tudo o que se reproduz neste jogo/tema, por ordem: cortes do YouTube e
   // clipes em vídeo (MP4, ex.: os enviados da Análise de Vídeo). É a lista
   // do "Corte seguinte" no fim de cada um.
   const eMp4Sala = (v) => !!(v && v.kind === 'video' && !v.youtubeId && !v.storagePath && /^https?:/.test(String(v.dataUrl || '')));
-  const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && v.youtubeId) || eMp4Sala(v)) : [];
+  const reproduziveisDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => (ehClipe(v) && temLeitorBib(v)) || eMp4Sala(v)) : [];
   // Para o ⏮ ⏭ da barra de cima: TUDO o que se vê no jogo/tema, pela ordem
   // da lista — jogos completos, cortes e clipes em vídeo.
   // Pela ordem em que aparecem na lista: primeiro "Jogo completo", depois
@@ -2983,7 +3026,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // completos para os cortes).
   const navegaveisDoGrupo = grupoAtual
     ? (grupoAtual.secoes && grupoAtual.secoes.length ? grupoAtual.secoes.flatMap(sc => sc.itens || []) : grupoAtual.itens)
-      .filter(v => v && (v.youtubeId || eMp4Sala(v)))
+      .filter(v => v && (temLeitorBib(v) || eMp4Sala(v)))
     : [];
   const seguinteNaSala = (id) => {
     const lista = (sequencia && sequencia.includes(id)) ? sequencia : reproduziveisDoGrupo.map(v => v.id);
@@ -3129,12 +3172,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
          que são MP4 guardados na app): usa a miniatura de um desses cortes. */
       const comThumb = g.itens.find(x => !ehClipe(x) && x.thumbUrl) || g.itens.find(x => x.thumbUrl);
       // Nem miniatura: o primeiro fotograma do próprio MP4 (só os metadados são lidos).
-      const comMp4 = !comThumb && g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId && !x.storagePath);
+      const comMp4 = !comThumb && (g.itens.find(x => eVideoFicheiroBib(x) && !ehClipe(x)) || g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId && !x.storagePath));
       return comThumb ? (
         <img src={comThumb.thumbUrl} alt="" loading="lazy"
           style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
       ) : comMp4 ? (
-        <video src={`${comMp4.dataUrl}#t=0.5`} muted playsInline preload="metadata"
+        <video src={`${comMp4.dataUrl}#t=${comMp4.clipNoFicheiro ? (Number(comMp4.clipInicio) || 0) + 0.5 : 0.5}`} muted playsInline preload="metadata"
           style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000', pointerEvents: 'none' }} />
       ) : (
         <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -3171,6 +3214,15 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 ) : [...itensMeus].slice(-3).map((c, j, arr) => {
                   const pos = arr.length === 1 ? [0] : arr.length === 2 ? [-1, 1] : [-1, 0, 1];
                   const p = pos[j];
+                  const estiloCarta = {
+                    position: 'absolute', width: '52%', aspectRatio: '16 / 9', objectFit: 'cover', left: '24%', top: '20%',
+                    borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: '#000',
+                    transform: `translateX(${p * 34}%) translateY(${Math.abs(p) * 7}%) rotate(${p * 9}deg)`,
+                    zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
+                  };
+                  if (!c.youtubeId && c.dataUrl) {
+                    return <video key={c.id} src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata" style={{ ...estiloCarta, pointerEvents: 'none' }} />;
+                  }
                   return (
                     <img key={c.id} alt="" src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`}
                       style={{
@@ -3501,7 +3553,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             )}
             {!compAtiva && active && (
               <>
-                {active.youtubeId ? (
+                {temLeitorBib(active) ? (
                   // Toca sempre diretamente na caixa (tal como um vídeo
                   // local ou um PDF) em vez de mostrar só uma miniatura
                   // que obriga a um clique extra para abrir a janela
@@ -3545,7 +3597,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                         // ficava marcado "a tocar" e o 1.º toque no play mandava
                         // PAUSAR (em ecrã inteiro não arrancava).
                         const alvo = (items || []).find(v => v.id === id);
-                        const mesmoLeitor = !!(alvo && ehClipe(alvo) && alvo.youtubeId && active && active.youtubeId === alvo.youtubeId && ativoEClipe);
+                        const mesmoLeitor = !!(alvo && ehClipe(alvo) && temLeitorBib(alvo) && temLeitorBib(active) && fonteBib(active) === fonteBib(alvo) && ativoEClipe);
                         ytATocarRef.current = mesmoLeitor;
                         // Leitor novo (outro vídeo, ou de/para jogo completo):
                         // abre já a tocar.
@@ -3636,6 +3688,34 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             <ExternalLink size={13} /> Abrir no YouTube
                           </a>
                         </div>
+                      ) : !active.youtubeId ? (
+                        /* VÍDEO CARREGADO: um <video> no lugar do iframe, sem
+                           controlos nativos (manda a barra própria, como no
+                           YouTube). A mesma chave de `leitorBib`: entre cortes
+                           do mesmo ficheiro não recarrega. Os eventos do vídeo
+                           fazem o papel das mensagens do YouTube. */
+                        <video
+                          key={leitorBib ? leitorBib.chave : active.id}
+                          ref={inlineVideoRef}
+                          src={leitorBib ? leitorBib.src : active.dataUrl}
+                          playsInline preload="auto"
+                          onLoadedMetadata={(e) => {
+                            const vid = e.currentTarget;
+                            if (vid.duration > 0) setDuracaoJogo(vid.duration);
+                            if (ativoEClipe && vid.currentTime < clipIni) vid.currentTime = clipIni;
+                            if (tocarAoCarregarRef.current === active.id) {
+                              tocarAoCarregarRef.current = null;
+                              const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {});
+                            }
+                          }}
+                          onTimeUpdate={(e) => infoDoVideoBib(e.currentTarget)}
+                          onSeeked={(e) => infoDoVideoBib(e.currentTarget)}
+                          onPlay={() => setYtATocar(true)}
+                          onPause={() => setYtATocar(false)}
+                          onEnded={() => setYtATocar(false)}
+                          onClick={() => { if (ativoEClipe) alternarReproducaoBib(); else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); }}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer' }}
+                        />
                       ) : (
                         <iframe
                           // Chave e endereço vêm de `leitorBib`: entre cortes do
@@ -4204,7 +4284,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                             {active.title}
                           </span>
-                        ) : (
+                        ) : active.youtubeId ? (
                           <a
                             href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
                             target="_blank" rel="noopener noreferrer"
@@ -4212,7 +4292,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           >
                             <ExternalLink size={13} /> Abrir no YouTube
                           </a>
-                        )}
+                        ) : <span />}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
                           {podeCriarClipe && (
                           <button
@@ -4424,30 +4504,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       </div>
                     </div>
                   </div>
-                ) : podeCortarFicheiro(active) ? (
-                  <>
-                    <div style={{ width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.line}` }}>
-                      <video key={active.id} src={active.dataUrl} controls playsInline preload="metadata"
-                        onTimeUpdate={e => { currentTimeRef.current = e.currentTarget.currentTime; }}
-                        onSeeked={e => { currentTimeRef.current = e.currentTarget.currentTime; }}
-                        style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
-                        <button
-                          onClick={() => (clipMode ? cancelarModoClipe() : setClipMode(true))}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
-                            color: clipMode ? T.warn : '#fff', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                          }}
-                        >
-                          <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
-                        </button>
-                      </div>
-                    </div>
-                    {clipeGuardadoAviso && (
-                      <div role="status" style={{ marginTop: 8, fontSize: 12.5, color: T.good }}>✓ {clipeGuardadoAviso} · marca o próximo</div>
-                    )}
-                    {clipMode && renderPainelClipe(false)}
-                  </>
                 ) : eMp4Sala(active) ? (
                   (() => {
                     const { lista, i, seguinteId } = seguinteNaSala(active.id);
@@ -4556,7 +4612,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       // "Ver cortes em seguida" junto dos cortes: no título da
                       // PRIMEIRA secção que tem cortes ("Cortes" numa jornada;
                       // o primeiro jogo com cortes nos Amigáveis/adversários).
-                      const iPrimeiraComCortes = grupoAtual.secoes.findIndex(x => x.itens.some(v => ehClipe(v) && v.youtubeId));
+                      const iPrimeiraComCortes = grupoAtual.secoes.findIndex(x => x.itens.some(v => ehClipe(v) && temLeitorBib(v)));
                       // O botão fica SEMPRE (não desaparece ao começar): nada mexe na página.
                       const comBotao = si === iPrimeiraComCortes && cortesDoGrupo.length > 0;
                       return [

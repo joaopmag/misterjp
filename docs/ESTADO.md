@@ -117,16 +117,31 @@ e a posição/zoom do enquadramento, e o "Ajustar" parte sempre da original.
 Não guardar a original dentro da ficha do jogador (pesava o plantel em
 todos os ecrãs e no Portal).
 
-**"Criar clipe" para vídeos carregados (13/11, 1.ª parte feita, à espera
-de "ok"):** o staff marca início e fim num vídeo carregado (público, link
-http) e o clipe aponta para o MESMO ficheiro (`clipNoFicheiro`), sem copiar
-nada no Storage; `LeitorClipeSala` toca só esse troço (sozinho repete; em
-lista para no fim com Repetir / Clipe seguinte). Partilhar envia o link do
-ficheiro com `#t=início,fim`. Falta (2.ª parte, se fizer falta): desenhos e
-paragens nos clipes de ficheiro, juntá-los em "Os meus vídeos" (hoje só
-YouTube), clipes do atleta no Portal sobre ficheiros, vídeos privados, e
-um corte a sério (ficheiro próprio, via `api/cortar-clipe`) para enviar
-pelo WhatsApp.
+**Vídeos carregados = vídeos por link (13/11, à espera de "ok"):** um vídeo
+carregado (público, link http) usa o MESMO leitor da Biblioteca que o
+YouTube (`temLeitorBib`, `eVideoFicheiroBib`): um `<video>` no lugar do
+iframe, e `enviarComandoYoutube` traduz os quatro comandos (saltar, tocar,
+pausar, velocidade) para ele; os eventos do vídeo fazem de 'infoDelivery'.
+Por isso tudo é igual: barra própria (tempo do corte), Criar clipe, cortes
+em seguida, Repetir / Clipe seguinte, desenhos e paragens, ecrã inteiro,
+miniaturas (fotograma do ficheiro). O clipe aponta para o MESMO ficheiro
+(`clipNoFicheiro`), sem copiar nada no Storage. Partilhar o link envia o
+ficheiro com `#t=início,fim`. 2.ª parte (13/11): `LeitorJunto` ("Os meus vídeos" e a página pública do
+vídeo junto) toca segmentos de ficheiro (`src`) além do YouTube; o link
+`?junto=` leva o link do ficheiro, e a página pública só aceita ficheiros
+do Storage público deste projeto (`ficheiroDaApp`). No Portal, o atleta
+pode criar clipes sobre vídeos carregados e os clipes de ficheiro entram
+em "Os meus clipes" (`clipeAtletaParaCanal` lê `dataUrl`). Servidor:
+`supabase/migracoes/2026-11_05_clipes_em_ficheiros.sql` muda só
+`checkin_clipe_criar` (aceita vídeo carregado; o clipe guarda o `dataUrl`
+do vídeo gravado na base, nunca do pedido, e `clipNoFicheiro`) e
+`video_publico` (segmentos com `src`). As outras funções já devolvem o
+`data` inteiro e não mudam. Testado num Postgres local com as definições
+reais (YouTube, ficheiro, corte de ficheiro aceites; clipe da Análise e
+base64 recusados). No staff, a "Análise individual em clipes"
+(`ClipAtletaModal`) também toca clipes de ficheiro e partilha o troço. Vídeos privados: não há nada a
+fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
+Diário).
 
 **Também a seguir à divisão (pedido a 13/11):** a cor de destaque da app
 (Definições) deve chegar a tudo o que hoje fica vermelho fixo: as barras de

@@ -713,7 +713,8 @@ export function codificarJunto(obj) {
 }
 
 export function linkDoVideoJunto(nome, segmentos) {
-  const s = (segmentos || []).map(x => [x.youtubeId, Math.round(Number(x.inicio) * 10) / 10, Math.round(Number(x.fim) * 10) / 10, String(x.titulo || '').slice(0, 40)]);
+  // 1.º campo: o id do YouTube, ou o link do ficheiro (vídeo carregado).
+  const s = (segmentos || []).map(x => [x.youtubeId || x.src, Math.round(Number(x.inicio) * 10) / 10, Math.round(Number(x.fim) * 10) / 10, String(x.titulo || '').slice(0, 40)]);
   return `${URL_PUBLICA_APP}?junto=${codificarJunto({ n: String(nome || '').slice(0, 80), s })}`;
 }
 

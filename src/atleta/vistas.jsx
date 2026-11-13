@@ -131,7 +131,9 @@ export function clipeAtletaParaCanal(c) {
   return {
     id: c.id,
     title: c.titulo || '(sem título)',
-    youtubeId: c.youtubeId,
+    youtubeId: c.youtubeId || undefined,
+    // Clipe sobre um vídeo carregado (ficheiro): o mesmo ficheiro, só o troço.
+    ...(!c.youtubeId && c.dataUrl ? { kind: 'video', dataUrl: c.dataUrl, clipNoFicheiro: true } : {}),
     clipInicio: Number(c.clipInicio),
     clipFim: Number(c.clipFim),
     clipOrigemId: c.clipOrigemId || c.videoOrigemId || null,
@@ -228,7 +230,7 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
         if (cancelado) return;
         if (error) throw error;
         const d = lerJson(data);
-        setMeusClipes(((d && d.clipes) || []).filter(c => c && c.youtubeId).map(clipeAtletaParaCanal));
+        setMeusClipes(((d && d.clipes) || []).filter(c => c && (c.youtubeId || c.dataUrl)).map(clipeAtletaParaCanal));
         setErroMeusClipes(false);
       } catch (e) {
         console.error('checkin_meus_clipes', e);

@@ -2302,6 +2302,11 @@ async function partilharLink({ titulo, texto, url }) {
 // inteiro na app do YouTube do telemóvel. A mensagem é o título do clipe.
 function partilharClipeAtleta(clip) {
   const titulo = clip.titulo || 'Clipe';
+  // Clipe sobre um vídeo carregado: o link do ficheiro, só com o troço.
+  if (!clip.youtubeId && clip.dataUrl) {
+    const url = `${clip.dataUrl}#t=${Math.floor(Number(clip.clipInicio) || 0)},${Math.ceil(Number(clip.clipFim) || 0)}`;
+    return partilharLink({ titulo, texto: titulo, url });
+  }
   const q = new URLSearchParams({
     corte: clip.youtubeId,
     i: String(Math.floor(Number(clip.clipInicio) || 0)),
@@ -2456,13 +2461,11 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
     saltoRef.current = Date.now();
     setTempo(inicio);
     marcarTerminado(false);
-    if (clip.youtubeId === clipeDoLeitor.youtubeId) {
+    // O mesmo vídeo (do YouTube, ou o mesmo ficheiro carregado): salta-se no leitor aberto.
+    if ((clip.youtubeId || clip.dataUrl) === (clipeDoLeitor.youtubeId || clipeDoLeitor.dataUrl)) {
       if (clip.id !== clipeDoLeitor.id) {
-        const win = iframeRef.current && iframeRef.current.contentWindow;
-        if (win) {
-          win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [inicio, true] }), '*');
-          win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-        }
+        comando('seekTo', [inicio, true]);
+        comando('playVideo');
       }
     } else {
       setClipeDoLeitor(clip);
@@ -2475,10 +2478,22 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
     if (r === 'copiado') { setCopiado(true); setTimeout(() => setCopiado(false), 1600); }
   };
 
-  const comando = (func, args) => {
-    const win = iframeRef.current && iframeRef.current.contentWindow;
+  /* Vídeo carregado (ficheiro): um <video> no lugar do iframe; os mesmos
+     comandos e as mesmas regras de tempo (ver `processarTempo`). */
+  const eFicheiro = !clipeDoLeitor.youtubeId && !!clipeDoLeitor.dataUrl;
+  function comando(func, args) {
+    const el = iframeRef.current;
+    if (el && el.tagName === 'VIDEO') {
+      try {
+        if (func === 'seekTo') el.currentTime = Math.max(0, Number(args && args[0]) || 0);
+        else if (func === 'playVideo') { const pr = el.play(); if (pr && pr.catch) pr.catch(() => {}); }
+        else if (func === 'pauseVideo') el.pause();
+      } catch (e) { /* nada */ }
+      return;
+    }
+    const win = el && el.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
-  };
+  }
   const irPara = (seg) => {
     saltoRef.current = Date.now();
     // Puxar para trás depois do fim volta a deixar ver (sai do "terminado").
@@ -2505,24 +2520,33 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
       if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
       if (data.event === 'infoDelivery' && data.info) {
         if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
-        const t = data.info.currentTime;
-        if (typeof t === 'number') {
-          const aSaltar = Date.now() - saltoRef.current < 800;
-          if (emSequencia && terminadoRef.current) {
-            // Já parado no fim: não mexe (o utilizador decide).
-          } else if (!aSaltar && t >= fim - 0.25 && emSequencia) {
-            comando('pauseVideo');
-            setTempo(fim); // a barra chega mesmo ao fim
-            marcarTerminado(true);
-          } else if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
-          else setTempo(Math.min(fim, Math.max(inicio, t)));
-        }
+        if (typeof data.info.currentTime === 'number') processarTempoRef.current(data.info.currentTime);
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clip.id, inicio, fim, emSequencia]);
+
+  const processarTempo = (t) => {
+    const aSaltar = Date.now() - saltoRef.current < 800;
+    if (emSequencia && terminadoRef.current) {
+      // Já parado no fim: não mexe (o utilizador decide).
+    } else if (!aSaltar && t >= fim - 0.25 && emSequencia) {
+      comando('pauseVideo');
+      setTempo(fim); // a barra chega mesmo ao fim
+      marcarTerminado(true);
+    } else if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
+    else setTempo(Math.min(fim, Math.max(inicio, t)));
+  };
+  const processarTempoRef = useRef(processarTempo);
+  processarTempoRef.current = processarTempo;
+  // Ficheiro a tocar: lê-se o tempo a cada 100 ms (o 'timeupdate' é de ~¼ s).
+  useEffect(() => {
+    if (!eFicheiro || !aTocar) return undefined;
+    const h = setInterval(() => { const el = iframeRef.current; if (el && el.tagName === 'VIDEO') processarTempoRef.current(el.currentTime); }, 100);
+    return () => clearInterval(h);
+  }, [eFicheiro, aTocar]);
 
   const aoCarregar = () => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
@@ -2581,12 +2605,24 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
         <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
         <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto', aspectRatio: caixa.w ? undefined : '16/9' }}>
+            {eFicheiro ? (
+              <video
+                key={clipeDoLeitor.dataUrl} ref={iframeRef} src={clipeDoLeitor.dataUrl} title={clip.titulo || 'Clipe'}
+                autoPlay playsInline preload="auto"
+                onLoadedMetadata={e => { try { e.currentTarget.currentTime = inicio; } catch (err) { /* nada */ } }}
+                onTimeUpdate={e => processarTempo(e.currentTarget.currentTime)}
+                onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
+                onClick={alternarReproducao}
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer' }}
+              />
+            ) : (
             <iframe
               ref={iframeRef} onLoad={aoCarregar}
               src={src} title={clip.titulo || 'Clipe'}
               allow="autoplay; encrypted-media; picture-in-picture"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
             />
+            )}
             {/* FIM DO CLIPE (sequência): parado, à espera de decisão.
                 Fica por cima do vídeo só nesse momento. */}
             {emSequencia && terminado && (
@@ -3188,8 +3224,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
                           background: 'transparent', border: 'none', ...body,
                         }}>
-                        <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
-                          style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
+                        {!c.youtubeId && c.dataUrl ? (
+                          <video src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata"
+                            style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000', pointerEvents: 'none' }} />
+                        ) : (
+                          <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
+                            style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
+                        )}
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                             <span style={{ fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.titulo || '(sem título)'}</span>

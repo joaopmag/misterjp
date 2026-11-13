@@ -45,9 +45,12 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   /* Clipes (do 2.º em diante) que começam nos primeiros PRE_ROLL s do
      vídeo entram PRE_ROLL s depois (ver acima). A barra conta-os a partir
      daí — senão saltava esses segundos na passagem. */
+  /* Segmentos do YouTube (`youtubeId`) ou de vídeos carregados (`src`,
+     link do ficheiro): o mesmo leitor, com um <video> no lugar do iframe.
+     O ajuste dos clipes do início do vídeo só é preciso no YouTube. */
   const segs = React.useMemo(() => (segmentos || [])
-    .filter(s => s && s.youtubeId && s.fim > s.inicio)
-    .map((s, k) => (k > 0 && s.inicio < PRE_ROLL_JUNTO && s.fim - 0.5 > s.inicio
+    .filter(s => s && (s.youtubeId || s.src) && s.fim > s.inicio)
+    .map((s, k) => (s.youtubeId && k > 0 && s.inicio < PRE_ROLL_JUNTO && s.fim - 0.5 > s.inicio
       ? { ...s, inicio: Math.min(PRE_ROLL_JUNTO, s.fim - 0.5) } : s)), [segmentos]);
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
@@ -111,6 +114,16 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
 
   const cmd = (k, func, args) => {
     const el = iframesRef.current[k];
+    if (el && el.tagName === 'VIDEO') {
+      try {
+        if (func === 'mute') el.muted = true;
+        else if (func === 'unMute') el.muted = false;
+        else if (func === 'seekTo') el.currentTime = Math.max(0, Number(args && args[0]) || 0);
+        else if (func === 'playVideo') { const pr = el.play(); if (pr && pr.catch) pr.catch(() => {}); }
+        else if (func === 'pauseVideo') el.pause();
+      } catch (e) { /* nada */ }
+      return;
+    }
     const win = el && el.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
@@ -184,10 +197,20 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         if (typeof data.info.playerState === 'number') r.estado[k] = data.info.playerState;
       }
       if (data.event === 'onStateChange' && typeof data.info === 'number') r.estado[k] = data.info;
+      processarTempo(k, data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number' ? data.info.currentTime : null);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentos]);
+
+  /* O que acontece a cada leitura de tempo do leitor k (vem das mensagens
+     do YouTube, ou dos eventos do <video> nos vídeos carregados). */
+  const processarTempo = (k, t) => {
+      const r = ref.current;
       if (k !== r.vis) return; // os outros só esperam
       if (typeof r.estado[k] === 'number') setATocar(r.estado[k] === 1 || r.estado[k] === 3);
-      if (!(data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number')) return;
-      const t = data.info.currentTime;
+      if (t == null) return;
       const seg = segs[k];
       const aSaltar = Date.now() - r.salto < 900;
       // ARRANQUE ESCONDIDO do seguinte, alinhado com o fim deste.
@@ -205,17 +228,36 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       if (!aSaltar && t >= seg.fim - 0.12) avancar();
       else if (!aSaltar && t < seg.inicio - 1.6) cmd(k, 'seekTo', [seg.inicio, true]);
       else marcarLocal(Math.min(seg.fim, Math.max(seg.inicio, t)));
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+  };
+  // Vídeos carregados: os eventos do <video> fazem o papel das mensagens.
+  const doVideo = (k, el) => {
+    if (!el) return;
+    const r = ref.current;
+    r.tempo[k] = el.currentTime;
+    r.estado[k] = el.paused ? 2 : (el.readyState < 3 ? 3 : 1);
+    processarTempo(k, el.currentTime);
+  };
+  // A tocar, lê-se o vídeo visível a cada 100 ms (o 'timeupdate' é de ~¼ s).
+  useEffect(() => {
+    if (!aTocar) return undefined;
+    const h = setInterval(() => {
+      const k = ref.current.vis;
+      const el = iframesRef.current[k];
+      if (el && el.tagName === 'VIDEO') doVideo(k, el);
+    }, 100);
+    return () => clearInterval(h);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segmentos]);
+  }, [aTocar]);
 
   const aoCarregar = (k) => {
     const el = iframesRef.current[k];
-    const win = el && el.contentWindow;
-    if (!win) return;
-    win.postMessage(JSON.stringify({ event: 'listening', id: k + 1, channel: 'widget' }), '*');
+    if (el && el.tagName !== 'VIDEO') {
+      const win = el.contentWindow;
+      if (!win) return;
+      win.postMessage(JSON.stringify({ event: 'listening', id: k + 1, channel: 'widget' }), '*');
+    } else if (el) {
+      try { el.currentTime = k === 0 ? segs[0].inicio : parqueDe(k); } catch (e) { /* nada */ }
+    }
     setTimeout(() => {
       ref.current.pronto[k] = true;
       // Ao carregar em "Ver", o vídeo começa logo a tocar.
@@ -279,14 +321,23 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
           {/* LUPA (ecrã inteiro): pinça, roda do rato e arrastar, como nos clipes. */}
           <div style={{ position: 'absolute', inset: 0, transform: lupa.transform || 'none', transformOrigin: '0 0', transition: lupa.aArrastar ? 'none' : 'transform 0.2s ease-out' }}>
           <div style={{ position: 'absolute', inset: 0, transform: encher > 1.001 ? `scale(${encher})` : 'none', transformOrigin: '50% 50%' }}>
-          {segs.map((s, k) => (
+          {segs.map((s, k) => (s.src && !s.youtubeId ? (
+            <video
+              key={k} ref={el => { iframesRef.current[k] = el; }} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
+              src={s.src} playsInline preload="auto" muted={k !== 0}
+              onLoadedMetadata={() => aoCarregar(k)}
+              onTimeUpdate={e => doVideo(k, e.currentTarget)}
+              onPlay={e => doVideo(k, e.currentTarget)} onPause={e => doVideo(k, e.currentTarget)}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000', opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
+            />
+          ) : (
             <iframe
               key={k} ref={el => { iframesRef.current[k] = el; }} onLoad={() => aoCarregar(k)} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
               src={`https://www.youtube.com/embed/${s.youtubeId}?start=${Math.floor(k === 0 ? s.inicio : parqueDe(k))}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3${k === 0 ? '' : '&mute=1'}`}
               allow="autoplay; encrypted-media; picture-in-picture"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
             />
-          ))}
+          )))}
           </div>
           </div>
           {prontos < n && !ref.current.comecou && (
@@ -429,7 +480,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
      Instagram, Mensagens, Guardar…); no computador copia o link. O link
      leva o vídeo dentro (ver linkDoVideoJunto) — o jogador fica com ele. */
   const partilhar = async (nome, ids) => {
-    const segmentos = ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: c.clipInicio, fim: c.clipFim, titulo: c.title }; });
+    const segmentos = ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, src: c.clipNoFicheiro ? c.dataUrl : undefined, inicio: c.clipInicio, fim: c.clipFim, titulo: c.title }; });
     /* Link CURTO (site + nome do vídeo + 4 letras): o vídeo tem de estar no
        servidor. Se não estiver (ou o servidor ainda não tiver a função),
        usa-se o link comprido, que leva o vídeo dentro. */
@@ -488,7 +539,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
                 if (aDar) onParar();
                 onAbrir({
                   id: v.id, nome: v.nome,
-                  segmentos: ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; }),
+                  segmentos: ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, src: c.clipNoFicheiro ? c.dataUrl : undefined, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; }),
                 });
               }}><Play size={13} /> Ver</Btn>
             )}

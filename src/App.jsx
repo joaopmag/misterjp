@@ -4989,6 +4989,15 @@ function PaginaClipe() {
 /* PÁGINA PÚBLICA DE UM VÍDEO JUNTO (?junto=<lista em base64>) — o destino
    do "Partilhar" de Os meus vídeos. O mesmo leitor do Portal (clipes
    seguidos, passagem contínua, uma barra só), sem login. */
+/* Link de um vídeo carregado na app (Storage público deste projeto). A
+   página pública só toca ficheiros daqui — nunca um endereço qualquer
+   posto no link. */
+function ficheiroDaApp(v) {
+  const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
+  const u = String(v || '');
+  return !!base && (u.startsWith(`${base}/storage/v1/object/public/`) || u.startsWith(`${base.replace('.supabase.co', '.storage.supabase.co')}/storage/v1/object/public/`));
+}
+
 function PaginaVideoJunto() {
   const params = new URLSearchParams(window.location.search);
   const codigo = params.get('video');
@@ -5003,13 +5012,13 @@ function PaginaVideoJunto() {
     }).catch(() => setDoServidor('invalido'));
   }, [codigo]);
   const dados = codigo
-    ? (doServidor && typeof doServidor === 'object' ? { n: doServidor.nome, s: doServidor.segmentos.map(x => [x.youtubeId, x.inicio, x.fim, x.titulo]) } : null)
+    ? (doServidor && typeof doServidor === 'object' ? { n: doServidor.nome, s: doServidor.segmentos.map(x => [x.youtubeId || x.src, x.inicio, x.fim, x.titulo]) } : null)
     : dadosLink;
   const nome = dados && typeof dados.n === 'string' ? dados.n : '';
   const segmentos = React.useMemo(() => ((dados && Array.isArray(dados.s)) ? dados.s : [])
-    .filter(x => Array.isArray(x) && /^[A-Za-z0-9_-]{6,20}$/.test(String(x[0])) && Number(x[2]) > Number(x[1]))
+    .filter(x => Array.isArray(x) && (/^[A-Za-z0-9_-]{6,20}$/.test(String(x[0])) || ficheiroDaApp(x[0])) && Number(x[2]) > Number(x[1]))
     .slice(0, 60)
-    .map(x => ({ youtubeId: String(x[0]), inicio: Math.max(0, Number(x[1])), fim: Number(x[2]), titulo: String(x[3] || '') })),
+    .map(x => ({ ...(ficheiroDaApp(x[0]) ? { src: String(x[0]) } : { youtubeId: String(x[0]) }), inicio: Math.max(0, Number(x[1])), fim: Number(x[2]), titulo: String(x[3] || '') })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [doServidor]);
   const estreito = typeof window !== 'undefined' && window.innerWidth < 600;
