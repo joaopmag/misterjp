@@ -158,10 +158,11 @@ reduz o peso inicial da app e do Portal.
   conta sempre como estando no jogo (`convocadosDoJogo` e `idsComMinutos`,
   em `dominio/jogos.js`): onze ou banco no "Editar jogo", ficha do jogo,
   relatório e estatísticas. Os cartões mostram os minutos.
-  Causa do onze incompleto: marcar L (Boletim → "Atualizar as presenças")
-  ou falta/escalão nas Presenças tirava o jogador dos convocados; a
-  gravação seguinte (`podarPresencasForaDosConvocados`) tirava-o também
-  do onze. Regras novas:
+  Risco visto no código (não foi a causa do DD): marcar L (Boletim →
+  "Atualizar as presenças") ou falta/escalão nas Presenças tirava o
+  jogador dos convocados, e a gravação seguinte
+  (`podarPresencasForaDosConvocados`) tirava-o também do onze. Regras
+  novas:
   · lesão no próprio dia do jogo: fica registada nesse dia, mas o jogador
     não sai do onze nem do banco desse jogo (não leva L nesse jogo) e só
     aparece como indisponível a partir do dia seguinte
@@ -171,13 +172,18 @@ reduz o peso inicial da app e do Portal.
     fizesse ou não minutos; não há "Não convocados". À parte, só os
     indisponíveis e quem tem falta, L ou escalão marcado nas Presenças
     desse jogo (que no amigável já não se apagam ao gravar).
-  Reparação dos jogos antigos: `competicao/RepararJogos.jsx` lê o Relato
-  (`activity_log`) e lista quem saiu do onze depois de uma gravação que,
-  ao mesmo tempo, o tirou dos convocados E lhe pôs falta, L ou escalão
-  (a 1.ª versão também apanhava quem foi tirado da convocatória pelo
-  treinador: Roque e Rui apareceram por engano). Aviso em Jogos, "Rever e
-  repor". No "Editar jogo", cada lugar vazio do onze mostra quem lá estava
-  segundo o histórico, quando saiu e quem alterou, com "Repor no lugar".
+  Lugar vazio no "Editar jogo" (`competicao/historicoDoJogo.js`, lê o
+  Relato): mostra quem lá estava, quando foi tirado e por quem, com "Repor
+  no lugar". Se o jogador já não existe em lado nenhum (nem nos que saíram
+  do clube), diz que foi APAGADO da app: `limparRastoDoJogador` tira-o de
+  todos os jogos e deixa o lugar vazio, de propósito (RGPD). Foi o caso do
+  DD do amigável com o UD Sousense (apagado a 21/10). Os apagados
+  encontram-se em qualquer lugar do histórico (`apagadosDoOnze`, mesmo
+  depois de uma troca de sistema) e o nome vem da linha "apagou" do
+  Relato (`nomesDosApagados`).
+  Retirado: o aviso "Rever e repor" em Jogos (RepararJogos), que adivinhava
+  pelo histórico e propôs jogadores errados (Roque, Rui). A causa que eu
+  tinha suposto para o DD (L/falta) não era a verdadeira.
   Minutos no campo num selo na foto (ao lado do nome encavalitavam).
 - 13/11: Documentos: os modelos saíam sem o emblema do clube (com a
   inicial ou o nome no lugar). O emblema é um endereço de outro site, e o

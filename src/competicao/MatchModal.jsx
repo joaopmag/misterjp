@@ -1,7 +1,7 @@
 // competicao/MatchModal.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
-import { lerHistoricoDoJogo, quemEstavaNoLugar } from './RepararJogos';
+import { apagadosDoOnze, lerHistoricoDoJogo, nomesDosApagados, quemEstavaNoLugar } from './historicoDoJogo';
 import { rotuloDoLugar, FORMACOES } from '../tatico/Simulador';
 import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState, useEffect } from 'react';
@@ -12,7 +12,7 @@ import { T } from '../base/tema';
 import { estadoClinicoParaJogo } from '../dominio/clinico';
 import { sortByPosition, shortPlayerName } from '../dominio/jogadores';
 import { Check } from 'lucide-react';
-import { CartaoPlanoDoJogo, EscalacaoNoCampo, castigadosParaJogo, comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao, withConvocadosInAttendance } from './Escalacao';
+import { CartaoPlanoDoJogo, EscalacaoNoCampo, TODOS_OS_JOGADORES, castigadosParaJogo, comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao, withConvocadosInAttendance } from './Escalacao';
 import { competitionByName, competitionGameDate, competitionOptions, competitionRoundLabels, competitionTeamNames, onzeProvavel } from './dados';
 import { ConvidadosEditor, SelectAllBar } from '../dominio/convidados';
 import { TabelaRelatorio } from './RelatoriosJogo';
@@ -128,11 +128,26 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
     lerHistoricoDoJogo(T.equipaId, f.id).then(l => { if (!cancelado) setHistoricoJogo(l); }).catch(() => { if (!cancelado) setHistoricoJogo([]); });
     return () => { cancelado = true; };
   }, [f.id, temLugarVazio, historicoJogo]);
+  const existeJogador = (id) => players.some(x => x.id === id) || (TODOS_OS_JOGADORES.lista || []).some(x => x.id === id);
+  const apagados = (historicoJogo || []).length && temLugarVazio ? apagadosDoOnze(historicoJogo, f.alinhamento, existeJogador) : [];
+  const [nomesApagados, setNomesApagados] = useState({});
+  const idsApagados = apagados.map(a => a.id).join(',');
+  useEffect(() => {
+    if (!idsApagados || !T.equipaId) return undefined;
+    let cancelado = false;
+    nomesDosApagados(T.equipaId, idsApagados.split(',')).then(n => { if (!cancelado) setNomesApagados(n); });
+    return () => { cancelado = true; };
+  }, [idsApagados]);
   const lugaresPerdidos = (historicoJogo || []).length ? escalacao.slots.map((id, i) => {
     if (id) return null;
     const q = quemEstavaNoLugar(historicoJogo, i);
-    if (!q || escalacao.slots.includes(q.id)) return null;
-    return { i, ...q, p: players.find(x => x.id === q.id) || null };
+    // Os apagados aparecem à parte (abaixo), mesmo sem se saber o lugar.
+    if (!q || escalacao.slots.includes(q.id) || apagados.some(a => a.id === q.id)) return null;
+    // Procura também em quem já saiu do clube (o passado mantém-se). Se não
+    // estiver em lado nenhum, o jogador foi APAGADO da app — e apagar um
+    // jogador tira-o de todos os jogos, deixando o lugar vazio.
+    const p = players.find(x => x.id === q.id) || (TODOS_OS_JOGADORES.lista || []).find(x => x.id === q.id) || null;
+    return { i, ...q, p };
   }).filter(Boolean) : [];
   const reporNoLugar = (i, id) => aplicarEscalacao({
     slots: escalacao.slots.map((x, k) => (k === i ? id : x)),
@@ -336,11 +351,22 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
             segundo jogador tem de perceber porque é que ele não ficou
             titular como os anteriores. Vale para qualquer jogo, não só
             amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
+        {apagados.map(a => (
+          <div key={a.id} style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 9, background: `${T.gold}14`, border: `1px solid ${T.gold}66`, fontSize: 13, color: T.cream }}>
+            Lugar vazio no onze: estava <strong>{nomesApagados[a.id] || 'um jogador'}</strong>, que foi <strong>apagado da app</strong>
+            <span style={{ color: T.mutedDim }}> a {fmtShort(String(a.em).slice(0, 10))}{a.por ? ` por ${a.por}` : ''}. Apagar um jogador tira-o de todos os jogos, com os minutos e as notas; quem só saiu do clube (data de saída) fica no histórico.</span>
+          </div>
+        ))}
         {lugaresPerdidos.map(l => (
           <div key={l.i} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 10px', padding: '9px 12px', borderRadius: 9, background: `${T.gold}14`, border: `1px solid ${T.gold}66`, fontSize: 13, color: T.cream }}>
             <span style={{ flex: '1 1 260px' }}>
-              Lugar <strong>{rotuloDoLugar(lugaresDaFormacao[l.i])}</strong> vazio: estava {l.p ? <strong>{shortPlayerName(l.p, players)}</strong> : 'um jogador que já não está no plantel'}
-              <span style={{ color: T.mutedDim }}> · saiu a {fmtShort(String(l.em).slice(0, 10))}{l.por ? ` (alteração de ${l.por})` : ''}</span>
+              {l.p ? (
+                <>Lugar <strong>{rotuloDoLugar(lugaresDaFormacao[l.i])}</strong> vazio: estava <strong>{shortPlayerName(l.p, players)}</strong>
+                  <span style={{ color: T.mutedDim }}> · tirado a {fmtShort(String(l.em).slice(0, 10))}{l.por ? ` por ${l.por}` : ''}</span></>
+              ) : (
+                <>Lugar <strong>{rotuloDoLugar(lugaresDaFormacao[l.i])}</strong> vazio: o jogador que lá estava foi <strong>apagado da app</strong>
+                  <span style={{ color: T.mutedDim }}> a {fmtShort(String(l.em).slice(0, 10))}{l.por ? ` por ${l.por}` : ''}. Apagar um jogador tira-o de todos os jogos, com os minutos e as notas; quem só saiu do clube (data de saída) fica no histórico.</span></>
+              )}
             </span>
             {l.p && <Btn variant="ghost" onClick={() => reporNoLugar(l.i, l.id)} style={{ padding: '5px 12px', fontSize: 12.5 }}>Repor no lugar</Btn>}
           </div>

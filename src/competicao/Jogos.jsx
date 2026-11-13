@@ -1,7 +1,6 @@
 // competicao/Jogos.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
-import { RepararJogos } from './RepararJogos';
 import React, { useRef, useState, useEffect } from 'react';
 import { todayStr, addDays, uid, fmtDate } from '../base/utilidades';
 import { competitionLabel, isFriendlyMatch, convocadosDoJogo } from '../dominio/jogos';
@@ -227,7 +226,6 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
   return (
     <div>
       {cabecalhoJogos}
-      <RepararJogos matches={matches} players={players} onSave={save} />
 
       <div style={{ marginBottom: 20 }}>
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
