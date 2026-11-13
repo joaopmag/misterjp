@@ -154,7 +154,13 @@ A folha do Windows mostrava contactos vazios e abria o Outlook sem anexo.
 Usado em: "Vídeo pronto" (`entregarVideo`), "Os meus vídeos", cortes e
 clipes (`shareMediaItem`, `partilharLink`). A barra branca "A partilhar
 este separador" é do Chrome e não se pode esconder: só aparece quando se
-grava o separador (cortes do YouTube ou com desenhos). Vídeos privados: não há nada a
+grava o separador (cortes do YouTube ou com desenhos).
+"Vídeo pronto" de "Os meus vídeos": a partilha leva também o link do
+vídeo junto (WhatsApp/Email enviam o link; o ficheiro descarrega-se para
+anexar). Email abre numa janela à parte (com um site de email ligado ao
+mailto, a página da app já não é substituída). `LeitorJunto`: num clipe de
+ficheiro não há arranque escondido nem "entrar adiantado" (só YouTube) —
+espera parado no início exato; a barra deixou de saltar na passagem. Vídeos privados: não há nada a
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 

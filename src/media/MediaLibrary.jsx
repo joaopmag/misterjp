@@ -1,6 +1,7 @@
 // media/MediaLibrary.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
@@ -2246,7 +2247,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     // Janela com o resultado: ver, descarregar ou partilhar (o "Partilhar"
     // do telemóvel precisa de um toque — por isso é um botão aqui).
     setProgressoFicheiro(null);
-    setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob), ficheiro: !!g.ficheiro });
+    setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob), ficheiro: !!g.ficheiro, obterLink: obterLinkGravacaoRef.current });
+    obterLinkGravacaoRef.current = null;
   };
   /* `item`: o corte a gravar (o botão Partilhar da lista manda o corte
      dessa linha). Se não for o que está aberto, abre-o primeiro e a
@@ -2283,6 +2285,15 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      sem partilhar o ecrã (ver media/gravarFicheiro.js). Se o Storage não
      deixar ler a imagem, volta-se à gravação do separador. */
   const [progressoFicheiro, setProgressoFicheiro] = useState(null);
+  // Link do vídeo junto ("Os meus vídeos"), para a partilha do vídeo gravado.
+  const obterLinkGravacaoRef = useRef(null);
+  const partilharGravacao = async (janela) => {
+    let url = '';
+    try { if (janela.obterLink) url = (await janela.obterLink()) || ''; } catch (e) { /* sem link: só o ficheiro */ }
+    const ext = /mp4/.test(janela.blob.type) ? 'mp4' : 'webm';
+    const nome = `${String(janela.nome || 'video').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'video'}.${ext}`;
+    return escolherPartilha({ titulo: janela.nome || 'Vídeo', texto: janela.nome || '', url, ficheiro: new File([janela.blob], nome, { type: janela.blob.type }) });
+  };
   const semAcessoFicheiroRef = useRef(false);
   const segmentosSoFicheiro = (ids) => {
     const lista = (ids || []).map(id => (items || []).find(v => v.id === id) || (todosVideos || []).find(v => v.id === id));
@@ -2309,8 +2320,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
       } else setAvisoGravacaoBib('A gravação falhou. Tenta outra vez.');
     });
   };
-  const gravarSequenciaBib = async (ids, nome) => {
+  const gravarSequenciaBib = async (ids, nome, obterLink) => {
     if (!ids || !ids.length) return;
+    obterLinkGravacaoRef.current = obterLink || null;
     const segsF = !semAcessoFicheiroRef.current && podeGravarFicheiro() ? segmentosSoFicheiro(ids) : null;
     if (segsF) { gravarFicheiroBib(segsF, nome); return; }
     if (!podeGravarSeparador()) {
@@ -3450,7 +3462,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <Btn variant="ghost" onClick={fecharJanelaGravacaoBib}>Fechar</Btn>
               <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome, { soDescarregar: true })}><Download size={14} /> Descarregar</Btn>
-              <Btn onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar vídeo</Btn>
+              <Btn onClick={() => partilharGravacao(janelaGravacaoBib)}><Share2 size={14} /> Partilhar vídeo</Btn>
             </div>
           </div>
         </Modal>
@@ -3572,7 +3584,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           onFecharAberto={() => setCompAtiva(null)}
           onVer={(ids) => { if (!ids.length) return; setSequencia(ids); setActiveId(ids[0]); }}
           onParar={() => setSequencia(null)}
-          onGravar={podeGravarSeparador() ? (ids, nome) => gravarSequenciaBib(ids, nome) : null}
+          onGravar={(podeGravarSeparador() || podeGravarFicheiro()) ? (ids, nome, obterLink) => gravarSequenciaBib(ids, nome, obterLink) : null}
         />
       )}
 
@@ -4413,7 +4425,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                                   <Btn variant="ghost" onClick={fecharJanelaGravacaoBib}>Fechar</Btn>
                                   <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome, { soDescarregar: true })}><Download size={14} /> Descarregar</Btn>
-                                  <Btn onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar vídeo</Btn>
+                                  <Btn onClick={() => partilharGravacao(janelaGravacaoBib)}><Share2 size={14} /> Partilhar vídeo</Btn>
                                 </div>
                               </div>
                             </Modal>

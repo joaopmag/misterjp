@@ -56,7 +56,12 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
   const total = durs.reduce((t, d) => t + d, 0);
-  const parqueDe = (k) => Math.max(0, segs[k].inicio - PRE_ROLL_JUNTO);
+  /* Vídeo carregado: não tem informação do YouTube a esconder, por isso
+     espera PARADO no início exato do clipe e só arranca na troca (o
+     arranque escondido e o "entrar adiantado" são só para o YouTube —
+     num ficheiro faziam a barra saltar uns segundos para a frente). */
+  const eFicheiroSeg = (k) => !!(segs[k] && segs[k].src && !segs[k].youtubeId);
+  const parqueDe = (k) => (eFicheiroSeg(k) ? segs[k].inicio : Math.max(0, segs[k].inicio - PRE_ROLL_JUNTO));
 
   const iframesRef = useRef([]);
   const caixaRef = useRef(null);
@@ -216,7 +221,7 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       const aSaltar = Date.now() - r.salto < 900;
       // ARRANQUE ESCONDIDO do seguinte, alinhado com o fim deste.
       const prox = k + 1;
-      if (!aSaltar && prox < n && r.pronto[prox] && !r.aRodar[prox] && r.estado[k] === 1
+      if (!aSaltar && prox < n && !eFicheiroSeg(prox) && r.pronto[prox] && !r.aRodar[prox] && r.estado[k] === 1
         && t >= seg.fim - PRE_ROLL_JUNTO && t < seg.fim - 0.12) {
         const falta = seg.fim - t;
         const pos = segs[prox].inicio - falta;
@@ -480,7 +485,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   /* PARTILHAR: no telemóvel abre a folha de partilha do sistema (WhatsApp,
      Instagram, Mensagens, Guardar…); no computador copia o link. O link
      leva o vídeo dentro (ver linkDoVideoJunto) — o jogador fica com ele. */
-  const partilhar = async (nome, ids) => {
+  const linkDe = async (nome, ids) => {
     const segmentos = ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, src: c.clipNoFicheiro ? c.dataUrl : undefined, inicio: c.clipInicio, fim: c.clipFim, titulo: c.title }; });
     /* Link CURTO (site + nome do vídeo + 4 letras): o vídeo tem de estar no
        servidor. Se não estiver (ou o servidor ainda não tiver a função),
@@ -491,6 +496,10 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       try { const codigo = await api.partilhar(v.id); if (codigo) url = `${URL_PUBLICA_APP}?video=${encodeURIComponent(codigo)}`; } catch (e) { /* link comprido */ }
     }
     if (!url) url = linkDoVideoJunto(nome, segmentos);
+    return url;
+  };
+  const partilhar = async (nome, ids) => {
+    const url = await linkDe(nome, ids);
     await escolherPartilha({ titulo: nome, texto: nome, url });
   };
 
@@ -523,7 +532,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
             <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
               onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
             {onGravar && (
-              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome)} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
+              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome, () => linkDe(v.nome, ids))} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
             )}
             <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>

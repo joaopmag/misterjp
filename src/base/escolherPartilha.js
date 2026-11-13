@@ -102,7 +102,12 @@ export async function escolherPartilha({ titulo = '', texto = '', url = '', fich
         fechar('whatsapp');
       }, true);
       botao('Email', () => {
-        window.location.href = `mailto:?subject=${encodeURIComponent(titulo || 'Vídeo')}&body=${encodeURIComponent(mensagem)}`;
+        // Numa janela à parte: se o browser tiver um site de email ligado ao
+        // mailto (ex.: Outlook na web), abre lá e a página da app fica.
+        const a = document.createElement('a');
+        a.href = `mailto:?subject=${encodeURIComponent(titulo || 'Vídeo')}&body=${encodeURIComponent(mensagem)}`;
+        a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
         fechar('email');
       });
       const copiar = botao('Copiar link', async () => {
@@ -110,7 +115,7 @@ export async function escolherPartilha({ titulo = '', texto = '', url = '', fich
       });
     }
     if (ficheiro) {
-      botao(url ? 'Descarregar o vídeo' : 'Descarregar o vídeo', () => {
+      botao('Descarregar o vídeo', () => {
         descarregar(ficheiro);
         aviso.textContent = `Ficheiro "${ficheiro.name}" descarregado. No WhatsApp ou no email, anexa-o a partir da pasta Transferências.`;
       }, !url);
@@ -124,8 +129,10 @@ export async function escolherPartilha({ titulo = '', texto = '', url = '', fich
         } catch (e) { if (!(e && e.name === 'AbortError')) aviso.textContent = 'O sistema não conseguiu partilhar. Usa uma das opções acima.'; }
       });
     }
-    if (!url && ficheiro) {
-      aviso.textContent = 'O WhatsApp e o email no computador não recebem o vídeo diretamente: descarrega-o e anexa-o.';
+    if (ficheiro) {
+      aviso.textContent = url
+        ? 'WhatsApp e Email enviam o link (abre em qualquer lado). Para enviar o ficheiro, descarrega-o e anexa-o.'
+        : 'O WhatsApp e o email no computador não recebem o vídeo diretamente: descarrega-o e anexa-o.';
     }
     caixa.appendChild(aviso);
     const sair = document.createElement('button');
