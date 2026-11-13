@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { corrigirDuracaoMp4 } from './media/duracaoMp4';
 import { escolherPartilha } from './base/escolherPartilha';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
@@ -2362,7 +2363,8 @@ export async function prepararGravacaoSeparador(elemento) {
   const acabou = new Promise(res => { resolver = res; });
   rec.onstop = () => {
     stream.getTracks().forEach(t => t.stop());
-    resolver(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] }));
+    // Com a duração escrita no cabeçalho (ver media/duracaoMp4.js).
+    corrigirDuracaoMp4(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] })).then(resolver);
   };
   const terminar = () => {
     if (rec.state !== 'inactive') rec.stop();

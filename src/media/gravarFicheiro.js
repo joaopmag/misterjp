@@ -12,6 +12,8 @@
 // função rejeita com `semAcesso` e quem chama usa a gravação do separador.
 // Grava em tempo real (um clipe de 10 s demora 10 s).
 
+import { corrigirDuracaoMp4 } from './duracaoMp4';
+
 const TIPOS = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4',
   'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 
@@ -105,7 +107,7 @@ export async function gravarClipesDeFicheiro(segmentos, { onProgresso } = {}) {
           const mime = TIPOS.find(t => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t)) || '';
           rec = new window.MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
           rec.ondataavailable = (e) => { if (e.data && e.data.size) partes.push(e.data); };
-          rec.onstop = () => { fechar(); resolver(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] })); };
+          rec.onstop = () => { fechar(); corrigirDuracaoMp4(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] })).then(resolver); };
           if (audio && audio.state === 'suspended') { try { await audio.resume(); } catch (e) { /* sem som */ } }
           rec.start(500);
         } else if (rec.state === 'paused') rec.resume();

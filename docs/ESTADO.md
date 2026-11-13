@@ -160,7 +160,13 @@ vídeo junto (WhatsApp/Email enviam o link; o ficheiro descarrega-se para
 anexar). Email abre numa janela à parte (com um site de email ligado ao
 mailto, a página da app já não é substituída). `LeitorJunto`: num clipe de
 ficheiro não há arranque escondido nem "entrar adiantado" (só YouTube) —
-espera parado no início exato; a barra deixou de saltar na passagem. Vídeos privados: não há nada a
+espera parado no início exato; a barra deixou de saltar na passagem.
+Vídeos gravados pela app (13/11): o MediaRecorder grava MP4 fragmentado
+com duração 0 no cabeçalho — o Leitor Multimédia do Windows mostrava a
+barra parada. `media/duracaoMp4.js` soma os fragmentos e escreve a
+duração (mvhd, tkhd, mdhd e caixa mehd no mvex) antes de entregar o
+ficheiro; usado nas duas gravações (separador e ficheiro). Testado com o
+"O meu vídeo 1.mp4" real: 79,8 s escritos, descodifica sem erros. Vídeos privados: não há nada a
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
