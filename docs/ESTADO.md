@@ -117,10 +117,16 @@ e a posição/zoom do enquadramento, e o "Ajustar" parte sempre da original.
 Não guardar a original dentro da ficha do jogador (pesava o plantel em
 todos os ecrãs e no Portal).
 
-**Também a seguir à divisão:** "Criar clipe" na Biblioteca para vídeos
-carregados como ficheiro. Hoje só existe para o YouTube (cortes com início
-e fim sobre o vídeo, sem cortar ficheiro). Fazer o mesmo para ficheiros,
-com as mesmas ferramentas (desenhos, paragens, partilha).
+**"Criar clipe" para vídeos carregados (13/11, 1.ª parte feita, à espera
+de "ok"):** o staff marca início e fim num vídeo carregado (público, link
+http) e o clipe aponta para o MESMO ficheiro (`clipNoFicheiro`), sem copiar
+nada no Storage; `LeitorClipeSala` toca só esse troço (sozinho repete; em
+lista para no fim com Repetir / Clipe seguinte). Partilhar envia o link do
+ficheiro com `#t=início,fim`. Falta (2.ª parte, se fizer falta): desenhos e
+paragens nos clipes de ficheiro, juntá-los em "Os meus vídeos" (hoje só
+YouTube), clipes do atleta no Portal sobre ficheiros, vídeos privados, e
+um corte a sério (ficheiro próprio, via `api/cortar-clipe`) para enviar
+pelo WhatsApp.
 
 **Também a seguir à divisão (pedido a 13/11):** a cor de destaque da app
 (Definições) deve chegar a tudo o que hoje fica vermelho fixo: as barras de

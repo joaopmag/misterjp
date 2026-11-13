@@ -2664,7 +2664,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     || eqsAtivo[0] || '';
 
   const guardarClipe = () => {
-    if (!active || !active.youtubeId || clipMarcas.inicio == null || clipMarcas.fim == null) return;
+    if (!active || (!active.youtubeId && !podeCortarFicheiro(active)) || clipMarcas.inicio == null || clipMarcas.fim == null) return;
     const inicio = Math.min(clipMarcas.inicio, clipMarcas.fim);
     const fim = Math.max(clipMarcas.inicio, clipMarcas.fim);
     if (fim - inicio < 1) return;
@@ -2699,7 +2699,13 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
       title: tituloClipe.trim() || `${active.title || 'Vídeo'} — corte`,
       pasta: 'Cortes',
       jornada: active.jornada || '',
-      youtubeId: active.youtubeId,
+      // Vídeo do YouTube: o corte é o mesmo vídeo com início e fim. Vídeo
+      // carregado (ficheiro): também — o clipe aponta para o MESMO ficheiro
+      // e toca só esse troço (`clipNoFicheiro`, ver LeitorClipeSala). Não
+      // se copia nada no Storage.
+      ...(active.youtubeId
+        ? { youtubeId: active.youtubeId }
+        : { kind: 'video', dataUrl: active.dataUrl, clipNoFicheiro: true, fileName: active.fileName }),
       clipInicio: inicio,
       clipFim: fim,
       // Se o vídeo de origem já era, ele próprio, um clipe, aponta sempre
@@ -2783,6 +2789,13 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     setGrupo(`e:${semAcentos(equipa)}`);
   };
 
+  /* VÍDEO CARREGADO COMO FICHEIRO (público, com link http): o staff
+     também lhe pode criar clipes. Os vídeos privados (só com link
+     temporário) e os que ainda estão dentro do registo (base64) ficam de
+     fora; os clipes não se cortam de novo (vai-se ao vídeo completo). */
+  function podeCortarFicheiro(v) {
+    return !soLeitura && !!v && v.kind === 'video' && !v.youtubeId && !ehClipe(v) && /^https?:/.test(String(v.dataUrl || ''));
+  }
   // Quem pode criar clipes neste vídeo: o staff em qualquer vídeo do
   // YouTube; no Portal, o jogador só em vídeos de JOGOS da equipa.
   const podeCriarClipe = !soLeitura
@@ -4411,6 +4424,30 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       </div>
                     </div>
                   </div>
+                ) : podeCortarFicheiro(active) ? (
+                  <>
+                    <div style={{ width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden', border: `1px solid ${T.line}` }}>
+                      <video key={active.id} src={active.dataUrl} controls playsInline preload="metadata"
+                        onTimeUpdate={e => { currentTimeRef.current = e.currentTarget.currentTime; }}
+                        onSeeked={e => { currentTimeRef.current = e.currentTarget.currentTime; }}
+                        style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
+                        <button
+                          onClick={() => (clipMode ? cancelarModoClipe() : setClipMode(true))}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+                            color: clipMode ? T.warn : '#fff', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                          }}
+                        >
+                          <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
+                        </button>
+                      </div>
+                    </div>
+                    {clipeGuardadoAviso && (
+                      <div role="status" style={{ marginTop: 8, fontSize: 12.5, color: T.good }}>✓ {clipeGuardadoAviso} · marca o próximo</div>
+                    )}
+                    {clipMode && renderPainelClipe(false)}
+                  </>
                 ) : eMp4Sala(active) ? (
                   (() => {
                     const { lista, i, seguinteId } = seguinteNaSala(active.id);

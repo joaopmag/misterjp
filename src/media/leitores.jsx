@@ -422,10 +422,25 @@ export function LeitorClipeSala({ item, posicao, onAnterior, onSeguinte }) {
   const [noFim, setNoFim] = useState(false);
   // Sozinho (sem lista) repete sem parar, como na Análise individual.
   const emLista = !!posicao;
+  /* CLIPE DE UM VÍDEO CARREGADO (`clipNoFicheiro`): não há ficheiro novo,
+     é um troço do vídeo completo — toca só de `clipInicio` a `clipFim`
+     (o mesmo que os cortes do YouTube). Os clipes da Análise de vídeo têm
+     `clipInicio` mas são ficheiros próprios, por isso não entram aqui. */
+  const troco = item.clipNoFicheiro && typeof item.clipInicio === 'number' && typeof item.clipFim === 'number' && item.clipFim > item.clipInicio
+    ? { ini: Math.max(0, item.clipInicio), fim: item.clipFim } : null;
+  const ini = troco ? troco.ini : 0;
   const repetir = () => {
     const v = ref.current; if (!v) return;
     setNoFim(false);
-    try { v.currentTime = 0; v.play(); } catch (e) { /* nada */ }
+    try { v.currentTime = ini; v.play(); } catch (e) { /* nada */ }
+  };
+  const aoTempo = () => {
+    const v = ref.current; if (!v || !troco) return;
+    if (v.currentTime < ini - 0.5) { v.currentTime = ini; return; }
+    if (v.currentTime >= troco.fim - 0.05) {
+      // (o #t=ini,fim do endereço faz o browser parar sozinho no fim do troço)
+      if (emLista) { v.pause(); setNoFim(true); } else { v.currentTime = ini; const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); }
+    }
   };
   return (
     <div style={{ width: '100%', background: '#000', borderRadius: 8, overflow: 'hidden' }}>
@@ -443,7 +458,10 @@ export function LeitorClipeSala({ item, posicao, onAnterior, onSeguinte }) {
         </div>
       )}
       <div style={{ position: 'relative' }}>
-      <video ref={ref} src={item.dataUrl} controls autoPlay playsInline loop={!emLista}
+      <video ref={ref} src={troco ? `${item.dataUrl}#t=${troco.ini},${troco.fim}` : item.dataUrl} controls autoPlay playsInline loop={!emLista && !troco}
+        onLoadedMetadata={troco ? () => { const v = ref.current; if (v && v.currentTime < ini) v.currentTime = ini; } : undefined}
+        onTimeUpdate={troco ? aoTempo : undefined}
+        onPause={troco ? aoTempo : undefined}
         onEnded={() => setNoFim(true)} onPlay={() => setNoFim(false)}
         style={{ width: '100%', maxHeight: '70vh', display: 'block', background: '#000' }} />
       {noFim && posicao && <FimDoClipe onRepetir={repetir} onSeguinte={onSeguinte} />}

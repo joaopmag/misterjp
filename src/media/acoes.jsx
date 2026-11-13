@@ -46,11 +46,15 @@ export async function shareMediaItem(item) {
   const url = item.drive ? driveOpenSrc(item.drive)
     : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim, titulo)
       : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
-        : (item.social ? socialEmbedSrc(item.social) : null);
+        : item.social ? socialEmbedSrc(item.social)
+          // Clipe de um vídeo carregado: o link do ficheiro só com o troço
+          // (#t=início,fim), em vez de descarregar o vídeo completo.
+          : (item.clipNoFicheiro && item.dataUrl && ehClipe(item)
+            ? `${item.dataUrl}#t=${Math.floor(item.clipInicio)},${Math.ceil(item.clipFim)}` : null);
   // Num corte, a mensagem é o título que lhe deram; num vídeo completo
   // (ou noutro link), o descritivo todo: título e, por baixo, a
   // jornada/descrição. O link vem a seguir.
-  const texto = eCorte ? titulo : [titulo, item.jornada].filter(Boolean).join('\n');
+  const texto = (eCorte || item.clipNoFicheiro) ? titulo : [titulo, item.jornada].filter(Boolean).join('\n');
 
   if (url) {
     if (navigator.share) {
