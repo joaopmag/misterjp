@@ -64,8 +64,8 @@ ganha as importações de que precisa. Ordem combinada:
 | 3 | Média → `src/media/` (MediaLibrary, MediaModal, LeitorJunto, leitores, social, organização, ações); `base/anexos.jsx`, `base/kiosk.js` | feito |
 | 4 | Competição → `src/competicao/` (Jogos, MatchModal, FichaJogo, Escalacao, Convocatorias, Classificacao, RelatoriosJogo, MatchDashboard, dados); partilhados → `dominio/` (plantel, estatisticas, convidados, estadoJogos), `base/` (partilha, ui-extra), `tatico/impressaoCampo.jsx`. Função nova `consumirMissaoPendente()` (Tarefas limpa o pedido de missão) | feito |
 | 5 | Treino → `src/treino/` (Planeamento, SessionModal, Exercicios, ExerciseModal, ExercisePresentation, IdeiaJogo, IdeiaModal, EscolherParaCopiar, diagramas, comum); `plantel/Prancheta.jsx`; partilhados `dominio/relato.jsx`, `base/historico.jsx`, `base/botoes.jsx`, `media/pdf.jsx` | feito |
-| 6 | Plantel → `src/plantel/` (Plantel, PlayerProfilePage, PlayerModal, avaliacao, Desenvolvimento, Clinico, clinicoDados, Presencas, Monitorizacao, Gps, Composicao, Historico, CheckinManual, comum); questionários do quiosque → `atleta/questionarios.jsx`; partilhados `base/fotos.jsx`, `dominio/mensagens.js`, `dominio/faltas.jsx` | feito, à espera de "ok" |
-| 7 | Scouting, Diário, Tarefas, Gestão de equipa | por fazer |
+| 6 | Plantel → `src/plantel/` (Plantel, PlayerProfilePage, PlayerModal, avaliacao, Desenvolvimento, Clinico, clinicoDados, Presencas, Monitorizacao, Gps, Composicao, Historico, CheckinManual, comum); questionários do quiosque → `atleta/questionarios.jsx`; partilhados `base/fotos.jsx`, `dominio/mensagens.js`, `dominio/faltas.jsx` | feito |
+| 7 | `src/scouting/` (Scouting, Necessidades, ScoutSheet, comum), `src/adversarios/`, `src/tarefas/` (Tarefas, TarefaModal, MissaoModal, Calendario, regras, missoesRegras), `src/diario/Diario.jsx`, `src/gestao/` (GestaoEquipa, membros, documentos Word/Excel); `base/subcolecao.js`, `dominio/aniversarios.js` | feito, à espera de "ok" |
 | 8 | Atleta: Portal, Check-in, Cacifo | por fazer |
 
 ### Como se move código (ferramenta usada no passo 1)
@@ -95,6 +95,14 @@ e Dinâmica tática (`useRascunho`, em `base/sincronizacao.jsx`). Os
 rascunhos ficam no dispositivo: nas áreas sensíveis (clínico, diário)
 apagam-se ao sair da sessão e nunca ficam em dispositivos de atletas.
 Fica num passo próprio, sem misturar com a divisão.
+
+**Também a seguir à divisão (13/11), junto com as "Fotos Fase B":**
+enquadrar a foto do jogador sem perder a original. Hoje, "Usar" guarda só
+o recorte (512 px) e o "Ajustar" seguinte trabalha sobre o recorte (não
+dá para afastar). Guardar a original no Storage privado (link temporário)
+e a posição/zoom do enquadramento, e o "Ajustar" parte sempre da original.
+Não guardar a original dentro da ficha do jogador (pesava o plantel em
+todos os ecrãs e no Portal).
 
 **Também a seguir à divisão:** "Criar clipe" na Biblioteca para vídeos
 carregados como ficheiro. Hoje só existe para o YouTube (cortes com início
