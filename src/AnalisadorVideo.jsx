@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { escolherPartilha } from './base/escolherPartilha';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import {
@@ -2286,15 +2287,9 @@ const URL_PUBLICA_APP = 'https://misterjp.vercel.app/';
 /* PARTILHAR — o sistema (telemóvel) ou, sem ele, copiar para a área de
    transferência. Devolve 'copiado' quando copiou, para o botão mostrar o ✓. */
 async function partilharLink({ titulo, texto, url }) {
-  if (navigator.share) {
-    try { await navigator.share({ title: titulo, text: texto, url }); } catch (e) { /* cancelado */ }
-    return 'partilhado';
-  }
-  if (navigator.clipboard) {
-    try { await navigator.clipboard.writeText(texto ? `${texto}\n${url}` : url); return 'copiado'; } catch (e) { /* abre */ }
-  }
-  window.open(url, '_blank');
-  return 'aberto';
+  // Telemóvel: folha do sistema; computador: WhatsApp / Email / Copiar link.
+  const r = await escolherPartilha({ titulo, texto, url });
+  return r === 'copiado' ? 'copiado' : 'partilhado';
 }
 
 // Clipe de atleta: a página própria da app (?corte=, ver `PaginaCorte`
@@ -2389,16 +2384,9 @@ export async function entregarVideo(blob, nomeBase, { soDescarregar = false } = 
   if (!blob || !blob.size) return 'vazio';
   const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
   const nome = `${String(nomeBase || 'video').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'video'}.${ext}`;
-  if (!soDescarregar) try {
-    const ficheiro = new File([blob], nome, { type: blob.type });
-    if (navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
-      await navigator.share({ files: [ficheiro], title: nomeBase });
-      return 'partilhado';
-    }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return 'cancelado';
-    // Sem gesto do utilizador (gravação longa) o browser recusa — descarrega.
-  }
+  // Partilhar: no telemóvel a folha do sistema (com o ficheiro); no
+  // computador a nossa janela (ver base/escolherPartilha.js).
+  if (!soDescarregar) return escolherPartilha({ titulo: nomeBase || 'Vídeo', ficheiro: new File([blob], nome, { type: blob.type }) });
   const url = URL.createObjectURL(blob);
   const ligacao = document.createElement('a');
   ligacao.href = url;

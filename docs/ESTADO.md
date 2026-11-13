@@ -145,7 +145,16 @@ grava o ecrã — `media/gravarFicheiro.js` toca cada troço num <video>
 escondido, copia para um canvas e grava (MediaRecorder), só a imagem e o
 som. Se o Storage não deixar ler a imagem (CORS), avisa e o clique
 seguinte usa a gravação do separador como antes. Com desenhos ou com
-cortes do YouTube continua a gravação do separador. Vídeos privados: não há nada a
+cortes do YouTube continua a gravação do separador.
+Partilhar (13/11): `base/escolherPartilha.js` é o único caminho. No
+telemóvel, a folha do sistema (com o ficheiro do vídeo, quando há). No
+computador, uma janela própria: WhatsApp (wa.me com a mensagem e o link),
+Email (mailto com o link), Copiar link, Descarregar o vídeo, Outras apps.
+A folha do Windows mostrava contactos vazios e abria o Outlook sem anexo.
+Usado em: "Vídeo pronto" (`entregarVideo`), "Os meus vídeos", cortes e
+clipes (`shareMediaItem`, `partilharLink`). A barra branca "A partilhar
+este separador" é do Chrome e não se pode esconder: só aparece quando se
+grava o separador (cortes do YouTube ou com desenhos). Vídeos privados: não há nada a
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 

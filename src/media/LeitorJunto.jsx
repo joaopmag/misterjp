@@ -1,6 +1,7 @@
 // media/LeitorJunto.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { escolherPartilha } from '../base/escolherPartilha';
 import React, { useRef, useState, useEffect } from 'react';
 import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
 import { Pause, Play, RotateCcw, X, Minimize2, Maximize2, Film, Plus, Pencil, Share2, Download, Trash2, Loader2, Check } from 'lucide-react';
@@ -490,11 +491,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       try { const codigo = await api.partilhar(v.id); if (codigo) url = `${URL_PUBLICA_APP}?video=${encodeURIComponent(codigo)}`; } catch (e) { /* link comprido */ }
     }
     if (!url) url = linkDoVideoJunto(nome, segmentos);
-    try {
-      if (navigator.share) { await navigator.share({ title: nome, text: nome, url }); return; }
-    } catch (e) { if (e && e.name === 'AbortError') return; }
-    try { await navigator.clipboard.writeText(url); setAviso('Link copiado — cola-o onde quiseres partilhar.'); }
-    catch (e) { window.prompt('Copia o link do vídeo:', url); }
+    await escolherPartilha({ titulo: nome, texto: nome, url });
   };
 
   return (

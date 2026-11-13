@@ -1,6 +1,7 @@
 // media/acoes.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { escolherPartilha } from '../base/escolherPartilha';
 import { escapeHtmlText, semAcentos } from '../base/utilidades';
 import { useState } from 'react';
 import { body, T, TEXT_ON_ACCENT } from '../base/tema';
@@ -56,16 +57,7 @@ export async function shareMediaItem(item) {
   // jornada/descrição. O link vem a seguir.
   const texto = (eCorte || item.clipNoFicheiro) ? titulo : [titulo, item.jornada].filter(Boolean).join('\n');
 
-  if (url) {
-    if (navigator.share) {
-      try { await navigator.share({ title: titulo, text: texto, url }); return; } catch (e) { /* cancelado */ return; }
-    }
-    if (navigator.clipboard) {
-      try { await navigator.clipboard.writeText(texto ? `${texto}\n${url}` : url); window.alert('Link copiado.'); return; } catch (e) { /* segue para abrir */ }
-    }
-    window.open(url, '_blank');
-    return;
-  }
+  if (url) { await escolherPartilha({ titulo, texto, url }); return; }
 
   if (!item.dataUrl) return;
   try {
