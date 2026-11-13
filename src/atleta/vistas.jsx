@@ -18,6 +18,7 @@ import { useKioskVoltar } from '../base/kiosk';
 import { hashCurto, usePortalFetch, usePortalRpc } from './portalRpc';
 import { PlayerAdversarioTab, PlayerConvocatoriasTab, PlayerPlanoJogoTab } from './separadoresJogo';
 import { splitCompetitionName } from '../base/formatos';
+import { apagarMp4DoVideo, pedirMp4DoVideo, urlDoServicoVideo } from '../media/videoJunto';
 
 /* PORTAL DO ATLETA — a "casa" do que o treinador for partilhando.
 
@@ -297,6 +298,19 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
       const d = lerJson(data);
       if (d && !d.ok && d.erro !== 'video_invalido') throw new Error(d.erro || 'erro');
     },
+    /* MP4 feito no servidor (ver media/videoJunto.js). Sem o serviço de
+       vídeo configurado, não há: o Descarregar grava no browser. */
+    ...(urlDoServicoVideo() ? {
+      ficheiros: async () => {
+        const { data, error } = await supabase.rpc('checkin_video_ficheiros', { p_code: code, p_team: teamId });
+        if (error) throw error;
+        const d = lerJson(data);
+        if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
+        return (d.videos || []).filter(Boolean);
+      },
+      prepararMp4: (id) => pedirMp4DoVideo(code, teamId, id),
+      apagarMp4: (id) => apagarMp4DoVideo(code, teamId, id),
+    } : {}),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [code, teamId]);
 

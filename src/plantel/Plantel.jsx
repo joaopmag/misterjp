@@ -14,6 +14,7 @@ import { CaptainArmband } from '../dominio/plantel';
 import { createPortal } from 'react-dom';
 import { PlayerPrintSheet, PlayerProfilePage, buildPlayerReportHtml, jogosOficiaisDe } from './PlayerProfilePage';
 import { Badge, contarRastoDoJogador, limparRastoDoJogador } from './comum';
+import { apagarMp4DoAtleta } from '../media/videoJunto';
 import { RecuperarApagados } from './RecuperarApagados';
 import { FichaOcorrencia, OcorrenciaModal, proporMarcacaoClinica } from './Clinico';
 import { PlayerModal, playerBirthLine } from './PlayerModal';
@@ -158,6 +159,8 @@ export function Plantel({ players, setPlayers, sessions, setSessions, matches, s
             clinico, setClinico, desenvolvimento, setDesenvolvimento,
             autorizar: autorizarApagarRasto,
           });
+          // Os MP4 de "Os meus vídeos" dele (Storage), por RGPD.
+          apagarMp4DoAtleta(T.equipaId, id);
         }, (UNDO_SECONDS + 3) * 1000);
       },
     });

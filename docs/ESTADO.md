@@ -170,6 +170,33 @@ ficheiro; usado nas duas gravações (separador e ficheiro). Testado com o
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
+**"Os meus vídeos" em MP4 feito no servidor (13/11, à espera de "ok"):**
+quando o jogador guarda um vídeo só com clipes de vídeos carregados, o
+video-worker (`juntar.js`, rotas `/juntar`, `/juntar-apagar`,
+`/juntar-limpar-atleta`) corta cada troço, põe tudo em 720p/30 fps/AAC
+estéreo e cola num MP4 (`videos-clipes/<equipa>/juntos/<jogador>/<vídeo>.mp4`,
+sempre o mesmo caminho por vídeo). O "Descarregar" passa a ser imediato
+(link público com `?download=nome.mp4`). Enquanto se prepara, o ícone roda
+e um clique mostra "está a ser preparado" (com "Gravar agora neste
+aparelho"). Com algum clipe do YouTube: continua a gravação no browser.
+O ficheiro só se usa se a ASSINATURA (clipes e tempos, `media/videoJunto.js`
+= `assinaturaDe` no worker) bater com os clipes de agora; mudar o vídeo ou
+um clipe pede outro, que substitui o anterior. Vídeos antigos pedem o seu
+ao abrir o Portal. Apagar o vídeo apaga o MP4 (antes de apagar o vídeo);
+apagar o jogador no Plantel apaga a pasta dele (`apagarMp4DoAtleta`).
+Validação: o jogador não tem sessão; o worker confirma o código com a nova
+função `checkin_video_ficheiros` (SQL `2026-11_06_videos_juntos_mp4.sql`,
+testada no Postgres local), que só devolve os vídeos desse jogador.
+Limites: 30 min por vídeo junto, 40 pedidos por código em 10 min. Estado
+no `data` do vídeo: `ficheiroEstado` (a_preparar, pronto, erro,
+tem_youtube, muito_longo, vazio), `ficheiroUrl`, `ficheiroAssinatura`,
+`ficheiroPedidoEm` (parado mais de 30 min → pede de novo). Sem
+`VITE_VIDEO_WORKER_URL` ou sem a função SQL, tudo fica como antes.
+Testado: ffmpeg com dois vídeos (1080p com som, 480p sem som) → 1280×720,
+30 fps, AAC 48 kHz, duração certa, descodifica sem erros; e a lista no
+browser (a preparar → pronto → link de descarga; YouTube → grava; apagar
+→ apaga o MP4 e depois o vídeo).
+
 **Também a seguir à divisão (pedido a 13/11):** a cor de destaque da app
 (Definições) deve chegar a tudo o que hoje fica vermelho fixo: as barras de
 escolha de jogadores, as pílulas dos separadores e os botões de adicionar
@@ -271,7 +298,8 @@ reduz o peso inicial da app e do Portal.
 
 Pendentes já identificados: links que não expiram em `videos-clipes`
 (bucket público); apagar ficheiros do Storage quando se apaga um atleta
-(RGPD); fotos no Portal com links assinados (Fase B); retirar o
+(RGPD; os MP4 de "Os meus vídeos" já se apagam, falta o resto e as linhas
+de `video_compilacoes`); fotos no Portal com links assinados (Fase B); retirar o
 `server.js.js` do video-worker depois de confirmar que o Railway arranca
 pelo `server.js`.
 
@@ -281,6 +309,7 @@ pelo `server.js`.
   Desktop): o código real está
   em `server.js`; `server.js.js` é só um ponto de entrada provisório.
   Tem fila justa por equipa (`MAX_EM_PARALELO`) e o endereço `/estado`.
+  `juntar.js`: MP4 de "Os meus vídeos" (rotas `/juntar*`), na mesma fila.
 - **Modal**: o código está em `modal/servico_seguidor_v2.py`. Publica-se
   com `modal deploy modal/servico_seguidor_v2.py`. A Vercel aponta para
   ele pela variável `MODAL_SEGUIDOR_URL`. A versão aparece na resposta

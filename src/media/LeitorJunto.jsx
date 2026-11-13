@@ -9,6 +9,7 @@ import { uid } from '../base/utilidades';
 import { Btn, Input } from '../base/ui';
 import { ControlosLupa, URL_PUBLICA_APP, fmtMMSS, linkDoVideoJunto, useLupa } from './social';
 import { gravarCompilacoes, lerCompilacoes, mmss } from './organizacao';
+import { assinaturaDoVideoJunto, descarregarMp4, soClipesDeFicheiro } from './videoJunto';
 
 /* LEITOR "VÍDEO JUNTO" — vários clipes num SÓ leitor, com UMA barra.
 
@@ -415,6 +416,23 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const [aviso, setAviso] = useState('');
   const [editar, setEditar] = useState(null); // { id?, nome, ids }
   const [aGuardar, setAGuardar] = useState(false);
+  /* MP4 FEITO NO SERVIDOR (media/videoJunto.js): id do vídeo → { estado,
+     url, assinatura, pedidoEm }. Só existe com o serviço de vídeo e a
+     função checkin_video_ficheiros na base; sem isso, `mp4Ativo` fica
+     false e o Descarregar grava no browser, como antes. */
+  const [mp4, setMp4] = useState({});
+  const [mp4Ativo, setMp4Ativo] = useState(false);
+  const [esperaMp4, setEsperaMp4] = useState(null); // { nome, ids } — aviso "a preparar"
+  const pedidosMp4 = useRef(new Set());
+  const lerMp4 = React.useCallback(async () => {
+    if (!api || !api.ficheiros) return;
+    try {
+      const l = await api.ficheiros();
+      const m = {};
+      l.forEach(x => { if (x && x.id) m[x.id] = x; });
+      setMp4(m); setMp4Ativo(true);
+    } catch (e) { setMp4Ativo(false); }
+  }, [api]);
   useEffect(() => {
     let cancelado = false;
     (async () => {
@@ -431,6 +449,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
         }
         if (cancelado) return;
         setLista(doServidor); setNoServidor(true); setAviso(''); setCarregado(true);
+        lerMp4();
       } catch (e) {
         if (cancelado) return;
         setLista(lerCompilacoes(chave)); setNoServidor(false); setCarregado(true);
@@ -446,6 +465,66 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const duracao = (ids) => ids.reduce((t, id) => { const c = porId.get(id); return t + (c ? Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)) : 0); }, 0);
   const validos = (ids) => (ids || []).filter(id => porId.has(id));
   const aTocarId = aTocar && lista.find(v => JSON.stringify(validos(v.ids)) === JSON.stringify(aTocar));
+  const assin = (ids) => assinaturaDoVideoJunto(ids, porId);
+  // O MP4 deste vídeo (com os clipes de agora) já está pronto?
+  const mp4Pronto = (v, ids) => { const f = mp4[v.id]; return f && f.estado === 'pronto' && f.url && f.assinatura === assin(ids) ? f : null; };
+  // Vai haver MP4 (está a ser feito, ou vai ser pedido já a seguir)?
+  const mp4AVir = (v, ids) => {
+    if (!mp4Ativo || !noServidor || !soClipesDeFicheiro(ids, porId) || mp4Pronto(v, ids)) return false;
+    const f = mp4[v.id];
+    return !(f && f.assinatura === assin(ids) && (f.estado === 'erro' || f.estado === 'muito_longo'));
+  };
+
+  /* PEDIR O MP4: para cada vídeo só com clipes de ficheiro cujo MP4 não
+     exista (ou seja de outros clipes/tempos). Também os vídeos antigos,
+     feitos antes disto. Se ficou "a preparar" mais de 30 minutos (o
+     serviço reiniciou), volta a pedir-se. Um vídeo que passou a ter um
+     clipe do YouTube pede também, para o servidor apagar o MP4 antigo. */
+  useEffect(() => {
+    if (!mp4Ativo || !noServidor || !api || !api.prepararMp4) return;
+    lista.forEach(v => {
+      const ids = validos(v.ids);
+      const f = mp4[v.id];
+      const a = assin(ids);
+      if (!soClipesDeFicheiro(ids, porId)) {
+        if (!(f && f.url)) return;
+      } else if (f && f.assinatura === a) {
+        if (f.estado === 'pronto' || f.estado === 'erro' || f.estado === 'muito_longo') return;
+        const parado = f.estado === 'a_preparar' && f.pedidoEm && Date.now() - new Date(f.pedidoEm).getTime() > 30 * 60 * 1000;
+        if (f.estado === 'a_preparar' && !parado) return;
+      }
+      const chave = `${v.id}|${a}`;
+      if (pedidosMp4.current.has(chave)) return;
+      pedidosMp4.current.add(chave);
+      api.prepararMp4(v.id)
+        .then(() => setMp4(m => ({ ...m, [v.id]: { ...(m[v.id] || {}), id: v.id, estado: 'a_preparar', assinatura: a, pedidoEm: new Date().toISOString() } })))
+        .catch(() => { /* serviço em baixo: o Descarregar grava no browser */ });
+    });
+    // `porId` muda a cada render; os clipes entram pela lista e pelo mp4.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mp4Ativo, noServidor, api, lista, mp4, clipes]);
+
+  // Enquanto algum estiver a ser preparado, confirma de 8 em 8 segundos.
+  const aPrepararAlgum = Object.values(mp4).some(f => f && f.estado === 'a_preparar');
+  useEffect(() => {
+    if (!mp4Ativo || !aPrepararAlgum) return undefined;
+    const t = setTimeout(lerMp4, 8000);
+    return () => clearTimeout(t);
+  }, [mp4Ativo, aPrepararAlgum, mp4, lerMp4]);
+  // Quando o que se estava à espera fica pronto, sai o aviso.
+  useEffect(() => {
+    if (!esperaMp4) return;
+    const v = lista.find(x => x.id === esperaMp4.id);
+    if (!v || !mp4AVir(v, validos(v.ids))) setEsperaMp4(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mp4, lista, esperaMp4]);
+
+  const descarregar = (v, ids) => {
+    const pronto = mp4Pronto(v, ids);
+    if (pronto) { descarregarMp4(pronto.url, v.nome); return; }
+    if (mp4AVir(v, ids)) { setEsperaMp4({ id: v.id, nome: v.nome, ids }); return; }
+    if (onGravar) onGravar(ids, v.nome, () => linkDe(v.nome, ids));
+  };
 
   const guardar = async () => {
     if (!editar || !editar.ids.length || aGuardar) return;
@@ -469,6 +548,8 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const apagar = async (v) => {
     if (!window.confirm(`Apagar "${v.nome}"? Os clipes continuam lá.`)) return;
     if (noServidor) {
+      // O MP4 primeiro: depois de apagar o vídeo já não se pode confirmar de quem era.
+      if (api.apagarMp4) { try { await api.apagarMp4(v.id); } catch (e) { /* sem ficheiro ou serviço em baixo */ } }
       try { await api.apagar(v.id); setLista(prev => prev.filter(x => x.id !== v.id)); } catch (e) { setAviso('Não foi possível apagar. Tenta outra vez.'); }
       return;
     }
@@ -516,6 +597,15 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
         <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, com uma barra só, como se fosse um clipe.</div>
       )}
       {aviso && <div style={{ fontSize: 12, color: T.warn, margin: '4px 0 8px' }}>{aviso}</div>}
+      {esperaMp4 && !editar && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: T.muted, margin: '4px 0 8px', lineHeight: 1.5 }}>
+          <Loader2 size={13} className="spin" color={T.gold} />
+          <span style={{ flex: 1, minWidth: 180 }}>O MP4 de "{esperaMp4.nome}" está a ser preparado. Fica pronto daqui a pouco — depois é só carregar em Descarregar.</span>
+          {onGravar && <button type="button" onClick={() => { const e = esperaMp4; setEsperaMp4(null); onGravar(e.ids, e.nome, () => linkDe(e.nome, e.ids)); }}
+            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12, padding: 0, ...body }}>Gravar agora neste aparelho</button>}
+          <button type="button" title="Fechar" onClick={() => setEsperaMp4(null)} style={btnIcone}><X size={13} /></button>
+        </div>
+      )}
 
       {!editar && lista.map(v => {
         const ids = validos(v.ids);
@@ -531,9 +621,17 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
             <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
             <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
               onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
-            {onGravar && (
-              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome, () => linkDe(v.nome, ids))} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
-            )}
+            {(onGravar || mp4Pronto(v, ids) || mp4AVir(v, ids)) && (() => {
+              const pronto = mp4Pronto(v, ids);
+              const aVir = !pronto && mp4AVir(v, ids);
+              const titulo = pronto ? 'Descarregar o vídeo (MP4)' : aVir ? 'O MP4 está a ser preparado…' : 'Gravar este vídeo num ficheiro (computador)';
+              const off = !ids.length || (!pronto && aGravar);
+              return (
+                <button type="button" title={titulo} disabled={off} onClick={() => descarregar(v, ids)} style={{ ...btnIcone, opacity: off ? 0.4 : 1 }}>
+                  {aVir ? <Loader2 size={14} className="spin" /> : <Download size={14} color={pronto ? T.gold : undefined} />}
+                </button>
+              );
+            })()}
             <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
