@@ -1,6 +1,7 @@
 // media/MediaLibrary.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
 import { COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
@@ -2244,7 +2245,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     if (!blob || !blob.size) { setAvisoGravacaoBib('A gravação ficou vazia. Tenta outra vez.'); return; }
     // Janela com o resultado: ver, descarregar ou partilhar (o "Partilhar"
     // do telemóvel precisa de um toque — por isso é um botão aqui).
-    setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob) });
+    setProgressoFicheiro(null);
+    setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob), ficheiro: !!g.ficheiro });
   };
   /* `item`: o corte a gravar (o botão Partilhar da lista manda o corte
      dessa linha). Se não for o que está aberto, abre-o primeiro e a
@@ -2252,6 +2254,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      `active.id`). O pedido do browser vem logo, no próprio clique —
      depois disso o browser já não o deixaria aparecer. */
   const gravarCorteBib = async (item) => {
+    const alvoF = item || active;
+    const segsF = alvoF && !semAcessoFicheiroRef.current && podeGravarFicheiro() ? segmentosSoFicheiro([alvoF.id]) : null;
+    if (segsF && ehClipe(alvoF)) { gravarFicheiroBib(segsF, alvoF.title || 'Corte'); return; }
     if (!podeGravarSeparador()) {
       setAvisoGravacaoBib('Gravar vídeo só funciona no computador (Chrome, Edge ou Safari).');
       return;
@@ -2274,8 +2279,40 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      Portal). Uma gravação só: em cada clipe grava do início ao fim, pausa
      enquanto o seguinte carrega e retoma no início dele. No fim abre a
      janela de sempre (ver, descarregar, partilhar). Só no computador. */
+  /* CLIPES DE VÍDEOS CARREGADOS (sem desenhos): grava-se o próprio vídeo,
+     sem partilhar o ecrã (ver media/gravarFicheiro.js). Se o Storage não
+     deixar ler a imagem, volta-se à gravação do separador. */
+  const [progressoFicheiro, setProgressoFicheiro] = useState(null);
+  const semAcessoFicheiroRef = useRef(false);
+  const segmentosSoFicheiro = (ids) => {
+    const lista = (ids || []).map(id => (items || []).find(v => v.id === id) || (todosVideos || []).find(v => v.id === id));
+    if (!lista.length || lista.some(v => !v || v.youtubeId || !eVideoFicheiroBib(v) || (v.anotacoesPausa || []).length)) return null;
+    return lista.map(v => (ehClipe(v)
+      ? { src: v.dataUrl, inicio: Number(v.clipInicio) || 0, fim: Number(v.clipFim) || 0 }
+      : { src: v.dataUrl, inicio: 0, fim: Number.MAX_SAFE_INTEGER }));
+  };
+  const gravarFicheiroBib = async (segs, nome) => {
+    let ctl;
+    try {
+      ctl = await gravarClipesDeFicheiro(segs, { onProgresso: p => setProgressoFicheiro(p) });
+    } catch (e) { setAvisoGravacaoBib('Não foi possível preparar o vídeo. Tenta outra vez.'); return; }
+    const g = { ctl, nome: nome || 'O meu vídeo', comecouEm: 0, preRoll: false, pendenteId: null, ficheiro: true };
+    gravacaoBibRef.current = g;
+    setGravacaoBib({ desde: Date.now() });
+    setProgressoFicheiro(0);
+    ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); }).catch((e) => {
+      if (gravacaoBibRef.current === g) { gravacaoBibRef.current = null; setGravacaoBib(null); }
+      setProgressoFicheiro(null);
+      if (e && e.semAcesso) {
+        semAcessoFicheiroRef.current = true;
+        setAvisoGravacaoBib('Este vídeo não deixa gravar só a imagem. Carrega outra vez para gravar pelo separador.');
+      } else setAvisoGravacaoBib('A gravação falhou. Tenta outra vez.');
+    });
+  };
   const gravarSequenciaBib = async (ids, nome) => {
     if (!ids || !ids.length) return;
+    const segsF = !semAcessoFicheiroRef.current && podeGravarFicheiro() ? segmentosSoFicheiro(ids) : null;
+    if (segsF) { gravarFicheiroBib(segsF, nome); return; }
     if (!podeGravarSeparador()) {
       setAvisoGravacaoBib('Gravar vídeo só funciona no computador (Chrome, Edge ou Safari).');
       return;
@@ -3387,6 +3424,40 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
 
   return (
     <div>
+      {/* Gravação de clipes de vídeos carregados: progresso e resultado
+          (fora do leitor, porque não é preciso estar nada aberto). */}
+      {progressoFicheiro != null && gravacaoBib && (
+        <Modal title="A preparar o vídeo" onClose={() => { if (gravacaoBibRef.current) acabarGravacaoBib(); }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 13, color: T.muted }}>Só o vídeo, sem o ecrã à volta. Demora o tempo dos clipes; não feches esta página.</div>
+            <div style={{ height: 8, borderRadius: 4, background: T.line, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${Math.round(progressoFicheiro * 100)}%`, background: T.gold, transition: 'width .2s' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: T.mutedDim, ...mono }}>{Math.round(progressoFicheiro * 100)}%</span>
+              <Btn variant="ghost" onClick={() => { if (gravacaoBibRef.current) acabarGravacaoBib(); }}>Parar e ficar com o que já está</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {janelaGravacaoBib && janelaGravacaoBib.fase === 'pronto' && janelaGravacaoBib.ficheiro && (
+        <Modal title="Vídeo pronto" onClose={fecharJanelaGravacaoBib} wide>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <video src={janelaGravacaoBib.url} controls playsInline style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: '55vh' }} />
+            <div style={{ fontSize: 12, color: T.mutedDim }}>
+              {/mp4/.test(janelaGravacaoBib.blob.type) ? 'MP4' : 'WebM'} · {(janelaGravacaoBib.blob.size / 1048576).toFixed(1)} MB
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <Btn variant="ghost" onClick={fecharJanelaGravacaoBib}>Fechar</Btn>
+              <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome, { soDescarregar: true })}><Download size={14} /> Descarregar</Btn>
+              <Btn onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar vídeo</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {avisoGravacaoBib && !temLeitorBib(active) && (
+        <div role="status" style={{ marginBottom: 10, fontSize: 12.5, color: T.warn }}>{avisoGravacaoBib}</div>
+      )}
       {!semBotaoTopo && (
         <SectionHeader action={<Btn variant={addButtonVariant} onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
       )}
@@ -4332,7 +4403,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           {/* JANELA DA GRAVAÇÃO — antes (o que vai acontecer) e depois
                               (ver, descarregar, partilhar). Durante a gravação não há
                               janela nenhuma: ficaria gravada por cima do vídeo. */}
-                          {janelaGravacaoBib && janelaGravacaoBib.fase === 'pronto' && (
+                          {janelaGravacaoBib && janelaGravacaoBib.fase === 'pronto' && !janelaGravacaoBib.ficheiro && (
                             <Modal title="Vídeo pronto" onClose={fecharJanelaGravacaoBib} wide>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                                 <video src={janelaGravacaoBib.url} controls playsInline style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: '55vh' }} />

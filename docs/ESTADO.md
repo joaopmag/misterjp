@@ -139,7 +139,13 @@ do vídeo gravado na base, nunca do pedido, e `clipNoFicheiro`) e
 `data` inteiro e não mudam. Testado num Postgres local com as definições
 reais (YouTube, ficheiro, corte de ficheiro aceites; clipe da Análise e
 base64 recusados). No staff, a "Análise individual em clipes"
-(`ClipAtletaModal`) também toca clipes de ficheiro e partilha o troço. Vídeos privados: não há nada a
+(`ClipAtletaModal`) também toca clipes de ficheiro e partilha o troço.
+Gravar/descarregar clipes de vídeos carregados (sem desenhos): já não
+grava o ecrã — `media/gravarFicheiro.js` toca cada troço num <video>
+escondido, copia para um canvas e grava (MediaRecorder), só a imagem e o
+som. Se o Storage não deixar ler a imagem (CORS), avisa e o clique
+seguinte usa a gravação do separador como antes. Com desenhos ou com
+cortes do YouTube continua a gravação do separador. Vídeos privados: não há nada a
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
