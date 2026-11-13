@@ -154,6 +154,27 @@ reduz o peso inicial da app e do Portal.
   acontecimentos dos suplentes ficam à direita do cartão.
 - 13/11: "Copiar ideia/exercício existente": a pré-visualização cresce para
   mostrar o esquema e os botões inteiros (antes ficava com scroll).
+- 13/11: Jogos (amigáveis e oficiais): quem tem minutos no relatório
+  conta sempre como estando no jogo (`convocadosDoJogo` e `idsComMinutos`,
+  em `dominio/jogos.js`): onze ou banco no "Editar jogo", ficha do jogo,
+  relatório e estatísticas. Os cartões mostram os minutos.
+  Causa do onze incompleto: marcar L (Boletim → "Atualizar as presenças")
+  ou falta/escalão nas Presenças tirava o jogador dos convocados; a
+  gravação seguinte (`podarPresencasForaDosConvocados`) tirava-o também
+  do onze. Regras novas:
+  · lesão no próprio dia do jogo: fica registada nesse dia, mas o jogador
+    não sai do onze nem do banco desse jogo (não leva L nesse jogo) e só
+    aparece como indisponível a partir do dia seguinte
+    (`estadoClinicoParaJogo`, em `dominio/clinico.js`, usado no Editar
+    jogo, na ficha e nas Convocatórias);
+  · amigável: vão todos. Quem não está no onze é suplente (sem limite),
+    fizesse ou não minutos; não há "Não convocados". À parte, só os
+    indisponíveis e quem tem falta, L ou escalão marcado nas Presenças
+    desse jogo (que no amigável já não se apagam ao gravar).
+  Reparação dos jogos antigos: `competicao/RepararJogos.jsx` lê o Relato
+  (`activity_log`) e lista quem saiu do onze por uma marcação de falta/L
+  sem ninguém o tirar no "Editar jogo"; aviso em Jogos, "Rever e repor"
+  (volta ao mesmo lugar, ou ao banco se o lugar estiver ocupado).
 - 13/11: Documentos: os modelos saíam sem o emblema do clube (com a
   inicial ou o nome no lugar). O emblema é um endereço de outro site, e o
   browser não deixa ler os pixéis dessa imagem (CORS). Nova função

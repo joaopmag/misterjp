@@ -10,7 +10,7 @@ import { Trash2, Eye, EyeOff, Printer, ClipboardList, Pencil, Check } from 'luci
 import { competitionLabel, isFriendlyMatch, FRIENDLY } from '../dominio/jogos';
 import { createPortal } from 'react-dom';
 import { tamanhoDaFormacao } from '../tatico/Simulador';
-import { estadoClinicoEm } from '../dominio/clinico';
+import { estadoClinicoParaJogo } from '../dominio/clinico';
 import { clubeSemEscalao, competitionByName, competitionGameDate, competitionOptions, competitionRoundLabels, competitionTeamNames, syncConvocatoriaMatch, titularesPorLugar } from './dados';
 import { CartaoPlanoDoJogo, EscalacaoNoCampo, EscalacaoPrint, TODOS_OS_JOGADORES, castigadosParaJogo, comQuemLaEsteve, escalacaoDaConvocatoria, escalacaoDoJogo, escalacaoNovaFormacao } from './Escalacao';
 import { CaptainArmband, ordenarPorCamisola, sincronizarVisivelNoJogo } from '../dominio/plantel';
@@ -567,7 +567,7 @@ export function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, 
               onSelectAll={() => {
                 // Sem indisponíveis (Boletim Clínico) nem castigados.
                 const castigoC = castigadosParaJogo(matches, f.data, jogoDaConvocatoria && jogoDaConvocatoria.id);
-                const ok = players.filter(p => { const e = estadoClinicoEm(p.id, f.data, clinico); return !(e && e.avisaJogo) && !castigoC.has(p.id); });
+                const ok = players.filter(p => { const e = estadoClinicoParaJogo(p.id, f.data, clinico); return !(e && e.avisaJogo) && !castigoC.has(p.id); });
                 setF({ ...f, convocados: sortByPosition(ok).map(p => p.id), alinhamento: null });
               }}
               onClear={() => setF({ ...f, convocados: [], alinhamento: null, capitao: undefined, subcapitao: undefined })}

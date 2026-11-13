@@ -5,12 +5,12 @@ import { useIsMobile, Select, TextArea } from '../base/ui';
 import { FORMACOES, LAYOUT_FORMACAO, rotuloDoLugar, tamanhoDaFormacao, distribuirOnzeNoCampo } from '../tatico/Simulador';
 import React, { useState, useRef, useEffect } from 'react';
 import { T, mono, body } from '../base/tema';
-import { estadoClinicoEm } from '../dominio/clinico';
+import { estadoClinicoParaJogo } from '../dominio/clinico';
 import { todayStr } from '../base/utilidades';
 import { sortByPosition, shortPlayerName } from '../dominio/jogadores';
 import { createPortal } from 'react-dom';
 import { Target, ChevronRight } from 'lucide-react';
-import { isFriendlyMatch } from '../dominio/jogos';
+import { isFriendlyMatch, convocadosDoJogo } from '../dominio/jogos';
 import { jogoNaoJogado } from '../dominio/estadoJogos';
 
 /* A convocatória do jogo manda na coluna desse jogo na tabela-resumo das
@@ -35,7 +35,14 @@ import { jogoNaoJogado } from '../dominio/estadoJogos';
    (ficha de edição do jogo, convocatória) é que traduz para o seu
    formato. Nada é gravado aqui.
    ===================================================================== */
-export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null, castigados = null, acao = null }) {
+/* `minutos` (opcional): { [pid]: minutos jogados } — aparecem em cada
+   cartão e ao lado do nome no campo.
+   `amigavel`: num amigável vão todos. Quem não está no onze é suplente
+   (sem limite nem vagas reservadas), fizesse ou não minutos; não há caixa
+   de "Não convocados". Ficam à parte só os indisponíveis e quem tem
+   falta, L ou escalão marcado nas Presenças desse jogo (`ausentes`:
+   Map pid → "Falta" | "Lesionado" | "Escalão"). */
+export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null, castigados = null, acao = null, minutos = null, amigavel = false, ausentes = null }) {
   const isMobile = useIsMobile(820);
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -81,7 +88,8 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
   // Estado do jogador: castigo (expulsão no último jogo oficial) ou Boletim Clínico.
   const estado = (p) => {
     if (castigados && castigados.has(p.id)) return { id: 'indisponivel', avisaJogo: true, curto: 'Castigo', cor: T.bad, label: castigados.get(p.id) };
-    return estadoClinicoEm(p.id, data || todayStr(), clinico);
+    if (ausentes && ausentes.has(p.id)) return { id: 'indisponivel', avisaJogo: true, curto: ausentes.get(p.id), cor: T.bad, label: ausentes.get(p.id) };
+    return estadoClinicoParaJogo(p.id, data || todayStr(), clinico);
   };
   const indisponivel = (p) => { const e = estado(p); return !!(e && (e.avisaJogo || e.id === 'indisponivel')); };
   const fora = sortByPosition(players.filter(p => !naEscalacao.has(p.id)));
@@ -219,8 +227,13 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
 
   // Cartão compacto: foto, nome e (posição · número) — ou o estado
   // clínico, nos indisponíveis — sempre em duas linhas curtas.
+  const minDe = (p) => {
+    const v = minutos ? Number(minutos[p.id]) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
   const cartaoJogador = (p, origem, extra) => {
     const escolhido = sel && sel.id === p.id;
+    const min = extra ? null : minDe(p);
     return (
       <button key={p.id} type="button" {...props(origem)} data-jogador={`${origem.de}|${p.id}`}
         title={`${p.name}${p.position ? ` · ${p.position}` : ''}`}
@@ -234,6 +247,7 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
           <span style={{ display: 'block', fontSize: 12, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortPlayerName(p, players)}</span>
           <span style={{ display: 'block', fontSize: 10, lineHeight: '13px', color: extra ? T.bad : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>
             {extra || `${p.position || '—'}${p.number ? ` · ${p.number}` : ''}`}
+            {min != null && <span style={{ color: T.gold }}>{` · ${min}'`}</span>}
           </span>
         </span>
       </button>
@@ -307,7 +321,7 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
         </span>
         <span style={{ fontSize: 11.5, color: T.mutedDim, flex: '1 1 0', minWidth: 0, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
           {sel
-            ? <span style={{ color: T.gold }}>Toca no lugar, no banco ou em "Não convocados" para onde vai {porId.get(sel.id) ? shortPlayerName(porId.get(sel.id), players) : 'o jogador'}.</span>
+            ? <span style={{ color: T.gold }}>{amigavel ? 'Toca no lugar ou no banco' : 'Toca no lugar, no banco ou em "Não convocados"'} para onde vai {porId.get(sel.id) ? shortPlayerName(porId.get(sel.id), players) : 'o jogador'}.</span>
             : (isMobile ? 'Toca num jogador e depois no sítio para onde vai.' : 'Arrasta os jogadores (ou clica num e depois no sítio).')}
         </span>
         {acao}
@@ -351,7 +365,7 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
                   <div {...props({ de: 'slot', i, id: p.id })} onClick={undefined}
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation' }}>
                     <div style={{ outline: realce ? `2px dashed ${T.gold}` : 'none', outlineOffset: 3, borderRadius: '50%' }}>{fotoBola(p, 38, escolhido)}</div>
-                    <span style={{ fontSize: 10.5, color: '#fff', marginTop: 2, maxWidth: 70, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px #000', ...body }}>{shortPlayerName(p, players)}</span>
+                    <span style={{ fontSize: 10.5, color: '#fff', marginTop: 2, maxWidth: 70, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px #000', ...body }}>{shortPlayerName(p, players)}{minDe(p) != null && <span style={{ color: T.gold, ...mono }}>{` ${minDe(p)}'`}</span>}</span>
                   </div>
                 ) : (
                   <>
@@ -370,7 +384,11 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
 
         {/* ZONAS À VOLTA DO CAMPO */}
         <div ref={zonasRef} style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-          {(() => {
+          {amigavel && (() => {
+            const doBanco = sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id }));
+            return caixa('banco', `Suplentes · ${doBanco.length}`, doBanco, 'Todos os disponíveis estão no onze.', { altura: 130 });
+          })()}
+          {!amigavel && (() => {
             const noBanco = sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id }));
             const reserva = maxBanco != null ? maxBanco : 9;
             const vagas = Array.from({ length: Math.max(0, reserva - noBanco.length) }, (_, k) => vagaVazia(k));
@@ -378,10 +396,10 @@ export function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, on
               [...noBanco, ...vagas],
               bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 });
           })()}
-          {(() => {
+          {!amigavel && (() => {
             // Ordem fixa com TODOS os disponíveis; quem está na escalação fica como fantasma.
             const todosDisp = sortByPosition(players.filter(p => !indisponivel(p)));
-            return caixa('fora', `Não convocados · ${foraDisp.length}`,
+            return caixa('fora', `${amigavel ? 'Não presentes' : 'Não convocados'} · ${foraDisp.length}`,
               todosDisp.map(p => (naEscalacao.has(p.id) ? cartaoFantasma(p) : cartaoJogador(p, { de: 'fora', id: p.id }))),
               'Todos os jogadores disponíveis estão na escalação.', { altura: 190 });
           })()}
@@ -415,17 +433,18 @@ export function escalacaoDoJogo(f, players) {
      de titulares tenha ficado desencontrada dos lugares. */
   const nLugares = tamanhoDaFormacao(formacao) || 11;
   if (Array.isArray(f.alinhamento) && f.alinhamento.length === nLugares && f.alinhamento.some(Boolean)) {
-    const valido = new Set([...(f.convocados || []), ...(f.starters || [])].filter(id => porId.has(id)));
+    // Quem tem minutos no relatório também conta (ver `convocadosDoJogo`).
+    const valido = new Set([...convocadosDoJogo(f), ...(f.starters || [])].filter(id => porId.has(id)));
     const slots = f.alinhamento.map(id => (id && valido.has(id) ? id : null));
     const usados = new Set(slots.filter(Boolean));
-    const banco = [...(f.starters || []), ...(f.convocados || [])].filter(id => porId.has(id) && !usados.has(id));
+    const banco = [...(f.starters || []), ...convocadosDoJogo(f)].filter(id => porId.has(id) && !usados.has(id));
     return { formacao, slots, banco: [...new Set(banco)] };
   }
   const titulares = (f.starters || []).map(id => porId.get(id)).filter(Boolean);
   const { colocados, sobram } = distribuirOnzeNoCampo(titulares, formacao, f.alinhamento);
   const slots = colocados.map(p => (p ? p.id : null));
   const usados = new Set(slots.filter(Boolean));
-  const banco = [...sobram.map(p => p.id), ...(f.convocados || []).filter(id => !usados.has(id) && !(f.starters || []).includes(id))];
+  const banco = [...sobram.map(p => p.id), ...convocadosDoJogo(f).filter(id => !usados.has(id) && !(f.starters || []).includes(id))];
   return { formacao, slots, banco: [...new Set(banco)].filter(id => porId.has(id)) };
 }
 

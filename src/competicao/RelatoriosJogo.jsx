@@ -7,7 +7,7 @@ import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
 import { shortPlayerName, sortByPosition } from '../dominio/jogadores';
 import { todayStr, addDays, fmtShort, uid, fmtDate } from '../base/utilidades';
 import { AlertTriangle, Plus, MessageCircle, ChevronDown, ChevronRight, Check, Pencil, Trash2, BookOpen, Printer, Share2 } from 'lucide-react';
-import { competitionLabel, FRIENDLY } from '../dominio/jogos';
+import { competitionLabel, FRIENDLY, convocadosDoJogo } from '../dominio/jogos';
 import React, { useState } from 'react';
 import { UrlAnexo, hrefDescarga } from '../base/anexos';
 import { LINHAS } from '../dominio/plantel';
@@ -573,7 +573,7 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
   const estreito = useIsMobile(760);
   const [f, setF] = useState(() => ({
     ...match,
-    convocados: match.convocados || [], starters: match.starters || [], report: match.report || {}, result: match.result || '',
+    convocados: convocadosDoJogo(match), starters: match.starters || [], report: match.report || {}, result: match.result || '',
   }));
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_relatorio_${match.id}`, f, setF);
   const ordenados = sortByPosition(players || []);

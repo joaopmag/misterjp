@@ -1,6 +1,7 @@
 // dominio/estatisticas.js
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { convocadosDoJogo } from './jogos';
 import { todayStr } from '../base/utilidades';
 
 /* Agrupa sessões por data. Um dia pode ter várias sessões registadas
@@ -69,7 +70,7 @@ export function playerStats(player, sessions, matches) {
      Quem chama já escolhe a lista que quer analisar. Filtrar outra vez cá
      dentro é decidir duas vezes a mesma coisa, e a segunda decisão era
      invisível para quem lia o resultado. */
-  const playerMatches = (matches || []).filter(m => (m.convocados || []).includes(player.id));
+  const playerMatches = (matches || []).filter(m => convocadosDoJogo(m).includes(player.id));
   const reports = playerMatches.map(m => (m.report && m.report[player.id]) || {});
   const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
   const assists = reports.reduce((a, r) => a + (Number(r.assists) || 0), 0);

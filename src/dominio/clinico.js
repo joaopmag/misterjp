@@ -91,6 +91,15 @@ export function estadoClinicoEm(jogadorId, data, clinico) {
   return { ...nivelClinico(nivel), ocorrencia: o };
 }
 
+/* ESTADO PARA UM JOGO. Uma lesão que começa no próprio dia do jogo (o
+   jogador lesionou-se no jogo, ou no aquecimento) não o tira desse jogo:
+   fica no onze ou no banco onde estava. Passa a indisponível a partir do
+   dia seguinte. */
+export function estadoClinicoParaJogo(jogadorId, data, clinico) {
+  if (!data) return null;
+  return estadoClinicoEm(jogadorId, data, (clinico || []).filter(o => o && o.inicio !== data));
+}
+
 /* Texto curto para o aviso, sem obrigar quem o mostra a montar a frase.
    Ex.: "Indisponível desde 21/08 · Lesão muscular (coxa)". */
 export function resumoClinico(estado, { comNivel = true } = {}) {

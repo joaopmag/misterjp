@@ -5,9 +5,9 @@ import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState } from 'react';
 import { useIsMobile, Modal, FIELD_GRID, Field, Select, Input, Btn } from '../base/ui';
 import { todayStr } from '../base/utilidades';
-import { FRIENDLY, competitionLabel } from '../dominio/jogos';
+import { FRIENDLY, competitionLabel, convocadosDoJogo } from '../dominio/jogos';
 import { T } from '../base/tema';
-import { estadoClinicoEm } from '../dominio/clinico';
+import { estadoClinicoParaJogo } from '../dominio/clinico';
 import { sortByPosition } from '../dominio/jogadores';
 import { Check } from 'lucide-react';
 import { CartaoPlanoDoJogo, EscalacaoNoCampo, castigadosParaJogo, comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao, withConvocadosInAttendance } from './Escalacao';
@@ -33,7 +33,8 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
     // `?? ''` evita que o textarea passe de não-controlado a controlado
     // à primeira letra escrita (aviso do React e cursor a saltar).
     ideias: (match && match.ideias) || '',
-    convocados: (match && match.convocados) || [],
+    // Quem tem minutos no relatório volta à lista (ver `convocadosDoJogo`).
+    convocados: match ? convocadosDoJogo(match) : [],
     starters: (match && match.starters) || [],
     report: (match && match.report) || {},
   }));
@@ -98,7 +99,27 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
   /* ESCALAÇÃO NO CAMPO: os lugares viram `alinhamento` + `starters`; o
      banco são os restantes convocados. Quem sai da convocatória perde o
      relatório e a braçadeira, como no clique da lista antiga. */
-  const escalacao = escalacaoDoJogo(f, players);
+  /* AMIGÁVEL: VÃO TODOS. Quem não está no onze é suplente, fizesse ou não
+     minutos. Ficam de fora só os indisponíveis nesse dia (Boletim Clínico;
+     uma lesão do próprio dia não conta — ver `estadoClinicoParaJogo`) e
+     quem tem falta, L ou escalão marcado nas Presenças deste jogo. */
+  const ausentesAmigavel = eAmigavel ? new Map([
+    ...(f.escalao || []).map(id => [id, 'Escalão']),
+    ...(f.lesionados || []).map(id => [id, 'Lesionado']),
+    ...(f.faltas || []).map(id => [id, 'Falta']),
+  ]) : null;
+  const escalacaoBase = escalacaoDoJogo(f, players);
+  const escalacao = (() => {
+    if (!eAmigavel) return escalacaoBase;
+    const usados = new Set([...escalacaoBase.slots.filter(Boolean), ...escalacaoBase.banco]);
+    const extra = sortByPosition(players.filter(p => !usados.has(p.id) && !ausentesAmigavel.has(p.id)
+      && !((estadoClinicoParaJogo(p.id, f.date, clinico) || {}).avisaJogo))).map(p => p.id);
+    return { ...escalacaoBase, banco: [...escalacaoBase.banco, ...extra] };
+  })();
+  // O que se grava: num amigável, os convocados são o onze e o banco todo.
+  const paraGravar = () => withConvocadosInAttendance(eAmigavel
+    ? { ...f, convocados: [...new Set([...(f.convocados || []), ...escalacao.slots.filter(Boolean), ...escalacao.banco])] }
+    : f);
   const aplicarEscalacao = ({ slots, banco }) => setF(prev => {
     const starters = slots.filter(Boolean);
     const convocados = [...starters, ...banco];
@@ -149,7 +170,8 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
     });
   };
 
-  const convocadoPlayers = players.filter(p => f.convocados.includes(p.id));
+  const noJogo = eAmigavel ? new Set([...f.convocados, ...escalacao.slots.filter(Boolean), ...escalacao.banco]) : new Set(f.convocados);
+  const convocadoPlayers = players.filter(p => noJogo.has(p.id));
 
   return (
     <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide xwide fullPage>
@@ -235,7 +257,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
           {/* Largura fixa e números de largura igual: escolher ou limpar
               convocados já não empurra os botões e a caixa ao lado. */}
           <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', minWidth: '13.5em', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-            {eAmigavel ? 'Presenças' : 'Convocados'} · {f.convocados.length}/{players.length}
+            {eAmigavel ? 'Presenças' : 'Convocados'} · {noJogo.size}/{players.length}
           </span>
           {players.length > 0 && (
             <SelectAllBar
@@ -247,7 +269,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
                 // está de fora.
                 const castigoJ = castigadosParaJogo(matches, f.date, f.id);
                 const disponiveis = players.filter(p => {
-                  const estado = estadoClinicoEm(p.id, f.date, clinico);
+                  const estado = estadoClinicoParaJogo(p.id, f.date, clinico);
                   return !(estado && estado.avisaJogo) && !castigoJ.has(p.id);
                 });
                 const ids = sortByPosition(disponiveis).map(p => p.id);
@@ -301,6 +323,9 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
           clinico={clinico}
           data={f.date}
           castigados={castigadosParaJogo(matches, f.date, f.id)}
+          amigavel={eAmigavel}
+          ausentes={ausentesAmigavel}
+          minutos={Object.fromEntries(Object.entries(f.report || {}).map(([pid, r]) => [pid, r && r.minutes]))}
         />
       </div>
 
@@ -325,7 +350,7 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.date} onClick={() => { limpar(); onSave(withConvocadosInAttendance(f)); }}><Check size={15} /> Guardar jogo</Btn>
+        <Btn disabled={!f.date} onClick={() => { limpar(); onSave(paraGravar()); }}><Check size={15} /> Guardar jogo</Btn>
       </div>
     </Modal>
   );

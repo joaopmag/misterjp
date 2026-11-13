@@ -4,7 +4,7 @@
 import { sortByPosition } from '../dominio/jogadores';
 import { uid } from '../base/utilidades';
 import { T } from '../base/tema';
-import { competitionLabel, isFriendlyMatch, FRIENDLY } from '../dominio/jogos';
+import { competitionLabel, isFriendlyMatch, FRIENDLY, convocadosDoJogo } from '../dominio/jogos';
 import { distribuirOnzeNoCampo, tamanhoDaFormacao, FORMACOES, preencherPorFamilia } from '../tatico/Simulador';
 import { TODOS_OS_JOGADORES } from './Escalacao';
 
@@ -32,7 +32,7 @@ export const CARD_OPTIONS = [
 export function eventosDoJogo(match, players, duracao = 90) {
   const report = (match && match.report) || {};
   const ratingsPresencas = (match && match.ratings) || {};
-  const convocados = (match && match.convocados) || [];
+  const convocados = convocadosDoJogo(match);
   const titularesIds = (match && match.starters) || [];
 
   const doJogador = (pid) => {
@@ -737,7 +737,11 @@ export function podarPresencasForaDosConvocados(match) {
     ? { ...match, starters: match.starters.filter(id => validos.has(id)) }
     : match;
   const podado = { ...alinharLugaresComTitulares(base0) };
-  ['attendance', 'faltas', 'lesionados', 'escalao'].forEach(campo => {
+  /* Num amigável vão todos: falta, L e escalão marcados nas Presenças são
+     precisamente quem NÃO foi, por isso não se apagam por não estarem nos
+     convocados. */
+  const campos = isFriendlyMatch(match) ? ['attendance'] : ['attendance', 'faltas', 'lesionados', 'escalao'];
+  campos.forEach(campo => {
     if (Array.isArray(podado[campo])) {
       podado[campo] = podado[campo].filter(id => validos.has(id));
     }

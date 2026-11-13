@@ -31,3 +31,23 @@ export function jogoRealDaSessao(s, matches) {
     || null;
 }
 
+
+/* QUEM JOGOU ESTEVE NO JOGO. Um jogador com minutos registados no
+   relatório (`report[pid].minutes` > 0) fez parte do jogo, mesmo que a
+   lista de convocados o tenha perdido (por exemplo, ao marcar um L ou uma
+   falta nas presenças desse dia, que tira o jogador dos convocados mas
+   deixa os minutos). Sem isto, ele aparecia em "Não convocados", sem os
+   minutos, e ficava de fora das estatísticas e da ficha do jogo. */
+export function idsComMinutos(m) {
+  const report = (m && m.report) || {};
+  return Object.keys(report).filter(pid => {
+    const min = Number(report[pid] && report[pid].minutes);
+    return Number.isFinite(min) && min > 0;
+  });
+}
+
+export function convocadosDoJogo(m) {
+  const base = (m && m.convocados) || [];
+  const extra = idsComMinutos(m).filter(pid => !base.includes(pid));
+  return extra.length ? [...base, ...extra] : base;
+}

@@ -6,7 +6,7 @@ import { mono, T, display, body, T_ESCURO } from '../base/tema';
 import React, { useState } from 'react';
 import { LAYOUT_FORMACAO, rotuloDoLugar, distribuirOnzeNoCampo, FORMACOES } from '../tatico/Simulador';
 import { fmtDate, escapeHtmlText, todayStr } from '../base/utilidades';
-import { competitionLabel, isFriendlyMatch } from '../dominio/jogos';
+import { competitionLabel, isFriendlyMatch, convocadosDoJogo } from '../dominio/jogos';
 import { useIsMobile, Modal, Select, Btn, EmptyState } from '../base/ui';
 import { useArrastarParaTrocar } from '../base/arrastar';
 import { Pencil, Share2, Printer } from 'lucide-react';
@@ -466,7 +466,7 @@ export function escalacaoComFotosHtml(match, players) {
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
   const usados = new Set(colocados.filter(Boolean).map(p => p.id));
   const numDe = (p) => (Number.isFinite(Number(p.number)) && String(p.number).trim() !== '' ? Number(p.number) : Infinity);
-  const banco = (match.convocados || []).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean)
+  const banco = convocadosDoJogo(match).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean)
     .sort((a, b) => numDe(a) - numDe(b) || String(a.name || '').localeCompare(String(b.name || ''), 'pt'));
   const nomeCurto = (p) => escapeHtmlText(shortPlayerName(p, players));
   /* Acontecimentos junto de cada jogador (só num jogo já com minutos). */
@@ -942,7 +942,7 @@ export function FichaJogo({ match, players: playersAtivosDoJogo, season, onClose
                 de imediato à pergunta que se está a fazer: quem está a
                 jogar e quem pode entrar. */}
             {(() => {
-              const doJogo = (match.convocados || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+              const doJogo = convocadosDoJogo(match).map(id => players.find(p => p.id === id)).filter(Boolean);
               const emCampoIds = new Set(colocados.filter(Boolean).map(p => p.id));
               return [
                 ...sortByPosition(doJogo.filter(p => emCampoIds.has(p.id))),
@@ -966,7 +966,7 @@ export function FichaJogo({ match, players: playersAtivosDoJogo, season, onClose
                     // sozinho (ex.: Cadilhe ↔ Cardoso).
                     if (jaOnde < 0 && onEscalacao) {
                       const titulares = ids.filter(Boolean);
-                      const banco = (match.convocados || []).filter(id => !titulares.includes(id));
+                      const banco = convocadosDoJogo(match).filter(id => !titulares.includes(id));
                       onEscalacao({ alinhamento: ids, starters: titulares, convocados: [...titulares, ...banco] });
                     } else {
                       onAlinhamento(ids);

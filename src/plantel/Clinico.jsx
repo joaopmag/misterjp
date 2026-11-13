@@ -1,6 +1,7 @@
 // plantel/Clinico.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { idsComMinutos } from '../dominio/jogos';
 import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import React, { useState } from 'react';
 import { todayStr, uid, fmtDate, fmtShort } from '../base/utilidades';
@@ -300,7 +301,15 @@ export function diasDaOcorrencia({ ocorrencia, sessions, matches, playerId }) {
 
   const alvos = [];
   (matches || []).forEach(m => {
-    if (m.date) alvos.push({ tipo: 'match', id: m.id, date: m.date, fechado: !!m.attendanceClosed, lesionados: m.lesionados || [] });
+    /* Jogo em que ele está ou jogou: não leva L.
+       · Lesão no próprio dia do jogo: se estava no onze ou no banco, fica
+         lá. Só passa a indisponível no dia seguinte. Marcar L tirava-o dos
+         convocados e, à gravação seguinte, também do onze (o lugar ficava
+         "livre" e os minutos escondidos).
+       · Qualquer jogo em que tenha minutos registados: jogou. */
+    const naEquipa = [...(m.convocados || []), ...(m.starters || []), ...(m.alinhamento || [])].includes(playerId);
+    const jogou = idsComMinutos(m).includes(playerId) || (m.date === inicio && naEquipa);
+    if (m.date && !jogou) alvos.push({ tipo: 'match', id: m.id, date: m.date, fechado: !!m.attendanceClosed, lesionados: m.lesionados || [] });
   });
   (sessions || []).forEach(x => {
     // A sessão de um amigável não conta: o jogo já tem a sua coluna nas

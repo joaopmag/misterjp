@@ -1,9 +1,10 @@
 // competicao/Jogos.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { RepararJogos } from './RepararJogos';
 import React, { useRef, useState, useEffect } from 'react';
 import { todayStr, addDays, uid, fmtDate } from '../base/utilidades';
-import { competitionLabel, isFriendlyMatch } from '../dominio/jogos';
+import { competitionLabel, isFriendlyMatch, convocadosDoJogo } from '../dominio/jogos';
 import { trocarJanela, removeWithUndo, itemLabel, Btn, SectionHeader, EmptyState } from '../base/ui';
 import { Plus, Trophy, ClipboardList, Pencil, Share2, Printer, Trash2 } from 'lucide-react';
 import { body, TEXT_ON_ACCENT, T } from '../base/tema';
@@ -226,6 +227,7 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
   return (
     <div>
       {cabecalhoJogos}
+      <RepararJogos matches={matches} players={players} onSave={save} />
 
       <div style={{ marginBottom: 20 }}>
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
@@ -257,7 +259,7 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
           )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {visiveis.map(m => {
-            const reports = m.convocados ? m.convocados.map(pid => (m.report && m.report[pid]) || {}) : [];
+            const reports = convocadosDoJogo(m).map(pid => (m.report && m.report[pid]) || {});
             const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
             return (
               /* O cartão inteiro abre a ficha do jogo. O lápis continua a
