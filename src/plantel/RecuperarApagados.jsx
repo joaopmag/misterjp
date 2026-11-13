@@ -188,6 +188,23 @@ export function RecuperarApagados({ players, setPlayers, matches, setMatches, se
                 {c.treinos > 0 && <li>{c.treinos} {c.treinos === 1 ? 'treino' : 'treinos'} (presenças)</li>}
                 {c.convocatorias > 0 && <li>{c.convocatorias} {c.convocatorias === 1 ? 'convocatória' : 'convocatórias'}</li>}
               </ul>
+              {(() => {
+                // Quais jogos, para se reconhecer quem era (sobretudo quando o nome não ficou no histórico).
+                const ids = [...new Set(aRepor.registos.filter(r => r.tabela === 'matches').map(r => r.registoId))];
+                const doOnze = new Set(aRepor.registos.filter(r => r.tabela === 'matches' && r.saiu.lugar !== undefined).map(r => r.registoId));
+                const jogos = ids.map(id => (matches || []).find(m => String(m.id) === id)).filter(Boolean)
+                  .sort((x, y) => String(x.date || '').localeCompare(String(y.date || '')));
+                if (!jogos.length) return null;
+                const f = aRepor.ficha || {};
+                return (
+                  <div style={{ margin: '0 0 12px', fontSize: 12.5, color: T.muted }}>
+                    {(f.position || f.number) && <div style={{ marginBottom: 4 }}>Ficha: {[f.position, f.number && `n.º ${f.number}`].filter(Boolean).join(' · ')}</div>}
+                    {jogos.map(m => (
+                      <div key={m.id}>vs {m.opponent || 'Adversário'} · {fmtShort(m.date)}{doOnze.has(String(m.id)) ? ' · no onze' : ''}</div>
+                    ))}
+                  </div>
+                );
+              })()}
               <span style={{ color: T.mutedDim, fontSize: 12.5 }}>
                 Não voltam: a fotografia, e o bem-estar, PSE, boletim clínico e desenvolvimento que a limpeza apagou (o histórico não guarda esses valores).
                 Se o lugar dele no onze já estiver ocupado, fica no banco.
