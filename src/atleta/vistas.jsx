@@ -216,7 +216,9 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
         const d = lerJson(data);
         // Por ordem de criação, como no Canal — é o próprio visualizador
         // (`recentesPrimeiro`) que mostra o mais recente primeiro.
-        setVideosState(((d && d.videos) || []).slice());
+        // Os jogos só da Análise (`daAnalise`) não são para o Portal (a função
+        // da base também os tira; isto é a segunda barreira).
+        setVideosState(((d && d.videos) || []).filter(v => v && !v.daAnalise));
         setEstado('pronto');
       } catch (e) {
         if (!cancelado) setEstado(prev => (prev === 'pronto' ? prev : 'erro'));

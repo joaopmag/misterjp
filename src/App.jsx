@@ -565,7 +565,19 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [teamId, setVideosOriginais, ficheiroOriginalDisponivel, prepararOriginal, confirmarOriginalDepois]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
-  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId);
+  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId && !v.daAnalise);
+  /* JOGOS POR LINK NA ANÁLISE DE VÍDEO (14/11). Vídeos do YouTube (ou
+     outros links) que o staff põe na Análise para trabalhar — cortes e
+     desenho com a mesma ferramenta da Sala de Vídeo. Vivem na mesma
+     tabela `videos`, marcados `daAnalise`, e por isso NÃO aparecem no
+     Canal nem no Portal até serem publicados na Sala. Tudo o que se cria
+     cá dentro (cortes incluídos) leva a marca. */
+  const [videosAnalise, setVideosAnaliseBase] = useSubColecao(videos, setVideos, v => !!v.daAnalise && !v.adversarioId && !v.scoutId);
+  const setVideosAnalise = (novoOuFn) => setVideosAnaliseBase(prev => {
+    const novo = typeof novoOuFn === 'function' ? novoOuFn(prev) : novoOuFn;
+    return novo.map(v => (v.daAnalise ? v : { ...v, daAnalise: true }));
+  });
+  const linksAnaliseRef = useRef(null);
   // Referências para o botão partilhado da Biblioteca (na mesma linha dos
   // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
   // duplicar o botão dentro de cada sub-aba.
@@ -1036,7 +1048,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      FICHA da equipa — e vê-se também no Canal › Adversários. */
   const destinosSala = React.useMemo(() => {
     const pastas = Array.from(new Set((videos || [])
-      .filter(v => v && !v.adversarioId && v.categoria !== 'jogo' && v.categoria !== 'adversario' && cleanFolder(v.pasta) && semAcentos(cleanFolder(v.pasta)) !== 'adversarios')
+      .filter(v => v && !v.adversarioId && !v.daAnalise && v.categoria !== 'jogo' && v.categoria !== 'adversario' && cleanFolder(v.pasta) && semAcentos(cleanFolder(v.pasta)) !== 'adversarios')
       .map(v => cleanFolder(v.pasta)))).sort((a, b) => a.localeCompare(b, 'pt'));
     const jogos = [...(matches || [])].filter(m => m && m.opponent)
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
@@ -1723,7 +1735,18 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
+              nLinks={videosAnalise.filter(v => !ehClipe(v)).length}
+              abrirNovoLink={() => { if (linksAnaliseRef.current) linksAnaliseRef.current.abrirNovo(); }}
+              painelLinks={(
+                <MediaLibrary
+                  ref={linksAnaliseRef}
+                  items={videosAnalise} setItems={setVideosAnalise}
+                  addLabel="Adicionar link" addButtonVariant="ghost" recentesPrimeiro
+                  emptyText="Ainda sem jogos por link. Cola o link do YouTube de um jogo para fazeres cortes e desenhos, como na Sala de Vídeo. Fica só na Análise (os jogadores não veem)."
+                  emptyFirstLabel="Adicionar o primeiro link"
+                />
+              )} />
             {/* Por cima da bancada da Análise (z-index alto) e DENTRO do ecrã
                 inteiro, se estiver ligado: fora dele a janela não se via e o
                 pedido ficava preso em "A preparar a ficha do adversário…". */}
@@ -1766,7 +1789,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 value={biblioteca}
                 onChange={setBiblioteca}
                 tabs={[
-                  { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
+                  { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).filter(v => !v.daAnalise).length },
                   { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
                 ]}
                 semMargem

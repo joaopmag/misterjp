@@ -229,7 +229,7 @@ export function PlayerCacifo({
         let d = data;
         if (Array.isArray(d)) d = d[0];
         if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
-        const videos = ((d && d.videos) || []).slice();
+        const videos = ((d && d.videos) || []).filter(v => v && !v.daAnalise); // os da Análise não são para o Portal
         const antiga = lerCacheCacifo(chaveBib) || {};
         gravarCacheCacifo(chaveBib, { videos, meus: Array.isArray(antiga.meus) ? antiga.meus : [] });
         gravarCacheCacifo(chaveT, Date.now());

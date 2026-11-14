@@ -7,7 +7,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download, LayoutGrid, Ruler,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download, LayoutGrid, Ruler, Link2,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -2903,7 +2903,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, painelLinks = null, nLinks = 0, abrirNovoLink = null }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -4782,6 +4782,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
             {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
           </button>
+          {/* Jogo por link (YouTube…): fica no separador "Jogos por link",
+              com a ferramenta de cortes e desenho da Sala de Vídeo. */}
+          {painelLinks && (
+            <button onClick={() => { setSeparadorClipes('links'); if (abrirNovoLink) abrirNovoLink(); }}
+              style={{
+                width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', fontSize: 12,
+              }}>
+              <Link2 size={16} />
+              Adicionar link (YouTube)
+            </button>
+          )}
         </div>
         {videosOriginais.length > porLinhaOriginais * 2 - 1 && (
           <button onClick={() => setVerTodosOriginais(v => !v)}
@@ -5405,6 +5417,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           {[
             { id: 'staff', label: `Cortes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
             { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
+            ...(painelLinks ? [{ id: 'links', label: `Jogos por link (${nLinks})`, Icon: Link2 }] : []),
           ].map(({ id, label, Icon }) => {
             const on = separadorClipes === id;
             return (
@@ -5422,6 +5435,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             );
           })}
         </div>
+
+        {/* Sempre montado (escondido nos outros separadores), para o
+            "Adicionar link" poder abrir a janela de qualquer lado. */}
+        {painelLinks && (
+          <div style={{ display: separadorClipes === 'links' ? 'block' : 'none' }}>
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 12, ...body, lineHeight: 1.5 }}>
+              Jogos por link (YouTube e outros): cortes e desenhos com a mesma ferramenta da Sala de Vídeo (câmara lenta e paragens). Ficam só aqui, na Análise: os jogadores não os veem.
+            </div>
+            {painelLinks}
+          </div>
+        )}
 
         {separadorClipes === 'atletas' && (
           clipesAtletas.length === 0 ? (
