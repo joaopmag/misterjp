@@ -3447,12 +3447,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   }, [originalAtivo?.id, originalAtivo?.pronto, originalAtivo && abrirSemEsperar.has(originalAtivo.id)]);
 
   useEffect(() => {
+    // Outro vídeo: o tempo e a duração do anterior não podem ficar na
+    // barra (ex.: vinha de 21:12 num jogo de 43 min e o novo tem 25 s —
+    // a barra amarela aparecia cheia até se dar play).
+    setCurrent(0); setDuration(0); setPlaying(false);
     const v = videoRef.current;
     if (!v) return;
     const onTime = () => setCurrent(v.currentTime);
     const onMeta = () => {
       setDuration(v.duration || 0);
-      if (seekPendenteRef.current != null) { v.currentTime = seekPendenteRef.current; setCurrent(v.currentTime); seekPendenteRef.current = null; }
+      if (seekPendenteRef.current != null) { v.currentTime = seekPendenteRef.current; seekPendenteRef.current = null; }
+      setCurrent(v.currentTime || 0);
     };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
