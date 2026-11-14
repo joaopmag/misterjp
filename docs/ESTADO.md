@@ -170,6 +170,14 @@ ficheiro; usado nas duas gravações (separador e ficheiro). Testado com o
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
+**Travão "eliminação de 3 registos" nos Vídeos (14/11):** a sincronização
+Análise → fichas de adversário (`planoSincronizacaoFichas`, App.jsx) apaga
+as cópias automáticas de cortes que já não existem (ex.: apagar um vídeo
+na Análise apaga os cortes). Com 3 ou mais de uma vez, o travão bloqueava
+e o aviso aparecia sempre. Agora marca como `seguros` as cópias de cortes
+apagados e as repetidas, e só nesse caso autoriza (`autorizarRemocaoVideos`).
+Remoções por a ficha "não existir" continuam travadas.
+
 **"Os meus vídeos" em MP4 feito no servidor (13/11, à espera de "ok"):**
 quando o jogador guarda um vídeo só com clipes de vídeos carregados, o
 video-worker (`juntar.js`, rotas `/juntar`, `/juntar-apagar`,

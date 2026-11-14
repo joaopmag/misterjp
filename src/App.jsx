@@ -142,7 +142,13 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
   const autos = (videos || []).filter(v => v && v.origemAnalise && v.origemAnalise.auto && v.origemAnalise.clipeId);
   const autoPorClipe = new Map();
   const remover = new Set();
-  autos.forEach(v => { if (autoPorClipe.has(v.origemAnalise.clipeId)) remover.add(v.id); else autoPorClipe.set(v.origemAnalise.clipeId, v); });
+  /* `seguros`: remoções que não podem estar erradas mesmo com várias de
+     uma vez — cópias repetidas do mesmo corte, e cópias de cortes que já
+     não existem (ex.: apagar um vídeo na Análise apaga os cortes dele, e
+     com eles as cópias nas fichas). Servem para abrir o travão das
+     eliminações em massa só nestes casos. */
+  const seguros = new Set();
+  autos.forEach(v => { if (autoPorClipe.has(v.origemAnalise.clipeId)) { remover.add(v.id); seguros.add(v.id); } else autoPorClipe.set(v.origemAnalise.clipeId, v); });
   const clipesPorId = new Map((clipes || []).filter(Boolean).map(c => [c.id, c]));
   /* Envios À MÃO para a ficha (o botão "Sala de Vídeo › Adversários", de
      antes de os cortes irem sozinhos): passam a ser o mesmo envio. O clipe
@@ -201,8 +207,8 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
     criar.push({ id, ...desejado, origemAnalise: { clipeId: c.id, auto: true, em: new Date().toISOString() } });
     marcar.set(c.id, { envioFicha: { itemId: id, adversarioId: ficha.id }, ...extra });
   });
-  autos.forEach(v => { if (!clipesPorId.has(v.origemAnalise.clipeId)) remover.add(v.id); });
-  return { criar, atualizar, remover, marcar };
+  autos.forEach(v => { if (!clipesPorId.has(v.origemAnalise.clipeId)) { remover.add(v.id); seguros.add(v.id); } });
+  return { criar, atualizar, remover, marcar, seguros };
 }
 
 function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMudaram }) {
@@ -347,7 +353,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // prontos quando se abre o separador (sem aparecerem com atraso).
   const [necApiRaiz, setNecApiRaiz] = useState({ estado: 'a-verificar', itens: [], set: null, pronto: false, autorizar: null });
   const [adversarios, setAdversarios, adversariosReady, adversariosMeta] = useCollectionSync('adversarios', notifyEdit, teamId);
-  const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
+  const [videos, setVideos, videosReady, videosMeta, autorizarRemocaoVideos] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady, documentosMeta] = useCollectionSync('documentos', notifyEdit, teamId);
   const [videosOriginais, setVideosOriginais, , videosOriginaisMeta] = useCollectionSync('video_originais', notifyEdit, teamId);
   const [clipes, setClipes, clipesReady, clipesMeta] = useCollectionSync('video_clips', notifyEdit, teamId);
@@ -1069,11 +1075,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const nomeNossaEquipa = String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim();
   useEffect(() => {
     if (!videosReady || !clipesReady || !adversariosReady) return;
-    const { criar, atualizar, remover, marcar } = planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa);
+    const { criar, atualizar, remover, marcar, seguros } = planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa);
     if (!criar.length && !atualizar.size && !remover.size) {
       if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, ...marcar.get(c.id) } : c)));
       return;
     }
+    // Três ou mais remoções seguidas: só passam o travão se forem todas seguras.
+    if (remover.size >= 3 && [...remover].every(id => seguros.has(id))) autorizarRemocaoVideos();
     setVideos(prev => [...criar, ...(prev || []).filter(v => !remover.has(v.id)).map(v => atualizar.get(v.id) || v)]);
     if (marcar.size) setClipes(prev => (prev || []).map(c => (marcar.has(c.id) ? { ...c, ...marcar.get(c.id) } : c)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
