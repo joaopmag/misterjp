@@ -12,7 +12,7 @@ import { presentationKind } from './leitores';
 import { ficheiroParaAnexo } from '../base/anexos';
 import { CamadasFixas } from './acoes';
 
-export function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo, modoCanal, matches, adversarios, iniciais, equipasCompeticao }) {
+export function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo, modoCanal, matches, adversarios, iniciais, equipasCompeticao, soLink }) {
   // Só para acertar o recuo do rodapé fixo (ver o botão Guardar mais
   // abaixo) com o padding do Modal, que muda entre telemóvel e ecrã
   // largo — tem de ser o mesmo valor dos dois lados.
@@ -134,11 +134,13 @@ export function MediaModal({ item, onClose, onSave, folders = [], defaultFolder 
 
   return (
     <Modal title={item ? 'Editar item' : 'Novo item'} onClose={onClose}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      {/* `soLink` (Análise de Vídeo): só link — o ficheiro carrega-se no
+          cartão "Adicionar vídeo" da própria Análise. */}
+      {!soLink && <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Vídeo</button>
         <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro</button>
         <button onClick={() => { setSource('drive'); setError(''); }} style={tabBtnStyle('drive')}>Google Drive</button>
-      </div>
+      </div>}
 
       {modoCanal && (
         <div style={{ marginBottom: 14 }}>

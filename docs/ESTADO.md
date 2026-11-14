@@ -170,9 +170,12 @@ ficheiro; usado nas duas gravações (separador e ficheiro). Testado com o
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
-**Jogos por link na Análise de Vídeo (14/11, passo 1 do plano):** cartão
-"Adicionar link (YouTube)" ao lado de "Carregar vídeo" e separador "Jogos
-por link". É um `MediaLibrary` (o mesmo leitor, cortes e desenho com
+**Jogos por link na Análise de Vídeo (14/11, passo 1 do plano):** um só
+cartão "Adicionar vídeo" (escolhe Carregar ficheiro ou Link do YouTube; a
+janela do link é só link, `soLink`). Os jogos por link aparecem na mesma
+grelha dos carregados, com o mesmo cartão (imagem do YouTube, lápis, ✕,
+"YouTube · na Sala" quando publicado); ao abrir vão para o separador "Jogos
+por link" (só aparece quando há algum). É um `MediaLibrary` (o mesmo leitor, cortes e desenho com
 paragens da Sala de Vídeo) sobre a fatia `videosAnalise` da tabela
 `videos` (marca `daAnalise: true`, posta em tudo o que se cria lá dentro,
 cortes incluídos). Criado no App.jsx e passado à Análise como `painelLinks`

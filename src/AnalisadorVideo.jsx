@@ -2903,7 +2903,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, painelLinks = null, nLinks = 0, abrirNovoLink = null }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, painelLinks = null, nLinks = 0, abrirNovoLink = null, jogosLink = [], abrirLink = null, apagarLink = null, renomearLink = null }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -3403,6 +3403,56 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Lista dos vídeos: do mais recente para o mais antigo (data de carregamento).
   const originaisPorData = React.useMemo(() => [...videosOriginais].sort((a, b) =>
     (new Date(b.criadoEm || 0).getTime() || 0) - (new Date(a.criadoEm || 0).getTime() || 0)), [videosOriginais]);
+  /* A GRELHA DE JOGOS: carregados (ficheiro) e por link (YouTube) juntos,
+     o mais recente primeiro, com o mesmo cartão. */
+  const grelhaJogos = React.useMemo(() => [
+    ...videosOriginais.map(v => ({ tipo: 'ficheiro', v, em: v.criadoEm })),
+    ...(jogosLink || []).map(v => ({ tipo: 'link', v, em: v.criadoEm })),
+  ].sort((a, b) => (new Date(b.em || 0).getTime() || 0) - (new Date(a.em || 0).getTime() || 0)), [videosOriginais, jogosLink]);
+  const [escolherAdicionar, setEscolherAdicionar] = useState(false);
+  // Sem jogos por link, o separador deles some — não pode ficar escolhido.
+  useEffect(() => { if (nLinks === 0 && separadorClipes === 'links') setSeparadorClipes('staff'); }, [nLinks, separadorClipes]);
+  const botaoEscolha = {
+    display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '6px 8px', borderRadius: 6, cursor: 'pointer',
+    background: 'transparent', border: `1px solid ${T.line}`, color: T.cream, fontSize: 12, ...body,
+  };
+  // Cartão de um jogo por link: igual ao dos carregados (imagem, nome,
+  // lápis para mudar o nome, estado e ✕). Abre no separador "Jogos por link".
+  const cartaoLink = (v) => (
+    <div key={v.id} role="button" tabIndex={0} onClick={() => { setSeparadorClipes('links'); if (abrirLink) abrirLink(v.id); }}
+      onKeyDown={e => { if (e.key === 'Enter') { setSeparadorClipes('links'); if (abrirLink) abrirLink(v.id); } }}
+      style={{
+        display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
+        borderRadius: 10, border: `1px solid ${T.line}`, background: T.surface,
+      }}>
+      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+        {v.youtubeId ? (
+          <img src={`https://img.youtube.com/vi/${v.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Link2 size={20} color={T.mutedDim} /></div>
+        )}
+      </div>
+      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {editandoNomeId === v.id ? (
+          <input autoFocus value={nomeEditado} onChange={e => setNomeEditado(e.target.value)} onClick={e => e.stopPropagation()}
+            onKeyDown={e => { if (e.key === 'Enter') { if (renomearLink && nomeEditado.trim()) renomearLink(v.id, nomeEditado.trim()); setEditandoNomeId(null); } if (e.key === 'Escape') setEditandoNomeId(null); }}
+            onBlur={() => { if (renomearLink && nomeEditado.trim()) renomearLink(v.id, nomeEditado.trim()); setEditandoNomeId(null); }}
+            style={{ width: '100%', background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.crimsonBright}`, borderRadius: 4, padding: '3px 6px', fontSize: 12.5, ...body }} />
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{v.title || 'Jogo'}</span>
+            <Pencil size={11} color={T.mutedDim} style={{ flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }} />
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+          <span style={{ fontSize: 11, color: v.publicado ? T.gold : T.mutedDim, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Link2 size={11} /> {v.publicado ? 'YouTube · na Sala' : 'YouTube'}
+          </span>
+          {apagarLink && <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarLink(v); }} />}
+        </div>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     const aoMudar = () => setFullscreen(!!document.fullscreenElement);
@@ -4726,7 +4776,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {/* DUAS LINHAS de vídeos carregados; o cartão "Carregar vídeo" é o
             último da 2.ª linha. Com mais vídeos, "Ver mais" abre o resto. */}
         <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-          {(verTodosOriginais ? originaisPorData : originaisPorData.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(v => (
+          {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
             <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
               style={{
                 display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
@@ -4773,34 +4823,44 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               </div>
             </button>
-          ))}
-          <button onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}
-            style={{
+          )))}
+          {/* UM SÓ CARTÃO para pôr um jogo: ficheiro (carregar) ou link do
+              YouTube. Com um carregamento a decorrer mostra o progresso. */}
+          <div style={{
               width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploadVideoEstado?.ativo ? 'not-allowed' : 'pointer', fontSize: 12,
+              display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 6, fontSize: 12, padding: escolherAdicionar ? 8 : 0,
             }}>
-            {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-            {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
-          </button>
-          {/* Jogo por link (YouTube…): fica no separador "Jogos por link",
-              com a ferramenta de cortes e desenho da Sala de Vídeo. */}
-          {painelLinks && (
-            <button onClick={() => { setSeparadorClipes('links'); if (abrirNovoLink) abrirNovoLink(); }}
-              style={{
-                width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', fontSize: 12,
-              }}>
-              <Link2 size={16} />
-              Adicionar link (YouTube)
-            </button>
-          )}
+            {uploadVideoEstado?.ativo ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: 10 }}>
+                <Loader2 size={16} className="spin" />
+                {uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`}
+              </div>
+            ) : escolherAdicionar ? (
+              <>
+                <button type="button" onClick={() => { setEscolherAdicionar(false); fileInputRef.current?.click(); }} style={botaoEscolha}>
+                  <Upload size={14} /> Carregar ficheiro
+                </button>
+                <button type="button" onClick={() => { setEscolherAdicionar(false); if (abrirNovoLink) abrirNovoLink(); }} style={botaoEscolha}>
+                  <Link2 size={14} /> Link do YouTube
+                </button>
+                <button type="button" onClick={() => setEscolherAdicionar(false)} style={{ ...botaoEscolha, border: 'none', justifyContent: 'center', color: T.mutedDim, padding: '2px 0' }}>Cancelar</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => (painelLinks ? setEscolherAdicionar(true) : fileInputRef.current?.click())}
+                style={{ flex: 1, minHeight: 62, background: 'none', border: 'none', color: T.muted, cursor: 'pointer', ...body, fontSize: 12,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                <Upload size={16} />
+                Adicionar vídeo
+              </button>
+            )}
+          </div>
         </div>
-        {videosOriginais.length > porLinhaOriginais * 2 - 1 && (
+        {grelhaJogos.length > porLinhaOriginais * 2 - 1 && (
           <button onClick={() => setVerTodosOriginais(v => !v)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '2px 0', marginBottom: 6, ...body }}>
             {verTodosOriginais
               ? <><ChevronUp size={14} /> Ver menos</>
-              : <><ChevronDown size={14} /> Ver mais ({videosOriginais.length - (porLinhaOriginais * 2 - 1)})</>}
+              : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais * 2 - 1)})</>}
           </button>
         )}
         </>
@@ -5417,7 +5477,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           {[
             { id: 'staff', label: `Cortes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
             { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
-            ...(painelLinks ? [{ id: 'links', label: `Jogos por link (${nLinks})`, Icon: Link2 }] : []),
+            ...(painelLinks && nLinks > 0 ? [{ id: 'links', label: `Jogos por link (${nLinks})`, Icon: Link2 }] : []),
           ].map(({ id, label, Icon }) => {
             const on = separadorClipes === id;
             return (
@@ -5439,7 +5499,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {/* Sempre montado (escondido nos outros separadores), para o
             "Adicionar link" poder abrir a janela de qualquer lado. */}
         {painelLinks && (
-          <div style={{ display: separadorClipes === 'links' ? 'block' : 'none' }}>
+          // Escondido com altura 0 (e não display:none): a janela de
+          // "Adicionar link" (posição fixa) tem de aparecer na mesma.
+          <div style={separadorClipes === 'links' ? undefined : { height: 0, overflow: 'hidden' }}>
             <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 12, ...body, lineHeight: 1.5 }}>
               Jogos por link (YouTube e outros): cortes e desenhos com a mesma ferramenta da Sala de Vídeo (câmara lenta e paragens). Ficam só aqui, na Análise, até carregares em "Publicar": aí passam também para a Sala de Vídeo e o Portal dos jogadores (e continuam aqui).
             </div>

@@ -576,7 +576,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [videosAnalise, setVideosAnaliseBase] = useSubColecao(videos, setVideos, v => !!v.daAnalise && !v.adversarioId && !v.scoutId);
   const setVideosAnalise = (novoOuFn) => setVideosAnaliseBase(prev => {
     const novo = typeof novoOuFn === 'function' ? novoOuFn(prev) : novoOuFn;
-    return novo.map(v => (v.daAnalise ? v : { ...v, daAnalise: true }));
+    // `criadoEm` para ordenar os cartões na Análise junto dos carregados.
+    return novo.map(v => (v.daAnalise && v.criadoEm ? v : { ...v, daAnalise: true, criadoEm: v.criadoEm || new Date().toISOString() }));
   });
   const linksAnaliseRef = useRef(null);
   const publicarDaAnalise = (id, sim) => setVideos(prev => (prev || []).map(v => (v.id === id ? { ...v, publicado: !!sim } : v)));
@@ -1739,12 +1740,22 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
               nLinks={videosAnalise.filter(v => !ehClipe(v)).length}
+              jogosLink={videosAnalise.filter(v => !ehClipe(v))}
               abrirNovoLink={() => { if (linksAnaliseRef.current) linksAnaliseRef.current.abrirNovo(); }}
+              abrirLink={(id) => { if (linksAnaliseRef.current) linksAnaliseRef.current.irParaItem(id); }}
+              renomearLink={(id, nome) => setVideosAnalise(prev => prev.map(v => (v.id === id ? { ...v, title: nome } : v)))}
+              apagarLink={(v) => askConfirm({
+                title: 'Apagar jogo?',
+                label: `Jogo "${v.title || 'sem nome'}"`,
+                note: v.publicado ? 'Está publicado: sai também da Sala de Vídeo e do Portal. Os cortes já feitos mantêm-se.' : 'Os cortes já feitos mantêm-se.',
+                confirmLabel: 'Apagar',
+                onConfirm: () => setVideosAnalise(prev => prev.filter(x => x.id !== v.id)),
+              })}
               painelLinks={(
                 <MediaLibrary
                   ref={linksAnaliseRef}
                   items={videosAnalise} setItems={setVideosAnalise}
-                  addLabel="Adicionar link" addButtonVariant="ghost" recentesPrimeiro
+                  addLabel="Adicionar link" addButtonVariant="ghost" recentesPrimeiro semBotaoTopo soLink
                   publicarNaSala={publicarDaAnalise}
                   emptyText="Ainda sem jogos por link. Cola o link do YouTube de um jogo para fazeres cortes e desenhos, como na Sala de Vídeo. Fica só na Análise até carregares em «Publicar» (aí passa também para a Sala de Vídeo e o Portal)."
                   emptyFirstLabel="Adicionar o primeiro link"

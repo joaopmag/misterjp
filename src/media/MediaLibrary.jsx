@@ -30,7 +30,7 @@ function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v))
 // O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
 function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
 
-export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, publicarNaSala }, ref) {
+export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, publicarNaSala, soLink }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -4758,6 +4758,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           semCatalogo={semCatalogo || (modal !== 'new' && !!modal.adversarioId)}
           onClose={() => setModal(null)}
           onSave={save}
+          soLink={soLink}
           modoCanal={modoCanal && !(modal !== 'new' && modal.adversarioId)}
           matches={matches}
           adversarios={adversarios}
