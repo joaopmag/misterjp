@@ -30,7 +30,7 @@ function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v))
 // O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
 function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
 
-export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi }, ref) {
+export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, publicarNaSala }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -2466,6 +2466,18 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
+          {/* Análise de Vídeo: pôr (ou tirar) este vídeo na Sala de Vídeo e no Portal. */}
+          {publicarNaSala && !soLeitura && (
+            <button type="button" onClick={() => publicarNaSala(v.id, !v.publicado)}
+              title={v.publicado ? 'Está na Sala de Vídeo e no Portal dos jogadores. Carrega para tirar (continua aqui na Análise).' : 'Pôr na Sala de Vídeo e no Portal dos jogadores (continua também aqui na Análise)'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body, fontSize: 11, fontWeight: 600,
+                padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+                border: `1px solid ${v.publicado ? T.gold : T.line}`, background: v.publicado ? `${T.gold}1F` : 'transparent', color: v.publicado ? T.gold : T.muted,
+              }}>
+              {v.publicado ? <><Check size={12} /> Na Sala</> : <><Plus size={12} /> Publicar</>}
+            </button>
+          )}
           {!soLeitura && !semCatalogo && modoCanal && (catDe(v) !== 'tema' || naFicha) && (
             // Jogos e adversários não vivem em pastas — mantém-se o lugar
             // do seletor, para os ícones continuarem alinhados em coluna.

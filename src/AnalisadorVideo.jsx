@@ -5441,7 +5441,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {painelLinks && (
           <div style={{ display: separadorClipes === 'links' ? 'block' : 'none' }}>
             <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 12, ...body, lineHeight: 1.5 }}>
-              Jogos por link (YouTube e outros): cortes e desenhos com a mesma ferramenta da Sala de Vídeo (câmara lenta e paragens). Ficam só aqui, na Análise: os jogadores não os veem.
+              Jogos por link (YouTube e outros): cortes e desenhos com a mesma ferramenta da Sala de Vídeo (câmara lenta e paragens). Ficam só aqui, na Análise, até carregares em "Publicar": aí passam também para a Sala de Vídeo e o Portal dos jogadores (e continuam aqui).
             </div>
             {painelLinks}
           </div>

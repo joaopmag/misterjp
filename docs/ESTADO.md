@@ -178,9 +178,12 @@ paragens da Sala de Vídeo) sobre a fatia `videosAnalise` da tabela
 cortes incluídos). Criado no App.jsx e passado à Análise como `painelLinks`
 (a Análise não pode importar o MediaLibrary: há import circular). Fica fora
 do Canal (`videosGerais` exclui `daAnalise`), das pastas de destino e do
-Portal (filtro na app em vistas.jsx e Cacifo.jsx; FALTA o filtro na função
-`checkin_biblioteca` e em `checkin_clipe_criar`, à espera da definição real
-de checkin_biblioteca). Plano seguinte: publicar da Análise para a Sala;
+Portal (filtro na app em vistas.jsx e Cacifo.jsx, e na base com
+`2026-11_07_jogos_da_analise.sql`: checkin_biblioteca não os devolve e
+checkin_clipe_criar recusa-os; testado no Postgres local). Botão "Publicar" em cada linha
+(`publicarNaSala` no MediaLibrary → `publicado: true`): o vídeo passa a
+aparecer também no Canal e no Portal, sem sair da Análise (mesmo registo;
+apagar no Canal apaga nos dois). "Na Sala" tira-o outra vez. Plano seguinte: publicar da Análise para a Sala;
 MP4 por clipe de jogador em jogos com ficheiro; quotas e limpeza do jogo
 inteiro aos 90 dias (decidido 14/11). Compressão do worker: 720p, 45 min ≈
 530 MB, 10 a 15 min a preparar (medido 14/11).

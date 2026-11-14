@@ -218,7 +218,7 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
         // (`recentesPrimeiro`) que mostra o mais recente primeiro.
         // Os jogos só da Análise (`daAnalise`) não são para o Portal (a função
         // da base também os tira; isto é a segunda barreira).
-        setVideosState(((d && d.videos) || []).filter(v => v && !v.daAnalise));
+        setVideosState(((d && d.videos) || []).filter(v => v && (!v.daAnalise || v.publicado)));
         setEstado('pronto');
       } catch (e) {
         if (!cancelado) setEstado(prev => (prev === 'pronto' ? prev : 'erro'));

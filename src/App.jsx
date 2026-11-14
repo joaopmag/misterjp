@@ -565,19 +565,21 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [teamId, setVideosOriginais, ficheiroOriginalDisponivel, prepararOriginal, confirmarOriginalDepois]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
-  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId && !v.daAnalise);
+  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId && (!v.daAnalise || !!v.publicado));
   /* JOGOS POR LINK NA ANÁLISE DE VÍDEO (14/11). Vídeos do YouTube (ou
      outros links) que o staff põe na Análise para trabalhar — cortes e
      desenho com a mesma ferramenta da Sala de Vídeo. Vivem na mesma
      tabela `videos`, marcados `daAnalise`, e por isso NÃO aparecem no
-     Canal nem no Portal até serem publicados na Sala. Tudo o que se cria
-     cá dentro (cortes incluídos) leva a marca. */
+     Canal nem no Portal até serem publicados na Sala ("Publicar" em cada
+     linha → `publicado: true`: fica nos dois sítios, é o mesmo registo).
+     Tudo o que se cria cá dentro (cortes incluídos) leva a marca. */
   const [videosAnalise, setVideosAnaliseBase] = useSubColecao(videos, setVideos, v => !!v.daAnalise && !v.adversarioId && !v.scoutId);
   const setVideosAnalise = (novoOuFn) => setVideosAnaliseBase(prev => {
     const novo = typeof novoOuFn === 'function' ? novoOuFn(prev) : novoOuFn;
     return novo.map(v => (v.daAnalise ? v : { ...v, daAnalise: true }));
   });
   const linksAnaliseRef = useRef(null);
+  const publicarDaAnalise = (id, sim) => setVideos(prev => (prev || []).map(v => (v.id === id ? { ...v, publicado: !!sim } : v)));
   // Referências para o botão partilhado da Biblioteca (na mesma linha dos
   // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
   // duplicar o botão dentro de cada sub-aba.
@@ -1048,7 +1050,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      FICHA da equipa — e vê-se também no Canal › Adversários. */
   const destinosSala = React.useMemo(() => {
     const pastas = Array.from(new Set((videos || [])
-      .filter(v => v && !v.adversarioId && !v.daAnalise && v.categoria !== 'jogo' && v.categoria !== 'adversario' && cleanFolder(v.pasta) && semAcentos(cleanFolder(v.pasta)) !== 'adversarios')
+      .filter(v => v && !v.adversarioId && (!v.daAnalise || v.publicado) && v.categoria !== 'jogo' && v.categoria !== 'adversario' && cleanFolder(v.pasta) && semAcentos(cleanFolder(v.pasta)) !== 'adversarios')
       .map(v => cleanFolder(v.pasta)))).sort((a, b) => a.localeCompare(b, 'pt'));
     const jogos = [...(matches || [])].filter(m => m && m.opponent)
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
@@ -1743,7 +1745,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                   ref={linksAnaliseRef}
                   items={videosAnalise} setItems={setVideosAnalise}
                   addLabel="Adicionar link" addButtonVariant="ghost" recentesPrimeiro
-                  emptyText="Ainda sem jogos por link. Cola o link do YouTube de um jogo para fazeres cortes e desenhos, como na Sala de Vídeo. Fica só na Análise (os jogadores não veem)."
+                  publicarNaSala={publicarDaAnalise}
+                  emptyText="Ainda sem jogos por link. Cola o link do YouTube de um jogo para fazeres cortes e desenhos, como na Sala de Vídeo. Fica só na Análise até carregares em «Publicar» (aí passa também para a Sala de Vídeo e o Portal)."
                   emptyFirstLabel="Adicionar o primeiro link"
                 />
               )} />
@@ -1789,7 +1792,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 value={biblioteca}
                 onChange={setBiblioteca}
                 tabs={[
-                  { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).filter(v => !v.daAnalise).length },
+                  { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).filter(v => !v.daAnalise || v.publicado).length },
                   { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
                 ]}
                 semMargem
