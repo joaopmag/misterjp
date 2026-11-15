@@ -232,12 +232,12 @@ link tem sempre a mesma altura.
 RONDA 15/11 (seis pontos): (1) Cortes: uma fila por jogo que desliza
 (`FilaDeslizante`), sem barra de scroll; a janela mostra só cartões
 inteiros e as setas ficam numa coluna à direita, fora dos cartões (snap
-ao início de cada cartão). (2) Clipes: abrir um clipe de link abre o
-leitor logo por baixo da fila desse jogo (`linkEmLinha`), com Fechar;
-nada acima mexe. O leitor (`painelLinksConteudo`) vive OU no palco OU
-ali, e volta a montar ao mudar (`abrirDepoisRef` abre o item depois).
-Lista do leitor em Links: cada jogo e por baixo os seus clipes
-(`clipOrigemId`), recolhidos; clipes sem jogo ficam no fim. (3) Barra amarela no 00:00 sem play: o YouTube só dá a
+ao início de cada cartão). (2) Clipes: abrir um clipe de link abre-o em cima, no palco, como o
+Estúdio abre o editor (`abrirClipeLinkNoPalco`): mesma cabeça "← Vídeos e
+clipes · título · Colar link" e a mesma moldura; só desliza até lá se
+estiver fora da vista. Lista do leitor em Links como num cartão da Sala:
+um bloco por jogo (título), "Jogo completo" e "Cortes (n)"; cortes sem
+jogo no fim. (3) Barra amarela no 00:00 sem play: o YouTube só dá a
 duração depois de tocar; `prepararDuracaoYoutube` (MediaLibrary) toca sem
 som até chegar a duração, pausa e volta ao ponto (máx. 6 s). Também lê
 `initialDelivery`. (4) Relatórios de Jogo: trocar Competição/Amigáveis não

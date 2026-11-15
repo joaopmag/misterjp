@@ -4783,23 +4783,33 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       ];
                     })
                   ) : soLink && !termo ? (() => {
-                    /* ANÁLISE (links): cada jogo e, logo por baixo, os seus
-                       clipes (recolhidos para a direita). Clipes de um jogo
-                       que já não está na lista ficam no fim. */
+                    /* ANÁLISE (links): como dentro de um cartão da Sala de
+                       Vídeo — um bloco por jogo, com o título em cima, o
+                       "Jogo completo" e depois os "Cortes" desse jogo.
+                       Cortes de um jogo que já não está na lista: no fim. */
                     const jogosL = visibleItems.filter(v => !ehClipe(v));
                     const ids = new Set(jogosL.map(v => v.id));
                     const clipesDe = (id) => visibleItems.filter(v => ehClipe(v) && v.clipOrigemId === id);
                     const soltos = visibleItems.filter(v => ehClipe(v) && !ids.has(v.clipOrigemId));
-                    const blocoClipes = (lista, chave) => lista.length > 0 && (
-                      <div key={chave} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 18, paddingLeft: 10, borderLeft: `2px solid ${T.line}` }}>
-                        {lista.map(renderRow)}
-                      </div>
+                    const cabeca = (chave, texto, primeiro) => (
+                      <span key={chave} style={{ flexShrink: 0, display: 'block', lineHeight: 1.4, fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: primeiro ? 0 : '8px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{texto}</span>
                     );
-                    return [
-                      ...jogosL.flatMap(j => [renderRow(j), blocoClipes(clipesDe(j.id), `c-${j.id}`)]),
-                      soltos.length > 0 && <span key="soltos-h" style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginTop: 6 }}>Clipes de outros vídeos</span>,
-                      blocoClipes(soltos, 'soltos'),
-                    ].filter(Boolean);
+                    const subCabeca = (chave, texto) => (
+                      <span key={chave} style={{ flexShrink: 0, display: 'block', lineHeight: 1.4, fontSize: 10, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>{texto}</span>
+                    );
+                    const out = [];
+                    jogosL.forEach((j, i) => {
+                      const cs = clipesDe(j.id);
+                      out.push(cabeca(`h-${j.id}`, j.title || 'Jogo', i === 0));
+                      out.push(subCabeca(`hj-${j.id}`, 'Jogo completo'));
+                      out.push(renderRow(j));
+                      if (cs.length) { out.push(subCabeca(`hc-${j.id}`, `Cortes (${cs.length})`)); cs.forEach(c => out.push(renderRow(c))); }
+                    });
+                    if (soltos.length) {
+                      out.push(cabeca('h-soltos', 'Cortes de outros vídeos', !jogosL.length));
+                      soltos.forEach(c => out.push(renderRow(c)));
+                    }
+                    return out;
                   })() : visibleItems.map(renderRow)}
                 </div>
               </>

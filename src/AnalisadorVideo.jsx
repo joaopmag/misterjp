@@ -3671,20 +3671,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   ).sort((a, b) => (new Date(b.em || 0).getTime() || 0) - (new Date(a.em || 0).getTime() || 0)), [videosOriginais, jogosLink, modoEfetivo]);
   const [colarLinkAberto, setColarLinkAberto] = useState(false);
   const [linkAberto, setLinkAberto] = useState(null); // jogo/corte por link aberto no palco
-  // Aberto a partir do separador "Clipes": o nome do grupo (jogo) onde o
-  // leitor aparece, por baixo da fila. null = no palco (modo Links).
-  const [linkEmLinha, setLinkEmLinha] = useState(null);
-  // O leitor muda de sítio (volta a montar): depois de montado, abre o item.
-  const abrirDepoisRef = useRef(null);
-  useEffect(() => {
-    const id = abrirDepoisRef.current;
-    if (!id) return undefined;
-    const t = setTimeout(() => { abrirDepoisRef.current = null; if (abrirLink) abrirLink(id); }, 0);
-    return () => clearTimeout(t);
-  });
   const [jogoParaCanal, setJogoParaCanal] = useState(null); // { tipo: 'ficheiro', v } — jogo carregado a enviar
   const [linkParaCanal, setLinkParaCanal] = useState(null); // jogo/corte por link a enviar para o Canal
   const painelLinksRef = useRef(null);
+  const cabecaLinkRef = useRef(null);
   const gruposCortesLink = React.useMemo(() => {
     const m = new Map();
     [...(cortesLink || [])].sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))).forEach(c => {
@@ -3715,10 +3705,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setLinkAberto(id);
     if (abrirLink) abrirLink(id);
   };
-  // Fechado o leitor, ou saiu-se do separador "Clipes": o leitor volta ao palco.
-  useEffect(() => {
-    if (linkEmLinha && (!linkAberto || separadorClipes !== 'clipes')) { setLinkEmLinha(null); if (separadorClipes !== 'clipes') setLinkAberto(null); }
-  }, [linkEmLinha, linkAberto, separadorClipes]);
+  /* Abrir um clipe a partir do separador "Clipes": abre em cima, no
+     palco (como o Estúdio abre o editor de um ficheiro). Só se desliza a
+     página até lá se o leitor estiver fora da vista. */
+  const abrirClipeLinkNoPalco = (id) => {
+    if (originalAtivoId) { setOriginalAtivoId(null); limparMarcas(); }
+    if (modoEfetivo !== 'links') setModo('links');
+    abrirJogoLink(id);
+    setTimeout(() => {
+      const el = cabecaLinkRef.current;
+      if (el && estudioForaDaVista(el)) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
   // Apagado o que estava aberto: volta à grelha.
   useEffect(() => {
     if (linkAberto && !(jogosLink || []).some(x => x.id === linkAberto) && !(cortesLink || []).some(x => x.id === linkAberto)) setLinkAberto(null);
@@ -3726,8 +3724,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Cartão de um jogo por link: igual ao dos carregados (imagem, nome,
   // lápis para mudar o nome, estado e ✕). Abre no separador "Jogos por link".
   const cartaoLink = (v) => (
-    <div key={v.id} role="button" tabIndex={0} onClick={() => { if (linkEmLinha) { setLinkEmLinha(null); setLinkAberto(v.id); abrirDepoisRef.current = v.id; } else abrirJogoLink(v.id); }}
-      onKeyDown={e => { if (e.key === 'Enter') { if (linkEmLinha) { setLinkEmLinha(null); setLinkAberto(v.id); abrirDepoisRef.current = v.id; } else abrirJogoLink(v.id); } }}
+    <div key={v.id} role="button" tabIndex={0} onClick={() => abrirJogoLink(v.id)}
+      onKeyDown={e => { if (e.key === 'Enter') abrirJogoLink(v.id); }}
       style={{
         display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
         borderRadius: 10, border: `1px solid ${T.line}`, background: T.surface,
@@ -5159,7 +5157,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               const on = modoEfetivo === m.id;
               return (
                 <button key={m.id} type="button" role="tab" aria-selected={on}
-                  onClick={() => { if (!on) { setModo(m.id); setVerTodosOriginais(false); setLinkAberto(null); setLinkEmLinha(null); } }}
+                  onClick={() => { if (!on) { setModo(m.id); setVerTodosOriginais(false); setLinkAberto(null); } }}
                   style={{
                     position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', minWidth: 0,
                     background: 'transparent', border: 'none', cursor: on ? 'default' : 'pointer', textAlign: 'left', ...body, color: T.cream,
@@ -5183,12 +5181,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             com um esbater rápido. Um jogo por link abre aqui mesmo, no
             lugar da grelha (como o Estúdio abre o editor). */}
         <style>{'@keyframes mjpPalco{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}'}</style>
-        {modoEfetivo === 'links' && linkAberto && !linkEmLinha ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <Btn variant="ghost" onClick={() => setLinkAberto(null)}><ArrowLeft size={14} /> Jogos por link</Btn>
-            <span style={{ fontSize: 13, color: T.muted, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {modoEfetivo === 'links' && linkAberto ? (
+          /* A mesma cabeça do editor dos ficheiros (Estúdio). */
+          <div ref={cabecaLinkRef} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap', scrollMarginTop: 12 }}>
+            <Btn variant="ghost" onClick={() => setLinkAberto(null)}><ArrowLeft size={14} /> Vídeos e clipes</Btn>
+            <span style={{ fontSize: 12.5, color: T.muted, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
               {((jogosLink || []).concat(cortesLink || []).find(x => x.id === linkAberto) || {}).title || ''}
             </span>
+            {criarJogoLink && (
+              <Btn variant="ghost" onClick={() => setColarLinkAberto(true)} style={{ marginLeft: 'auto' }}><Link2 size={14} /> Colar link</Btn>
+            )}
           </div>
         ) : (
         <div key={modoEfetivo} style={{ minHeight: temLinks ? ALTURA_PALCO : undefined, animation: 'mjpPalco .22s ease' }}>
@@ -5902,8 +5904,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           "Criar clipe", desenho com paragens). Sempre montado — escondido com
           altura 0 fora do modo Links, para não perder o que estava aberto e
           para a janela de edição (posição fixa) aparecer na mesma. */}
-      {renderPainelLinks && !linkEmLinha && (
-        <div ref={painelLinksRef} style={modoEfetivo === 'links' && !originalAtivo && linkAberto ? { animation: 'mjpPalco .22s ease' } : { height: 0, overflow: 'hidden' }}>
+      {renderPainelLinks && (
+        <div ref={painelLinksRef} style={modoEfetivo === 'links' && !originalAtivo && linkAberto
+          // Aberto: na mesma moldura do editor dos ficheiros.
+          ? { animation: 'mjpPalco .22s ease', background: TV.surface, borderRadius: 12, border: `1px solid ${TV.line}`, padding: 14 }
+          : { height: 0, overflow: 'hidden' }}>
           {painelLinksConteudo()}
         </div>
       )}
@@ -6193,10 +6198,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     );
                     return (
                       <div key={c.id} style={{ flex: '0 0 230px', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
-                        <div onClick={() => {
-                          if (linkEmLinha === g.nome) { abrirJogoLink(c.id); return; }
-                          setLinkEmLinha(g.nome); setLinkAberto(c.id); abrirDepoisRef.current = c.id;
-                        }} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
+                        <div onClick={() => abrirClipeLinkNoPalco(c.id)} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
                           {c.youtubeId && <img src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                           <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 10.5, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Play size={10} /> YouTube</span>
                           <span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', fontFamily: 'monospace' }}>{Math.round(dur)}s</span>
@@ -6213,14 +6215,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     );
                   })}
                 </FilaDeslizante>
-                {linkEmLinha === g.nome && linkAberto && renderPainelLinks && (
-                  <div style={{ marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 12, animation: 'mjpPalco .22s ease' }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-                      <Btn variant="ghost" onClick={() => { setLinkEmLinha(null); setLinkAberto(null); }}><X size={14} /> Fechar</Btn>
-                    </div>
-                    {painelLinksConteudo()}
-                  </div>
-                )}
               </div>
             ))}
           </div>
