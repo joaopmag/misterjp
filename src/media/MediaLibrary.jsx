@@ -4666,7 +4666,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 ) : (
                   <AttachmentPreview item={active} />
                 )}
-                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
+                {/* Título e linhas por baixo numa altura FIXA: trocar entre um
+                    jogo (só o título) e um corte (título, tempos e jogo de
+                    origem) não mexe na página. */}
+                <div style={{ height: 74, overflow: 'hidden' }}>
+                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{active.title}</div>
                 {/* Por baixo do título, sem partir linhas (também no telemóvel):
                     a jornada à esquerda e o tempo do corte à direita; depois o
                     jogo de onde veio, numa linha só. */}
@@ -4697,6 +4701,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     )}
                   </div>
                 )}
+                </div>
               </>
             )}
           </div>

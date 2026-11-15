@@ -237,7 +237,8 @@ Estúdio abre o editor (`abrirClipeLinkNoPalco`): mesma cabeça "← Vídeos e
 clipes · título · Colar link" e a mesma moldura; só desliza até lá se
 estiver fora da vista. Lista do leitor em Links como num cartão da Sala:
 um bloco por jogo (título), "Jogo completo" e "Cortes (n)"; cortes sem
-jogo no fim. (3) Barra amarela no 00:00 sem play: o YouTube só dá a
+jogo no fim. Por baixo do leitor (MediaLibrary), título e linhas do corte
+numa caixa de altura fixa (74 px): trocar jogo ↔ corte não mexe a página. (3) Barra amarela no 00:00 sem play: o YouTube só dá a
 duração depois de tocar; `prepararDuracaoYoutube` (MediaLibrary) toca sem
 som até chegar a duração, pausa e volta ao ponto (máx. 6 s). Também lê
 `initialDelivery`. (4) Relatórios de Jogo: trocar Competição/Amigáveis não
