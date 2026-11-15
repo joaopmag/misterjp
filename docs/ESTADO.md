@@ -198,8 +198,22 @@ apagar e mostra "treinador"). DESENHOS: o clipe leva `shapes` (corte MP4 do
 Estúdio) ou `anotacoesPausa` (corte por link). Os `anotacoesPausa` tocam no
 leitor normal; os `shapes` abrem no `ClipPlayerModal` (exportado, `soVer`)
 pelo botão "Ver com os desenhos" no Portal e diretamente nos cartões da
-análise individual. PRÓXIMO: escolher Portal/Canal para jogos carregados por
-ficheiro (bucket privado → links temporários por função da Vercel).
+análise individual. JOGOS CARREGADOS POR FICHEIRO NO CANAL (15/11):
+ícone de filme no cartão do Estúdio → `EnviarSalaModal` →
+`enviarJogoFicheiroParaCanal` (App) pede a `api/video-jogo.js` (POST, staff)
+um link estável `/api/video-jogo?t=<token HMAC do caminho e equipa>`; o
+vídeo do Canal fica `{kind:'video', dataUrl: esse link, ficheiroPrivado:{path}}`.
+O GET do link confirma que ainda há no Canal um vídeo com esse ficheiro e
+reencaminha (302) para um link assinado de 6 h do bucket privado. Funciona
+no Portal (clipes dos jogadores guardam o mesmo link), no "vídeo junto" do
+worker (`linkPermitido` aceita ORIGEM_PERMITIDA/api/video-jogo) e na página
+pública (`ficheiroDaApp`). Tirar do Canal → o link morre (e os clipes dos
+jogadores nesse jogo também; o MP4 por clipe resolve isso).
+VISUAL (15/11): comutador único Estúdio/Links com realce a deslizar, altura
+fixa; "palco" com altura reservada (`ALTURA_PALCO`) — mudar de modo não mexe
+na página; um jogo por link abre no lugar da grelha (← Jogos por link).
+Janelas Colar link / Enviar presas a 12vh do topo; o segundo campo do Colar
+link tem sempre a mesma altura.
 
 **Travão "eliminação de 3 registos" nos Vídeos (14/11):** a sincronização
 Análise → fichas de adversário (`planoSincronizacaoFichas`, App.jsx) apaga

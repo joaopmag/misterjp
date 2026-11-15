@@ -598,6 +598,27 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     setVideos(prev => [{ ...jogo, ...(marcas.length ? { enviadoSala: marcas } : {}) }, ...(prev || [])]);
     return jogo;
   };
+  /* Jogo carregado por ficheiro (Estúdio) → Canal (Jogos ou Adversários).
+     O ficheiro fica no bucket privado; o vídeo do Canal guarda um link da
+     app que dá acesso enquanto o jogo lá estiver (api/video-jogo.js). */
+  const enviarJogoFicheiroParaCanal = async (o, dados) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Sessão expirada. Sai e entra na app outra vez.');
+    const r = await fetch('/api/video-jogo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ teamId, originalId: o.id }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j.error || 'Não consegui preparar o link do jogo.');
+    const item = enviarClipeParaSala({
+      clip: { linkAnalise: true, id: o.id, title: o.titulo || 'Jogo', dataUrlJogo: j.url, ficheiroPrivado: { path: j.path }, thumbUrl: /^https?:/.test(o.thumbUrl || '') ? o.thumbUrl : null },
+      ...dados,
+    });
+    const marca = { destino: dados.destino, rotulo: dados.rotulo || (dados.destino === 'jogo' ? 'Jogos' : 'Adversários'), itemId: item && item.id, em: new Date().toISOString() };
+    setVideosOriginais(prev => (prev || []).map(x => (x.id === o.id ? { ...x, enviadoSala: [...(x.enviadoSala || []), marca] } : x)));
+    return item;
+  };
   // Enviar um jogo ou corte por link da Análise para o Canal (cópia, como os cortes MP4).
   const enviarLinkParaCanal = (v, dados) => {
     const item = enviarClipeParaSala({ clip: { ...v, linkAnalise: true }, ...dados });
@@ -1180,7 +1201,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // link (YouTube), com os mesmos tempos se for um corte.
     const base = clip && clip.linkAnalise ? {
       id: uid(), title: (titulo || '').trim() || clip.title || 'Vídeo',
-      ...(clip.youtubeId ? { youtubeId: clip.youtubeId } : { social: clip.social }),
+      // Jogo carregado por ficheiro (bucket privado): o link da app que
+      // reencaminha para um link temporário (api/video-jogo.js).
+      ...(clip.dataUrlJogo ? { kind: 'video', dataUrl: clip.dataUrlJogo, ficheiroPrivado: clip.ficheiroPrivado, ...(clip.thumbUrl ? { thumbUrl: clip.thumbUrl } : {}) }
+        : clip.youtubeId ? { youtubeId: clip.youtubeId } : { social: clip.social }),
       ...(typeof clip.clipInicio === 'number' ? { clipInicio: clip.clipInicio, clipFim: clip.clipFim, clipOrigemTitulo: clip.clipOrigemTitulo || '' } : {}),
       ...(clip.note ? { note: clip.note } : {}),
       origemAnalise: { linkId: clip.id, em: new Date().toISOString() },
@@ -1778,6 +1802,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               jogadores={playersAtivos}
               criarJogoLink={criarJogoLink}
               enviarLinkParaCanal={enviarLinkParaCanal}
+              enviarJogoFicheiroParaCanal={enviarJogoFicheiroParaCanal}
               abrirLink={(id) => { if (linksAnaliseRef.current) linksAnaliseRef.current.irParaItem(id); }}
               renomearLink={(id, nome) => setVideosAnalise(prev => prev.map(v => (v.id === id ? { ...v, title: nome } : v)))}
               apagarLink={(v) => askConfirm({
@@ -5080,6 +5105,8 @@ function PaginaClipe() {
 function ficheiroDaApp(v) {
   const base = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
   const u = String(v || '');
+  // Também o link dos jogos por ficheiro enviados para o Canal (api/video-jogo).
+  if (typeof window !== 'undefined' && u.startsWith(`${window.location.origin}/api/video-jogo?t=`)) return true;
   return !!base && (u.startsWith(`${base}/storage/v1/object/public/`) || u.startsWith(`${base.replace('.supabase.co', '.storage.supabase.co')}/storage/v1/object/public/`));
 }
 

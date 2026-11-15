@@ -23,6 +23,9 @@ const T = {
   campoFundo: '#111', campoTexto: '#fff', // caixas de texto fora do vídeo
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
+// Altura reservada ao "palco" da Análise (duas filas de cartões e a linha
+// do "Ver mais"): igual nos dois modos, para nada mexer ao trocar.
+const ALTURA_PALCO = 356;
 
 /* MODO CLARO — segue a escolha feita na app (mesma chave 'mjp-tema').
    `TV` é a paleta escura fixa: a bancada do vídeo (leitor, barra de
@@ -1650,7 +1653,7 @@ function EquipasDoJogoModal({ titulo, equipas, onGuardar, onClose }) {
   useFecharComEsc(onClose);
   const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>Equipas do jogo</div>
@@ -1716,7 +1719,7 @@ function ColarLinkModal({ destinos, onGuardar, onClose }) {
     }}>{label}</button>
   );
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Link2 size={16} /> Colar link</div>
@@ -1738,34 +1741,40 @@ function ColarLinkModal({ destinos, onGuardar, onClose }) {
             {opcao('adversario', 'Adversários')}
           </div>
         </div>
-        {destino === 'jogo' && (
-          <label style={rotuloCampo}>
-            Jogo do calendário
-            <select value={jogoId} onChange={e => setJogoId(e.target.value)} style={campo}>
+        {/* Um só lugar, sempre com a mesma altura, para o segundo campo:
+            a janela não cresce nem encolhe ao mudar o destino. */}
+        <div style={{ ...rotuloCampo, height: 58, justifyContent: 'flex-start' }}>
+          <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            {destino === 'jogo' ? 'Jogo do calendário' : destino === 'adversario' ? (fichaId === '__nova__' ? 'Nome da equipa nova' : 'Equipa (ficha do adversário)') : 'Destino'}
+            {destino === 'adversario' && fichaId === '__nova__' && (
+              <button type="button" onClick={() => { setFichaId(''); setNomeFichaNova(''); }} style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, padding: 0, ...body }}>escolher da lista</button>
+            )}
+          </span>
+          {destino === 'jogo' ? (
+            <select value={jogoId} onChange={e => setJogoId(e.target.value)} style={{ ...campo, height: 36 }}>
               <option value="">Escolhe o jogo…</option>
               {(d.jogos || []).map(j => <option key={j.id} value={j.id}>{j.rotulo}</option>)}
             </select>
-          </label>
-        )}
-        {destino === 'adversario' && (
-          <label style={rotuloCampo}>
-            Equipa (ficha do adversário)
-            <select value={fichaId} onChange={e => setFichaId(e.target.value)} style={campo}>
-              <option value="">Escolhe a equipa…</option>
-              {(d.fichas || []).map(f => <option key={f.id} value={f.id}>{f.rotulo}</option>)}
-              <option value="__nova__">+ Nova equipa…</option>
-            </select>
-            {fichaId === '__nova__' && (
-              <input value={nomeFichaNova} onChange={e => setNomeFichaNova(e.target.value)} placeholder="Nome da equipa" maxLength={80} style={campo} />
-            )}
-          </label>
-        )}
-        <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5 }}>
-          {destino === 'analise'
-            ? 'Fica só aqui na Análise para trabalhar. Mais tarde podes enviá-lo (ou os cortes) para o Canal.'
-            : 'Fica aqui na Análise para trabalhar e vai já uma cópia para o Canal. Os jogos em Canal › Jogos aparecem também no Portal dos jogadores.'}
+          ) : destino === 'adversario' ? (
+            fichaId === '__nova__' ? (
+              <input value={nomeFichaNova} onChange={e => setNomeFichaNova(e.target.value)} autoFocus placeholder="Nome da equipa" maxLength={80} style={{ ...campo, height: 36 }} />
+            ) : (
+              <select value={fichaId} onChange={e => setFichaId(e.target.value)} style={{ ...campo, height: 36 }}>
+                <option value="">Escolhe a equipa…</option>
+                {(d.fichas || []).map(f => <option key={f.id} value={f.id}>{f.rotulo}</option>)}
+                <option value="__nova__">+ Nova equipa…</option>
+              </select>
+            )
+          ) : (
+            <div style={{ ...campo, height: 36, color: T.mutedDim, display: 'flex', alignItems: 'center' }}>Fica só aqui na Análise, para trabalhar</div>
+          )}
         </div>
-        {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
+        <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
+          {destino === 'analise'
+            ? 'Mais tarde podes enviá-lo (ou os cortes) para o Canal.'
+            : 'Fica também aqui na Análise e vai já uma cópia para o Canal. Em Canal › Jogos aparece no Portal dos jogadores.'}
+        </div>
+        <div style={{ fontSize: 12.5, color: T.bad, minHeight: 18 }}>{erro}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
           <Btn variant="solid" onClick={guardar}><Check size={14} /> Guardar</Btn>
@@ -1809,8 +1818,8 @@ function AnaliseIndividualModal({ jogadores, comCartao, cortesMp4, cortesLink, j
     onClose();
   };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '80vh', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><User size={16} /> Análise individual</div>
           <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
@@ -1877,7 +1886,8 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   const [feito, setFeito] = useState('');
   useFecharComEsc(onClose);
   const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
-  const enviar = () => {
+  const [aEnviar, setAEnviar] = useState(false);
+  const enviar = async () => {
     setErro('');
     try {
       const pastaFinal = pasta === '__nova__' ? pastaNova : pasta;
@@ -1887,9 +1897,11 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
       const rotulo = destino === 'jogo' ? `Jogos › ${(d.jogos.find(j => j.id === jogoId) || {}).rotulo || ''}`
         : destino === 'adversario' ? `Adversários › ${fichaNova ? fichaNova.nome : ((d.fichas.find(f => f.id === fichaId) || {}).rotulo || '')}`
           : `Temas › ${pastaFinal}`;
-      onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo });
+      // `onEnviar` pode ser assíncrono (jogo por ficheiro: pede o link ao servidor).
+      const r = onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo });
+      if (r && typeof r.then === 'function') { setAEnviar(true); await r; }
       setFeito(destino === 'adversario' ? `${rotulo} (e ficha da equipa)` : rotulo);
-    } catch (e) { setErro(e.message || String(e)); }
+    } catch (e) { setErro(e.message || String(e)); } finally { setAEnviar(false); }
   };
   const opcao = (id, label) => (
     <button type="button" onClick={() => { setDestino(id); setErro(''); }} style={{
@@ -1899,7 +1911,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
     }}>{label}</button>
   );
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>Enviar para a Sala de Vídeo</div>
@@ -1983,7 +1995,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
             {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-              <Btn variant="solid" onClick={enviar}><Film size={14} /> Enviar</Btn>
+              <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Film size={14} />} Enviar</Btn>
             </div>
           </>
         )}
@@ -3083,7 +3095,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -3599,6 +3611,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     : videosOriginais.map(v => ({ tipo: 'ficheiro', v, em: v.criadoEm }))
   ).sort((a, b) => (new Date(b.em || 0).getTime() || 0) - (new Date(a.em || 0).getTime() || 0)), [videosOriginais, jogosLink, modoEfetivo]);
   const [colarLinkAberto, setColarLinkAberto] = useState(false);
+  const [linkAberto, setLinkAberto] = useState(null); // jogo/corte por link aberto no palco
+  const [jogoParaCanal, setJogoParaCanal] = useState(null); // { tipo: 'ficheiro', v } — jogo carregado a enviar
   const [linkParaCanal, setLinkParaCanal] = useState(null); // jogo/corte por link a enviar para o Canal
   const [novaAnaliseInd, setNovaAnaliseInd] = useState(null); // { atletaId } — análise individual feita pelo staff
   const painelLinksRef = useRef(null);
@@ -3612,9 +3626,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return [...m.values()];
   }, [cortesLink]);
   const abrirJogoLink = (id) => {
+    setLinkAberto(id);
     if (abrirLink) abrirLink(id);
-    setTimeout(() => { const el = painelLinksRef.current; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   };
+  // Apagado o que estava aberto: volta à grelha.
+  useEffect(() => {
+    if (linkAberto && !(jogosLink || []).some(x => x.id === linkAberto) && !(cortesLink || []).some(x => x.id === linkAberto)) setLinkAberto(null);
+  }, [linkAberto, jogosLink, cortesLink]);
   // Cartão de um jogo por link: igual ao dos carregados (imagem, nome,
   // lápis para mudar o nome, estado e ✕). Abre no separador "Jogos por link".
   const cartaoLink = (v) => (
@@ -3647,7 +3665,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: (v.enviadoSala || []).length ? T.gold : T.mutedDim, display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
             <Link2 size={11} style={{ flexShrink: 0 }} /> {(v.enviadoSala || []).length ? 'YouTube · no Canal' : 'YouTube'}
           </span>
-          {apagarLink && <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarLink(v); }} />}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+            {enviarLinkParaCanal && (
+              <Film size={13} color={(v.enviadoSala || []).length ? T.gold : T.muted} aria-label="Enviar o jogo para o Canal"
+                onClick={(e) => { e.stopPropagation(); setLinkParaCanal(v); }}>
+                <title>Enviar o jogo para o Canal (Jogos ou Adversários)</title>
+              </Film>
+            )}
+            {apagarLink && <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarLink(v); }} />}
+          </span>
         </div>
       </div>
     </div>
@@ -4977,46 +5003,59 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {!originalAtivo ? (
         <>
-        {/* AS DUAS FORMAS DE TRABALHAR — dois cartões grandes em cima. */}
+        {/* AS DUAS FORMAS DE TRABALHAR: um comutador único, com o realce a
+            deslizar de um lado para o outro. Altura fixa: mudar de modo não
+            mexe em nada na página. */}
         {temLinks && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div role="tablist" aria-label="Forma de trabalhar" style={{
+            position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', marginBottom: 14, height: 74,
+            borderRadius: 16, border: `1px solid ${T.line}`, background: T.surface, padding: 4, boxSizing: 'border-box', overflow: 'hidden',
+          }}>
+            <span aria-hidden style={{
+              position: 'absolute', top: 4, bottom: 4, left: 4, width: 'calc(50% - 4px)', borderRadius: 12,
+              background: T.surfaceRaise, boxShadow: `0 0 0 1px ${T.gold} inset, 0 6px 18px rgba(0,0,0,.25)`,
+              transform: modoEfetivo === 'links' ? 'translateX(100%)' : 'translateX(0)', transition: 'transform .28s cubic-bezier(.4,.1,.2,1)',
+            }} />
             {[
-              { id: 'estudio', titulo: 'Estúdio · ficheiros', Icon: Film, cor: T.gold, n: videosOriginais.length,
-                texto: 'O editor profissional: codificar com um toque, cortes em MP4, desenho com relvado calibrado e seguimento de jogador.',
-                chips: ['Carregar ficheiro', 'Etiquetas', 'MP4', 'Descarregar'] },
-              { id: 'links', titulo: 'Links · YouTube', Icon: Link2, cor: T.crimsonBright || T.gold, n: (jogosLink || []).length,
-                texto: 'Sem carregar nada: cola o link, marca início e fim e desenha com câmara lenta e paragens, como na Sala de Vídeo.',
-                chips: ['Colar link', 'Cortes por tempos', 'Câmara lenta'] },
+              { id: 'estudio', titulo: 'Estúdio', sub: 'Ficheiros · editor profissional, cortes MP4', Icon: Film, n: videosOriginais.length },
+              { id: 'links', titulo: 'Links', sub: 'YouTube · cortes por tempos, câmara lenta', Icon: Link2, n: (jogosLink || []).length },
             ].map(m => {
               const on = modoEfetivo === m.id;
               return (
-                <button key={m.id} type="button" onClick={() => { setModo(m.id); setVerTodosOriginais(false); }} aria-pressed={on}
+                <button key={m.id} type="button" role="tab" aria-selected={on}
+                  onClick={() => { if (!on) { setModo(m.id); setVerTodosOriginais(false); setLinkAberto(null); } }}
                   style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 14, textAlign: 'left', cursor: 'pointer', ...body,
-                    padding: '14px 16px', borderRadius: 14, background: on ? T.surfaceRaise : T.surface,
-                    border: `1px solid ${on ? T.gold : T.line}`, boxShadow: on ? `0 0 0 1px ${T.gold} inset` : 'none', color: T.cream,
+                    position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', minWidth: 0,
+                    background: 'transparent', border: 'none', cursor: on ? 'default' : 'pointer', textAlign: 'left', ...body, color: T.cream,
                   }}>
-                  <span style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.bg, color: m.cor }}>
-                    <m.Icon size={22} />
+                  <span style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: on ? T.gold : T.bg, color: on ? TEXT_ON_ACCENT : T.muted, transition: 'background .28s, color .28s' }}>
+                    <m.Icon size={19} />
                   </span>
-                  <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <span style={{ fontSize: 15.5, fontWeight: 700 }}>{m.titulo}</span>
-                    <span style={{ fontSize: 12.5, color: T.muted, lineHeight: 1.45 }}>{m.texto}</span>
-                    <span style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 2 }}>
-                      {m.chips.map(c => <span key={c} style={{ fontSize: 10.5, color: T.muted, border: `1px solid ${T.line}`, borderRadius: 20, padding: '2px 8px' }}>{c}</span>)}
-                    </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: on ? T.cream : T.muted, transition: 'color .28s' }}>{m.titulo}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.sub}</span>
                   </span>
-                  <span style={{ textAlign: 'right', flexShrink: 0, fontSize: 11.5, color: T.mutedDim }}>
-                    <span style={{ display: 'block', fontSize: 20, fontWeight: 700, color: T.cream }}>{m.n}</span>
-                    {m.n === 1 ? 'jogo' : 'jogos'}
-                  </span>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: on ? T.gold : T.mutedDim, flexShrink: 0, fontVariantNumeric: 'tabular-nums', transition: 'color .28s' }}>{m.n}</span>
                 </button>
               );
             })}
           </div>
         )}
-        {/* DUAS LINHAS de jogos; o cartão de adicionar é o último da 2.ª
-            linha. Com mais jogos, "Ver mais" abre o resto. */}
+        {/* O PALCO: a mesma altura nos dois modos (duas filas de cartões e
+            a linha do "Ver mais", sempre reservadas). Só o conteúdo troca,
+            com um esbater rápido. Um jogo por link abre aqui mesmo, no
+            lugar da grelha (como o Estúdio abre o editor). */}
+        <style>{'@keyframes mjpPalco{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}'}</style>
+        {modoEfetivo === 'links' && linkAberto ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <Btn variant="ghost" onClick={() => setLinkAberto(null)}><ArrowLeft size={14} /> Jogos por link</Btn>
+            <span style={{ fontSize: 13, color: T.muted, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {((jogosLink || []).concat(cortesLink || []).find(x => x.id === linkAberto) || {}).title || ''}
+            </span>
+          </div>
+        ) : (
+        <div key={modoEfetivo} style={{ minHeight: temLinks ? ALTURA_PALCO : undefined, animation: 'mjpPalco .22s ease' }}>
         <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
           {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
             <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
@@ -5060,8 +5099,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   {v.pronto === false ? (
                     <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
+                  ) : (v.enviadoSala || []).length ? (
+                    <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: T.gold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Pronto · no Canal</span>
                   ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
-                  <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+                    {enviarJogoFicheiroParaCanal && v.pronto !== false && (
+                      <Film size={13} color={(v.enviadoSala || []).length ? T.gold : T.muted} aria-label="Enviar o jogo para o Canal"
+                        onClick={(e) => { e.stopPropagation(); setJogoParaCanal({ tipo: 'ficheiro', v }); }}>
+                        <title>Enviar o jogo para o Canal (Jogos ou Adversários) e para o Portal</title>
+                      </Film>
+                    )}
+                    <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
+                  </span>
                 </div>
               </div>
             </button>
@@ -5088,18 +5137,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </button>
           )}
         </div>
-        {grelhaJogos.length > porLinhaOriginais * 2 - 1 && (
+        {grelhaJogos.length > porLinhaOriginais * 2 - 1 ? (
           <button onClick={() => setVerTodosOriginais(v => !v)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '2px 0', marginBottom: 6, ...body }}>
             {verTodosOriginais
               ? <><ChevronUp size={14} /> Ver menos</>
               : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais * 2 - 1)})</>}
           </button>
-        )}
+        ) : <div style={{ height: 24, marginBottom: 6 }} />}
         {modoEfetivo === 'links' && (jogosLink || []).length === 0 && (
-          <div style={{ color: T.mutedDim, fontSize: 13, padding: '20px 0', textAlign: 'center', ...body }}>
+          <div style={{ color: T.mutedDim, fontSize: 12.5, padding: '4px 0', ...body }}>
             Cola o link do YouTube de um jogo para fazeres cortes e desenhos sem carregar nada.
           </div>
+        )}
+        </div>
         )}
         </>
       ) : (
@@ -5712,7 +5763,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           altura 0 fora do modo Links, para não perder o que estava aberto e
           para a janela de edição (posição fixa) aparecer na mesma. */}
       {renderPainelLinks && (
-        <div ref={painelLinksRef} style={modoEfetivo === 'links' && !originalAtivo && (jogosLink || []).length > 0 ? { marginTop: 8 } : { height: 0, overflow: 'hidden' }}>
+        <div ref={painelLinksRef} style={modoEfetivo === 'links' && !originalAtivo && linkAberto ? { animation: 'mjpPalco .22s ease' } : { height: 0, overflow: 'hidden' }}>
           {renderPainelLinks((v) => {
             const enviado = (v.enviadoSala || []).length > 0;
             return (
@@ -6020,7 +6071,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     );
                     return (
                       <div key={c.id} style={{ flex: '0 0 230px', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
-                        <div onClick={() => { setModo('links'); abrirJogoLink(c.id); }} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
+                        <div onClick={() => { setModo('links'); abrirJogoLink(c.id); setTimeout(() => { const el = painelLinksRef.current; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); }} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
                           {c.youtubeId && <img src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                           <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 10.5, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Play size={10} /> YouTube</span>
                           <span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', fontFamily: 'monospace' }}>{Math.round(dur)}s</span>
@@ -6136,6 +6187,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             setLinkParaCanal(prev => (prev ? { ...prev, enviadoSala: [...(prev.enviadoSala || []), marca] } : prev));
           }}
           onClose={() => setLinkParaCanal(null)}
+        />
+      )}
+      {jogoParaCanal && enviarJogoFicheiroParaCanal && (
+        <EnviarSalaModal
+          key={`jogo-${jogoParaCanal.v.id}`}
+          clip={{ id: jogoParaCanal.v.id, note: jogoParaCanal.v.titulo || '', originalTitulo: '', enviadoSala: jogoParaCanal.v.enviadoSala || [] }}
+          tag={null}
+          destinos={destinosSala}
+          onEnviar={async dados => {
+            await enviarJogoFicheiroParaCanal(jogoParaCanal.v, dados);
+            const marca = { destino: dados.destino, rotulo: dados.rotulo };
+            setJogoParaCanal(prev => (prev ? { ...prev, v: { ...prev.v, enviadoSala: [...(prev.v.enviadoSala || []), marca] } } : prev));
+          }}
+          onClose={() => setJogoParaCanal(null)}
         />
       )}
       {novaAnaliseInd && (
