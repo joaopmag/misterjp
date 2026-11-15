@@ -145,6 +145,11 @@ export function clipeAtletaParaCanal(c) {
     pasta: '',
     deAtleta: true,
     notaAtleta: c.note || '',
+    // Posto pelo treinador (análise individual): só para ver, com os desenhos.
+    ...(c.criadoPorStaff ? { doStaff: true } : {}),
+    ...((c.anotacoesPausa || []).length ? { anotacoesPausa: c.anotacoesPausa } : {}),
+    ...((c.shapes || []).length ? { shapesStaff: c.shapes, duracaoStaff: Number(c.duracao) || undefined } : {}),
+    ...(c.calibracao ? { calibracaoStaff: c.calibracao } : {}),
   };
 }
 

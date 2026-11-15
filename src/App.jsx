@@ -51,7 +51,7 @@ import { UrlAnexo, ficheiroParaAnexo, fileToPhotoDataUrl, hrefDescarga } from '.
 import { KIOSK_VOLTAR_INTERNO, useKioskVoltar } from './base/kiosk';
 import { MediaLibrary } from './media/MediaLibrary';
 import { FichaAdversarioRapida } from './media/acoes';
-import { ControlosLupa, INSTAGRAM_SANDBOX, MediaFeedItem, URL_PUBLICA_APP, VideoComBarra, fmtMMSS, socialEmbedSrc, socialExternalUrl, useLupa } from './media/social';
+import { ControlosLupa, INSTAGRAM_SANDBOX, MediaFeedItem, URL_PUBLICA_APP, VideoComBarra, detectSocialEmbed, fmtMMSS, parseYouTubeId, socialEmbedSrc, socialExternalUrl, useLupa } from './media/social';
 import { AttachmentPreview, PdfCanvasViewer, loadPdfJs, useBlobUrl } from './media/leitores';
 import { MAX_CLIPE_ATLETA_SEG, cleanFolder, ehClipe, fichaDaEquipa, fichaRepetida, idFichaAutomatica, numDoJogo } from './media/organizacao';
 import { LeitorJunto } from './media/LeitorJunto';
@@ -580,7 +580,31 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     return novo.map(v => (v.daAnalise && v.criadoEm ? v : { ...v, daAnalise: true, criadoEm: v.criadoEm || new Date().toISOString() }));
   });
   const linksAnaliseRef = useRef(null);
-  const publicarDaAnalise = (id, sim) => setVideos(prev => (prev || []).map(v => (v.id === id ? { ...v, publicado: !!sim } : v)));
+  /* Jogo por link novo, a partir do "Colar link" da Análise: título,
+     link e, se se escolher, já enviado para o Canal (Jogos ou adversário). */
+  const criarJogoLink = ({ titulo, url, destino, jogoId, fichaId, fichaNova, rotulo }) => {
+    const ytId = parseYouTubeId(url);
+    const social = ytId ? null : detectSocialEmbed(url);
+    if (!ytId && !social) throw new Error('Não reconheço este link. Usa o link do YouTube (youtu.be/… ou youtube.com/watch?v=…).');
+    const jogo = {
+      id: uid(), title: String(titulo || '').trim() || 'Jogo', daAnalise: true, criadoEm: new Date().toISOString(),
+      ...(ytId ? { youtubeId: ytId } : { social }),
+    };
+    let marcas = [];
+    if (destino === 'jogo' || destino === 'adversario') {
+      const item = enviarClipeParaSala({ clip: { ...jogo, linkAnalise: true }, titulo: jogo.title, destino, jogoId, fichaId, fichaNova });
+      marcas = [{ destino, rotulo: rotulo || (destino === 'jogo' ? 'Jogos' : 'Adversários'), itemId: item && item.id, em: new Date().toISOString() }];
+    }
+    setVideos(prev => [{ ...jogo, ...(marcas.length ? { enviadoSala: marcas } : {}) }, ...(prev || [])]);
+    return jogo;
+  };
+  // Enviar um jogo ou corte por link da Análise para o Canal (cópia, como os cortes MP4).
+  const enviarLinkParaCanal = (v, dados) => {
+    const item = enviarClipeParaSala({ clip: { ...v, linkAnalise: true }, ...dados });
+    const marca = { destino: dados.destino, rotulo: dados.rotulo || (dados.destino === 'jogo' ? 'Jogos' : 'Adversários'), itemId: item && item.id, em: new Date().toISOString() };
+    setVideos(prev => (prev || []).map(x => (x.id === v.id ? { ...x, enviadoSala: [...(x.enviadoSala || []), marca] } : x)));
+    return item;
+  };
   // Referências para o botão partilhado da Biblioteca (na mesma linha dos
   // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
   // duplicar o botão dentro de cada sub-aba.
@@ -1152,8 +1176,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     return f.equipaCompeticao || f.nome;
   };
   const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova }) => {
-    if (!clip || !clip.publicUrl) throw new Error('Este clipe não tem vídeo guardado.');
-    const base = {
+    // Jogo ou corte por link (Análise de Vídeo): a cópia no Canal é o mesmo
+    // link (YouTube), com os mesmos tempos se for um corte.
+    const base = clip && clip.linkAnalise ? {
+      id: uid(), title: (titulo || '').trim() || clip.title || 'Vídeo',
+      ...(clip.youtubeId ? { youtubeId: clip.youtubeId } : { social: clip.social }),
+      ...(typeof clip.clipInicio === 'number' ? { clipInicio: clip.clipInicio, clipFim: clip.clipFim, clipOrigemTitulo: clip.clipOrigemTitulo || '' } : {}),
+      ...(clip.note ? { note: clip.note } : {}),
+      origemAnalise: { linkId: clip.id, em: new Date().toISOString() },
+    } : null;
+    if (!base && (!clip || !clip.publicUrl)) throw new Error('Este clipe não tem vídeo guardado.');
+    const baseMp4 = base ? null : {
       id: uid(), title: (titulo || '').trim() || 'Clipe', kind: 'video', dataUrl: clip.publicUrl,
       thumbUrl: clip.thumbUrl || null, fileName: `${(titulo || 'clipe').trim()}.mp4`,
       clipInicio: typeof clip.origemInicio === 'number' ? clip.origemInicio : 0,
@@ -1161,11 +1194,12 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       clipOrigemTitulo: clip.originalTitulo || '',
       origemAnalise: { clipeId: clip.id, em: new Date().toISOString() },
     };
+    const comum = base || baseMp4;
     let item;
     if (destino === 'jogo') {
       const m = (matches || []).find(x => x.id === jogoId);
       if (!m) throw new Error('Escolhe o jogo.');
-      item = { ...base, categoria: 'jogo', jogoId: m.id, jornada: m.jornada || '', pasta: '' };
+      item = { ...comum, categoria: 'jogo', jogoId: m.id, jornada: m.jornada || '', pasta: '' };
     } else if (destino === 'adversario') {
       /* FICHA NOVA a partir da Análise de Vídeo: só com o nome. Se já houver
          uma ficha com esse nome, usa-se essa (não se duplica). O resto da
@@ -1186,10 +1220,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         }
       }
       if (!f) throw new Error(fichaNova ? 'Escreve o nome da equipa.' : 'Escolhe a equipa.');
-      item = { ...base, adversarioId: f.id, equipa: f.equipaCompeticao || f.nome, pasta: '' };
+      item = { ...comum, adversarioId: f.id, equipa: f.equipaCompeticao || f.nome, pasta: '' };
     } else {
       if (!(pasta || '').trim()) throw new Error('Escolhe ou escreve a pasta.');
-      item = { ...base, categoria: 'tema', pasta: cleanFolder(pasta) };
+      item = { ...comum, categoria: 'tema', pasta: cleanFolder(pasta) };
     }
     setVideos(prev => [item, ...(prev || [])]);
     return item;
@@ -1739,26 +1773,32 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
-              nLinks={videosAnalise.filter(v => !ehClipe(v)).length}
               jogosLink={videosAnalise.filter(v => !ehClipe(v))}
-              abrirNovoLink={() => { if (linksAnaliseRef.current) linksAnaliseRef.current.abrirNovo(); }}
+              cortesLink={videosAnalise.filter(v => ehClipe(v))}
+              jogadores={playersAtivos}
+              criarJogoLink={criarJogoLink}
+              enviarLinkParaCanal={enviarLinkParaCanal}
               abrirLink={(id) => { if (linksAnaliseRef.current) linksAnaliseRef.current.irParaItem(id); }}
               renomearLink={(id, nome) => setVideosAnalise(prev => prev.map(v => (v.id === id ? { ...v, title: nome } : v)))}
               apagarLink={(v) => askConfirm({
-                title: 'Apagar jogo?',
-                label: `Jogo "${v.title || 'sem nome'}"`,
-                note: v.publicado ? 'Está publicado: sai também da Sala de Vídeo e do Portal. Os cortes já feitos mantêm-se.' : 'Os cortes já feitos mantêm-se.',
+                title: ehClipe(v) ? 'Apagar corte?' : 'Apagar jogo?',
+                label: `"${v.title || 'sem nome'}"`,
+                note: (v.enviadoSala || []).length ? 'O que já foi enviado para o Canal fica lá.' : (ehClipe(v) ? '' : 'Os cortes já feitos mantêm-se.'),
                 confirmLabel: 'Apagar',
                 onConfirm: () => setVideosAnalise(prev => prev.filter(x => x.id !== v.id)),
               })}
-              painelLinks={(
+              /* O leitor dos jogos por link (o da Sala de Vídeo: cortes e
+                 desenho com paragens). Criado aqui porque a Análise não pode
+                 importar o MediaLibrary (import circular); a Análise passa a
+                 ação de cada linha ("Enviar para o Canal"). */
+              renderPainelLinks={(acaoLinha) => (
                 <MediaLibrary
                   ref={linksAnaliseRef}
                   items={videosAnalise} setItems={setVideosAnalise}
-                  addLabel="Adicionar link" addButtonVariant="ghost" recentesPrimeiro semBotaoTopo soLink
-                  publicarNaSala={publicarDaAnalise}
-                  emptyText="Ainda sem jogos por link. Cola o link do YouTube de um jogo para fazeres cortes e desenhos, como na Sala de Vídeo. Fica só na Análise até carregares em «Publicar» (aí passa também para a Sala de Vídeo e o Portal)."
-                  emptyFirstLabel="Adicionar o primeiro link"
+                  addLabel="Colar link" addButtonVariant="ghost" recentesPrimeiro semBotaoTopo soLink semCatalogo
+                  acaoLinha={acaoLinha}
+                  emptyText="Ainda sem jogos por link."
+                  emptyFirstLabel="Colar link"
                 />
               )} />
             {/* Por cima da bancada da Análise (z-index alto) e DENTRO do ecrã

@@ -5,7 +5,7 @@ import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
-import { COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
+import { ClipPlayerModal, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
@@ -30,7 +30,7 @@ function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v))
 // O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
 function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
 
-export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, publicarNaSala, soLink }, ref) {
+export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, acaoLinha, soLink }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -1102,6 +1102,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // Apagar um clipe do próprio atleta (Portal): confirmação na própria
   // linha, porque o Portal não tem o diálogo de confirmação do staff.
   const [confirmarApagarId, setConfirmarApagarId] = useState(null);
+  // Clipe posto pelo treinador a partir de um corte MP4 com desenhos: vê-se
+  // no leitor dos cortes da Análise, com os desenhos (só para ver).
+  const [verClipeStaff, setVerClipeStaff] = useState(null);
   const [aApagarClipeId, setAApagarClipeId] = useState(null);
   const confirmarApagarClipeAtleta = (id) => {
     if (!apagarClipeAtleta || aApagarClipeId) return;
@@ -2466,18 +2469,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
-          {/* Análise de Vídeo: pôr (ou tirar) este vídeo na Sala de Vídeo e no Portal. */}
-          {publicarNaSala && !soLeitura && (
-            <button type="button" onClick={() => publicarNaSala(v.id, !v.publicado)}
-              title={v.publicado ? 'Está na Sala de Vídeo e no Portal dos jogadores. Carrega para tirar (continua aqui na Análise).' : 'Pôr na Sala de Vídeo e no Portal dos jogadores (continua também aqui na Análise)'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body, fontSize: 11, fontWeight: 600,
-                padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap',
-                border: `1px solid ${v.publicado ? T.gold : T.line}`, background: v.publicado ? `${T.gold}1F` : 'transparent', color: v.publicado ? T.gold : T.muted,
-              }}>
-              {v.publicado ? <><Check size={12} /> Na Sala</> : <><Plus size={12} /> Publicar</>}
-            </button>
-          )}
+          {/* Ação própria de quem usa a biblioteca (Análise de Vídeo: "Enviar para o Canal"). */}
+          {acaoLinha && !soLeitura && acaoLinha(v)}
           {!soLeitura && !semCatalogo && modoCanal && (catDe(v) !== 'tema' || naFicha) && (
             // Jogos e adversários não vivem em pastas — mantém-se o lugar
             // do seletor, para os ícones continuarem alinhados em coluna.
@@ -2581,7 +2574,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 aria-label={`Partilhar o clipe ${v.title || ''}`}
                 style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
               ><Share2 size={13} /></button>
-              {editarClipeAtleta && (
+              {editarClipeAtleta && !v.doStaff && (
                 <button
                   onClick={() => iniciarEdicaoClipeAtleta(v)}
                   title="Editar o clipe"
@@ -2591,7 +2584,10 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
               )}
             </>
           )}
-          {soLeitura && v.deAtleta && apagarClipeAtleta && (
+          {soLeitura && v.deAtleta && v.doStaff && (
+            <span title="Posto pelo treinador: só para ver" style={{ fontSize: 10.5, color: T.gold, flexShrink: 0, ...body }}>treinador</span>
+          )}
+          {soLeitura && v.deAtleta && apagarClipeAtleta && !v.doStaff && (
             confirmarApagarId === v.id ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0, fontSize: 12, ...body }}>
                 <span style={{ color: T.cream }}>{aApagarClipeId === v.id ? 'A apagar…' : 'Apagar o clipe?'}</span>
@@ -2808,7 +2804,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     const novo = {
       id: uid(),
       title: tituloClipe.trim() || `${active.title || 'Vídeo'} — corte`,
-      pasta: 'Cortes',
+      // Análise de Vídeo (`soLink`): sem pasta — os cortes ficam nos Cortes da Análise.
+      pasta: soLink ? '' : 'Cortes',
       jornada: active.jornada || '',
       // Vídeo do YouTube: o corte é o mesmo vídeo com início e fim. Vídeo
       // carregado (ficheiro): também — o clipe aponta para o MESMO ficheiro
@@ -2910,7 +2907,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // origem (se ainda existir); senão, edita sobre o próprio clipe, o que
   // só deixa encurtá-lo.
   const iniciarEdicaoClipeAtleta = (v) => {
-    if (!editarClipeAtleta || !v) return;
+    if (!editarClipeAtleta || !v || v.doStaff) return;
     const origem = v.clipOrigemId && items.find(x => x.id === v.clipOrigemId && !ehClipe(x));
     const alvo = origem || v;
     const pedido = { abrirEm: alvo.id, clipeId: v.id, inicio: v.clipInicio, fim: v.clipFim, titulo: v.title, nota: v.notaAtleta || '' };
@@ -3718,6 +3715,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                               <>
                                 {emLista && <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>}
                                 {active.title || 'Clipe'} · {fmtMMSS(clipIni)}–{fmtMMSS(clipFimEf)} ({Math.round(clipFimEf - clipIni)}s)
+                                {active.doStaff && <span style={{ color: T.gold }}> · do treinador</span>}
                               </>
                             ) : (
                               <>
@@ -3726,6 +3724,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                               </>
                             )}
                           </span>
+                          {(active.shapesStaff || []).length > 0 && active.dataUrl && (
+                            <Btn variant="solid" onClick={() => setVerClipeStaff(active)} style={{ padding: '6px 10px', fontSize: 12, flexShrink: 0 }}>
+                              <Pencil size={13} /> Ver com os desenhos
+                            </Btn>
+                          )}
                           {/* Os botões ocupam sempre o mesmo espaço (escondidos
                               quando não há lista), para a barra não mudar. */}
                           <div style={{ display: 'flex', gap: 6, flexShrink: 0, visibility: temNav ? 'visible' : 'hidden' }}>
@@ -4749,6 +4752,13 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
         />
       )}
 
+      {verClipeStaff && (
+        <ClipPlayerModal soVer
+          clip={{ id: verClipeStaff.id, titulo: verClipeStaff.title, note: verClipeStaff.notaAtleta || '', publicUrl: verClipeStaff.dataUrl,
+            shapes: verClipeStaff.shapesStaff, duracao: verClipeStaff.duracaoStaff || Math.max(0, (verClipeStaff.clipFim || 0) - (verClipeStaff.clipInicio || 0)),
+            originalTitulo: verClipeStaff.clipOrigemTitulo || '', ...(verClipeStaff.calibracaoStaff ? { calibracao: verClipeStaff.calibracaoStaff } : {}) }}
+          tag={null} onClose={() => setVerClipeStaff(null)} />
+      )}
       {modal && (
         <MediaModal
           item={modal === 'new' ? null : modal}

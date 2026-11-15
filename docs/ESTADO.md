@@ -170,26 +170,36 @@ ficheiro; usado nas duas gravações (separador e ficheiro). Testado com o
 fazer, a Biblioteca guarda sempre no Storage público (o privado é só do
 Diário).
 
-**Jogos por link na Análise de Vídeo (14/11, passo 1 do plano):** um só
-cartão "Adicionar vídeo" (escolhe Carregar ficheiro ou Link do YouTube; a
-janela do link é só link, `soLink`). Os jogos por link aparecem na mesma
-grelha dos carregados, com o mesmo cartão (imagem do YouTube, lápis, ✕,
-"YouTube · na Sala" quando publicado); ao abrir vão para o separador "Jogos
-por link" (só aparece quando há algum). É um `MediaLibrary` (o mesmo leitor, cortes e desenho com
-paragens da Sala de Vídeo) sobre a fatia `videosAnalise` da tabela
-`videos` (marca `daAnalise: true`, posta em tudo o que se cria lá dentro,
-cortes incluídos). Criado no App.jsx e passado à Análise como `painelLinks`
-(a Análise não pode importar o MediaLibrary: há import circular). Fica fora
-do Canal (`videosGerais` exclui `daAnalise`), das pastas de destino e do
-Portal (filtro na app em vistas.jsx e Cacifo.jsx, e na base com
-`2026-11_07_jogos_da_analise.sql`: checkin_biblioteca não os devolve e
-checkin_clipe_criar recusa-os; testado no Postgres local). Botão "Publicar" em cada linha
-(`publicarNaSala` no MediaLibrary → `publicado: true`): o vídeo passa a
-aparecer também no Canal e no Portal, sem sair da Análise (mesmo registo;
-apagar no Canal apaga nos dois). "Na Sala" tira-o outra vez. Plano seguinte: publicar da Análise para a Sala;
-MP4 por clipe de jogador em jogos com ficheiro; quotas e limpeza do jogo
-inteiro aos 90 dias (decidido 14/11). Compressão do worker: 720p, 45 min ≈
-530 MB, 10 a 15 min a preparar (medido 14/11).
+**Análise de Vídeo reorganizada (14/11):** dois cartões em cima, "Estúdio ·
+ficheiros" (o editor de sempre) e "Links · YouTube" (modo guardado em
+localStorage `mjp-analise-modo`). Cada modo tem a sua grelha e o seu
+cartão de adicionar ("Carregar ficheiro" / "Colar link"). Links:
+`ColarLinkModal` (título, link, destino: só Análise, Canal › Jogos com o
+jogo do calendário, ou Adversários com ficha existente/nova) → `criarJogoLink`
+no App. O leitor dos links é um `MediaLibrary` (semCatalogo, soLink, sem
+pastas) criado no App por `renderPainelLinks(acaoLinha)` (a Análise não pode
+importar o MediaLibrary: import circular); cada linha tem "Enviar para o
+Canal" (`EnviarSalaModal` → `enviarLinkParaCanal` = cópia no Canal, como os
+cortes MP4; marca `enviadoSala` no original). Os jogos/cortes por link vivem
+em `videos` com `daAnalise: true` e ficam fora do Canal e do Portal
+(`2026-11_07_jogos_da_analise.sql`; o `publicado` desse SQL ficou sem uso, as
+cópias para o Canal não têm `daAnalise`). Os cortes por link aparecem no
+separador "Cortes", por jogo, com selo YouTube.
+ANÁLISE INDIVIDUAL PELO STAFF: botão "+ Análise individual" e "+" em cada
+cartão de jogador → `AnaliseIndividualModal` (jogador do plantel, cortes MP4
+e YouTube). Cada corte vira um clipe do jogador em `video_clips`
+(`origem: 'atleta'`, `criadoPorStaff: true`, `corteOrigemId`; MP4 = o
+ficheiro do corte com clipNoFicheiro 0..duração). Apagar no cartão apaga de
+vez (também no Portal); o ficheiro MP4 de um corte usado numa análise
+individual não se apaga. No Portal são só para ver
+(`2026-11_08_clipes_do_staff.sql`: checkin_clipe_editar/apagar recusam
+`criadoPorStaff`; na app, `doStaff` em clipeAtletaParaCanal esconde editar e
+apagar e mostra "treinador"). DESENHOS: o clipe leva `shapes` (corte MP4 do
+Estúdio) ou `anotacoesPausa` (corte por link). Os `anotacoesPausa` tocam no
+leitor normal; os `shapes` abrem no `ClipPlayerModal` (exportado, `soVer`)
+pelo botão "Ver com os desenhos" no Portal e diretamente nos cartões da
+análise individual. PRÓXIMO: escolher Portal/Canal para jogos carregados por
+ficheiro (bucket privado → links temporários por função da Vercel).
 
 **Travão "eliminação de 3 registos" nos Vídeos (14/11):** a sincronização
 Análise → fichas de adversário (`planoSincronizacaoFichas`, App.jsx) apaga
