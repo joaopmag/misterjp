@@ -1140,8 +1140,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     const equipasSemFicha = Array.from(new Set(nomesEquipasCompeticao(standings) || []))
       .filter(n => n && !ehNossaEquipa(n, nossa) && !fichaDaEquipa(n, adversarios))
       .sort((a, b) => a.localeCompare(b, 'pt'));
-    return { pastas, jogos, fichas, equipasSemFicha };
-  }, [videos, matches, adversarios, standings, equipaAtiva]);
+    /* Jogadores observados (Scouting): os cortes e clipes podem ir para os
+       vídeos da ficha de cada um (itens com `scoutId`, fora do Canal e do Portal). */
+    const scouts = [...(scouting || [])].filter(x => x && x.id && String(x.name || '').trim())
+      .sort((x, y) => String(x.name).localeCompare(String(y.name), 'pt'))
+      .map(x => ({ id: x.id, rotulo: [String(x.name).trim(), String(x.club || '').trim()].filter(Boolean).join(' · ') }));
+    return { pastas, jogos, fichas, equipasSemFicha, scouts };
+  }, [videos, matches, adversarios, standings, equipaAtiva, scouting]);
   // Clipes da Análise que estão a ser usados na Sala de Vídeo (para não
   // se apagar o ficheiro deles quando são apagados na Análise).
   // Os enviados sozinhos para a ficha (origemAnalise.auto) não contam: esses
@@ -1225,7 +1230,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     }
     return f.equipaCompeticao || f.nome;
   };
-  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova, equipasJogo }) => {
+  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova, equipasJogo, scoutId }) => {
     // Jogo ou corte por link (Análise de Vídeo): a cópia no Canal é o mesmo
     // link (YouTube), com os mesmos tempos se for um corte.
     const base = clip && clip.linkAnalise ? {
@@ -1282,6 +1287,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       }
       if (!f) throw new Error(fichaNova ? 'Escreve o nome da equipa.' : 'Escolhe a equipa.');
       item = { ...comum, adversarioId: f.id, equipa: f.equipaCompeticao || f.nome, pasta: '' };
+    } else if (destino === 'scout') {
+      /* SCOUTING › JOGADOR: o corte vai para os vídeos da ficha do jogador
+         observado (como o "Adicionar vídeo" dentro da ficha). Não aparece no
+         Canal nem no Portal. */
+      const x = (scouting || []).find(j => j.id === scoutId);
+      if (!x) throw new Error('Escolhe o jogador.');
+      item = { ...comum, scoutId: x.id, pasta: '' };
     } else {
       if (!(pasta || '').trim()) throw new Error('Escolhe ou escreve a pasta.');
       item = { ...comum, categoria: 'tema', pasta: cleanFolder(pasta) };
@@ -1848,7 +1860,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 label: `"${v.title || 'sem nome'}"`,
                 note: (v.enviadoSala || []).length ? 'O que já foi enviado para o Canal fica lá.' : (ehClipe(v) ? '' : 'Os cortes já feitos mantêm-se.'),
                 confirmLabel: 'Apagar',
-                onConfirm: () => setVideosAnalise(prev => prev.filter(x => x.id !== v.id)),
+                onConfirm: () => {
+                  setVideosAnalise(prev => prev.filter(x => x.id !== v.id));
+                  offerUndo(`${ehClipe(v) ? 'Clipe' : 'Jogo'} "${v.title || 'sem nome'}" apagado.`, () => setVideosAnalise(prev => (prev.some(x => x.id === v.id) ? prev : [v, ...prev])));
+                },
               })}
               /* O leitor dos jogos por link (o da Sala de Vídeo: cortes e
                  desenho com paragens). Criado aqui porque a Análise não pode

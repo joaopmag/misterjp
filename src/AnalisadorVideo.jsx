@@ -3,11 +3,12 @@ import { corrigirDuracaoMp4 } from './media/duracaoMp4';
 import { escolherPartilha } from './base/escolherPartilha';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
+import { offerUndo, UNDO_SECONDS } from './base/ui';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download, LayoutGrid, Ruler, Link2, Plus,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1618,6 +1619,51 @@ function useEcraInteiro() {
 }
 
 // Esc fecha o leitor (em janela inteira já não há fundo onde clicar).
+/* UMA LINHA POR JOGO QUE DESLIZA, sem barra de deslizar à vista: com o
+   dedo, o trackpad, ou as setas que aparecem nas pontas quando há mais. */
+function FilaDeslizante({ children, gap = 10 }) {
+  const ref = useRef(null);
+  const [pontas, setPontas] = useState({ esq: false, dir: false });
+  const medir = () => {
+    const el = ref.current;
+    if (!el) return;
+    const esq = el.scrollLeft > 4;
+    const dir = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+    setPontas(p => (p.esq === esq && p.dir === dir ? p : { esq, dir }));
+  };
+  useEffect(() => {
+    medir();
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => medir());
+    ro.observe(el);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Mais ou menos cartões: volta a medir.
+  useEffect(() => { medir(); });
+  const andar = (dir) => { const el = ref.current; if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' }); };
+  const seta = (dir, Icone) => (
+    <button type="button" aria-label={dir < 0 ? 'Anteriores' : 'Seguintes'} onClick={() => andar(dir)}
+      style={{
+        position: 'absolute', top: '50%', [dir < 0 ? 'left' : 'right']: 4, transform: 'translateY(-50%)', zIndex: 2,
+        width: 32, height: 32, borderRadius: '50%', border: `1px solid ${T.line}`, background: 'rgba(0,0,0,.65)', color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+      }}><Icone size={16} /></button>
+  );
+  return (
+    <div style={{ position: 'relative' }}>
+      <style>{'.mjp-fila::-webkit-scrollbar{display:none}'}</style>
+      <div ref={ref} className="mjp-fila" onScroll={medir}
+        style={{ display: 'flex', gap, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'none', scrollSnapType: 'x proximity', WebkitOverflowScrolling: 'touch' }}>
+        {children}
+      </div>
+      {pontas.esq && seta(-1, ChevronLeft)}
+      {pontas.dir && seta(1, ChevronRight)}
+    </div>
+  );
+}
+
 function useFecharComEsc(onClose, ativo = true) {
   useEffect(() => {
     if (!ativo) return undefined;
@@ -1857,6 +1903,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
   const [pasta, setPasta] = useState(() => (d.pastas || [])[0] || '');
   const [pastaNova, setPastaNova] = useState('');
   const [jogoId, setJogoId] = useState('');
+  const [scoutId, setScoutId] = useState('');
   // Sem fichas ainda, começa logo em "Nova equipa".
   const [fichaId, setFichaId] = useState(() => ((d.fichas || []).length ? '' : '__nova__'));
   const [nomeFichaNova, setNomeFichaNova] = useState('');
@@ -1878,9 +1925,11 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
       if (fichaNova && !fichaNova.nome) { setErro(equipaNovaSel === '__outra__' || !equipasLista.length ? 'Escreve o nome da equipa.' : 'Escolhe a equipa.'); return; }
       const rotulo = destino === 'jogo' ? `Jogos › ${(d.jogos.find(j => j.id === jogoId) || {}).rotulo || ''}`
         : destino === 'adversario' ? `Adversários › ${fichaNova ? fichaNova.nome : ((d.fichas.find(f => f.id === fichaId) || {}).rotulo || '')}`
+          : destino === 'scout' ? `Scouting › ${((d.scouts || []).find(x => x.id === scoutId) || {}).rotulo || ''}`
           : `Temas › ${pastaFinal}`;
+      if (destino === 'scout' && !scoutId) { setErro('Escolhe o jogador.'); return; }
       // `onEnviar` pode ser assíncrono (jogo por ficheiro: pede o link ao servidor).
-      const r = onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo });
+      const r = onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo, scoutId });
       if (r && typeof r.then === 'function') { setAEnviar(true); await r; }
       setFeito(destino === 'adversario' ? `${rotulo} (e ficha da equipa)` : rotulo);
     } catch (e) { setErro(e.message || String(e)); } finally { setAEnviar(false); }
@@ -1920,7 +1969,18 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
             <div style={{ display: 'flex', gap: 6 }}>
               {opcao('adversario', 'Adversários')}
               {opcao('jogo', 'Jogos')}
+              {opcao('scout', 'Jogador (Scouting)')}
             </div>
+            {destino === 'scout' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+                Jogador observado (vídeos da ficha)
+                <select value={scoutId} onChange={e => setScoutId(e.target.value)} style={campo}>
+                  <option value="">{(d.scouts || []).length ? 'Escolhe o jogador…' : 'Ainda não há jogadores em Scouting'}</option>
+                  {(d.scouts || []).map(x => <option key={x.id} value={x.id}>{x.rotulo}</option>)}
+                </select>
+                <span style={{ fontSize: 11.5, color: T.mutedDim }}>Fica nos vídeos da ficha em Scouting. Não aparece no Canal nem no Portal.</span>
+              </label>
+            )}
             {destino === 'tema' && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
                 Pasta
@@ -3594,6 +3654,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   ).sort((a, b) => (new Date(b.em || 0).getTime() || 0) - (new Date(a.em || 0).getTime() || 0)), [videosOriginais, jogosLink, modoEfetivo]);
   const [colarLinkAberto, setColarLinkAberto] = useState(false);
   const [linkAberto, setLinkAberto] = useState(null); // jogo/corte por link aberto no palco
+  // Aberto a partir do separador "Clipes": numa janela por cima, para a
+  // página não mexer (nem trocar de modo).
+  const [linkEmJanela, setLinkEmJanela] = useState(false);
+  useEffect(() => {
+    if (!linkEmJanela) return undefined;
+    const tecla = (e) => { if (e.key === 'Escape') { setLinkEmJanela(false); setLinkAberto(null); } };
+    document.addEventListener('keydown', tecla);
+    return () => document.removeEventListener('keydown', tecla);
+  }, [linkEmJanela]);
   const [jogoParaCanal, setJogoParaCanal] = useState(null); // { tipo: 'ficheiro', v } — jogo carregado a enviar
   const [linkParaCanal, setLinkParaCanal] = useState(null); // jogo/corte por link a enviar para o Canal
   const painelLinksRef = useRef(null);
@@ -3617,8 +3686,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Cartão de um jogo por link: igual ao dos carregados (imagem, nome,
   // lápis para mudar o nome, estado e ✕). Abre no separador "Jogos por link".
   const cartaoLink = (v) => (
-    <div key={v.id} role="button" tabIndex={0} onClick={() => abrirJogoLink(v.id)}
-      onKeyDown={e => { if (e.key === 'Enter') abrirJogoLink(v.id); }}
+    <div key={v.id} role="button" tabIndex={0} onClick={() => { setLinkEmJanela(false); abrirJogoLink(v.id); }}
+      onKeyDown={e => { if (e.key === 'Enter') { setLinkEmJanela(false); abrirJogoLink(v.id); } }}
       style={{
         display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
         borderRadius: 10, border: `1px solid ${T.line}`, background: T.surface,
@@ -3870,11 +3939,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   const semRegistoVisiveis = semRegisto.filter(o => !(videosOriginais || []).some(v => v && v.storagePath === o.caminho) && !(ignorados || []).includes(o.caminho));
 
+  /* APAGAR COM "ANULAR" (como no resto da app): o registo sai já, fica a
+     barra "Anular" uns segundos, e só depois de ela passar é que se apaga
+     o ficheiro no Storage (senão não havia nada para repor). */
+  const apagarComAnular = (rotulo, { remover, repor, depois }) => {
+    let anulado = false;
+    remover();
+    offerUndo(`${rotulo} apagado.`, () => { anulado = true; repor(); });
+    if (depois) setTimeout(() => { if (!anulado) depois(); }, (UNDO_SECONDS + 3) * 1000);
+  };
   const apagarOriginal = (video) => {
-    const executar = async () => {
-      try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
-      setVideosOriginais(prev => prev.filter(v => v.id !== video.id));
+    const executar = () => {
       if (originalAtivoId === video.id) { setOriginalAtivoId(null); limparMarcas(); }
+      apagarComAnular(`Vídeo "${video.titulo}"`, {
+        remover: () => setVideosOriginais(prev => prev.filter(v => v.id !== video.id)),
+        repor: () => setVideosOriginais(prev => (prev.some(v => v.id === video.id) ? prev : [video, ...prev])),
+        depois: async () => { try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* fica órfão */ } },
+      });
     };
     if (askConfirm) {
       askConfirm({
@@ -4077,8 +4158,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (ehClipeAtleta(clip)) {
       const executarAtleta = () => {
         // Feito pelo staff (análise individual): apaga de vez, também no Portal.
-        if (clip.apagadoPeloAtleta || clip.criadoPorStaff) setClipes(prev => prev.filter(c => c.id !== clip.id));
-        else setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, apagadoPeloTreinador: true } : c)));
+        apagarComAnular('Clipe', {
+          remover: () => {
+            if (clip.apagadoPeloAtleta || clip.criadoPorStaff) setClipes(prev => prev.filter(c => c.id !== clip.id));
+            else setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, apagadoPeloTreinador: true } : c)));
+          },
+          // Repõe exatamente como estava (mesmo id).
+          repor: () => setClipes(prev => (prev.some(c => c.id === clip.id) ? prev.map(c => (c.id === clip.id ? clip : c)) : [clip, ...prev])),
+        });
         onRemovido?.();
       };
       const msg = clip.criadoPorStaff ? 'Foi o staff que o pôs na análise deste jogador: sai daqui e do Portal dele. O corte original fica.'
@@ -4091,10 +4178,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
        na ficha do adversário): apaga-se o registo daqui, mas o ficheiro
        FICA no Storage, senão o vídeo ficava partido na Sala de Vídeo. */
     const naSala = clipeUsadoNaSala(clip);
-    const executar = async () => {
-      // Os clipes dos atletas não têm ficheiro (são só marcas no YouTube).
-      if (clip.storagePath && !naSala) await apagarFicheirosClipe(clip.storagePath);
-      setClipes(prev => prev.filter(c => c.id !== clip.id));
+    const executar = () => {
+      apagarComAnular('Corte', {
+        remover: () => setClipes(prev => prev.filter(c => c.id !== clip.id)),
+        repor: () => setClipes(prev => (prev.some(c => c.id === clip.id) ? prev : [clip, ...prev])),
+        // O ficheiro só se apaga depois de passar o "Anular" (e se não estiver
+        // em uso na Sala de Vídeo nem numa análise individual).
+        depois: clip.storagePath && !naSala ? () => apagarFicheirosClipe(clip.storagePath) : null,
+      });
       onRemovido?.();
     };
     const notaSala = naSala ? 'Este clipe foi enviado para a Sala de Vídeo: sai da Análise de Vídeo, mas continua na Sala de Vídeo (o ficheiro não é apagado). Para o tirar de lá, apaga-o também na Sala de Vídeo.'
@@ -5028,7 +5119,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               const on = modoEfetivo === m.id;
               return (
                 <button key={m.id} type="button" role="tab" aria-selected={on}
-                  onClick={() => { if (!on) { setModo(m.id); setVerTodosOriginais(false); setLinkAberto(null); } }}
+                  onClick={() => { if (!on) { setModo(m.id); setVerTodosOriginais(false); setLinkAberto(null); setLinkEmJanela(false); } }}
                   style={{
                     position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px', minWidth: 0,
                     background: 'transparent', border: 'none', cursor: on ? 'default' : 'pointer', textAlign: 'left', ...body, color: T.cream,
@@ -5052,7 +5143,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             com um esbater rápido. Um jogo por link abre aqui mesmo, no
             lugar da grelha (como o Estúdio abre o editor). */}
         <style>{'@keyframes mjpPalco{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}'}</style>
-        {modoEfetivo === 'links' && linkAberto ? (
+        {modoEfetivo === 'links' && linkAberto && !linkEmJanela ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <Btn variant="ghost" onClick={() => setLinkAberto(null)}><ArrowLeft size={14} /> Jogos por link</Btn>
             <span style={{ fontSize: 13, color: T.muted, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -5772,7 +5863,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           altura 0 fora do modo Links, para não perder o que estava aberto e
           para a janela de edição (posição fixa) aparecer na mesma. */}
       {renderPainelLinks && (
-        <div ref={painelLinksRef} style={modoEfetivo === 'links' && !originalAtivo && linkAberto ? { animation: 'mjpPalco .22s ease' } : { height: 0, overflow: 'hidden' }}>
+        <div ref={painelLinksRef} style={linkEmJanela && linkAberto
+          ? { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.72)', overflowY: 'auto', padding: '4vh 16px 16px' }
+          : modoEfetivo === 'links' && !originalAtivo && linkAberto ? { animation: 'mjpPalco .22s ease' } : { height: 0, overflow: 'hidden' }}>
+          {linkEmJanela && linkAberto && (
+            <div style={{ maxWidth: 1200, margin: '0 auto 10px', display: 'flex', justifyContent: 'flex-end' }}>
+              <Btn variant="ghost" onClick={() => { setLinkEmJanela(false); setLinkAberto(null); }}><X size={14} /> Fechar</Btn>
+            </div>
+          )}
+          <div style={linkEmJanela && linkAberto ? { maxWidth: 1200, margin: '0 auto', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 12, padding: 14 } : undefined}>
           {renderPainelLinks((v) => {
             const enviado = (v.enviadoSala || []).length > 0;
             return (
@@ -5787,6 +5886,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               </button>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -5965,8 +6065,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>{g.titulo}</span>
                 <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'corte' : 'cortes'}</span>
               </div>
-            {/* Sem barra de deslizar: os cartões descem para a linha seguinte. */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingBottom: 6 }}>
+            <FilaDeslizante>
               {g.clipes.map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
@@ -6040,7 +6139,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </div>
                 );
               })}
-            </div>
+            </FilaDeslizante>
             </div>
             ))}
           </>
@@ -6064,7 +6163,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <span style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>{g.nome}</span>
                   <span style={{ fontSize: 12, color: T.mutedDim, fontFamily: 'monospace' }}>{g.cortes.length} {g.cortes.length === 1 ? 'clipe' : 'clipes'} · YouTube</span>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingBottom: 6 }}>
+                <FilaDeslizante>
                   {g.cortes.map(c => {
                     const enviado = (c.enviadoSala || []).length > 0;
                     const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
@@ -6076,7 +6175,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     );
                     return (
                       <div key={c.id} style={{ flex: '0 0 230px', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
-                        <div onClick={() => { setModo('links'); abrirJogoLink(c.id); setTimeout(() => { const el = painelLinksRef.current; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80); }} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
+                        <div onClick={() => { setLinkEmJanela(true); abrirJogoLink(c.id); }} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
                           {c.youtubeId && <img src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                           <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 10.5, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Play size={10} /> YouTube</span>
                           <span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', fontFamily: 'monospace' }}>{Math.round(dur)}s</span>
@@ -6092,7 +6191,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </div>
                     );
                   })}
-                </div>
+                </FilaDeslizante>
               </div>
             ))}
           </div>

@@ -287,6 +287,14 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirId]);
   const lista = grupo === 'oficial' ? oficiais : amigaveis;
+  /* Trocar entre Competição e Amigáveis não mexe na página: a lista
+     guarda a maior altura que já teve (a outra lista pode ser mais curta). */
+  const listaRef = React.useRef(null);
+  const [alturaLista, setAlturaLista] = useState(0);
+  const trocarGrupo = (id) => {
+    if (listaRef.current) setAlturaLista(h => Math.max(h, listaRef.current.offsetHeight));
+    setGrupo(id);
+  };
   /* Cartão de cada jogo: tocar abre/fecha para baixo as notas da equipa
      técnica; o "+ Análise do jogo" abre a caixa para escrever; o relatório
      abre-se no estado à direita ("Por preencher", "Feito"…). */
@@ -309,7 +317,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
           const on = grupo === id;
           const n = porPreencher(l);
           return (
-            <button key={id} type="button" onClick={() => setGrupo(id)} style={{
+            <button key={id} type="button" onClick={() => trocarGrupo(id)} style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
               ...(estreito ? { flex: '1 1 0', minWidth: 0 } : {}),
               background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted, border: `1px solid ${on ? T.crimson : T.line}`,
@@ -321,6 +329,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
         })}
       </div>
 
+      <div ref={listaRef} style={{ minHeight: alturaLista || undefined }}>
       {lista.length === 0 ? (
         <EmptyState text={grupo === 'oficial' ? 'Ainda não há jogos oficiais realizados.' : 'Ainda não há amigáveis realizados.'} />
       ) : (
@@ -435,6 +444,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
           })}
         </div>
       )}
+      </div>
 
       {aberto && (
         <RelatorioJogoModal

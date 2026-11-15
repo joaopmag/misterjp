@@ -1154,6 +1154,14 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // (A antiga função "Adicionar anotação" — círculo/caixa de texto sobre
   // o vídeo — foi retirada a pedido. Anotações já gravadas em itens
   // antigos ficam no registo, mas deixam de ser desenhadas.)
+  const prepararDuracaoYoutube = () => {
+    if (duracaoJogoRefBib.current > 0 || !activeYoutubeIdRef.current || preparoRef.current) return;
+    preparoRef.current = { alvo: currentTimeRef.current || 0 };
+    enviarComandoYoutube('mute');
+    enviarComandoYoutube('playVideo');
+    // Se nada vier em 6 s, desiste (e devolve o som).
+    setTimeout(() => { if (preparoRef.current) { preparoRef.current = null; enviarComandoYoutube('pauseVideo'); enviarComandoYoutube('unMute'); } }, 6000);
+  };
   const enviarComandoYoutube = (func, args) => {
     /* VÍDEO CARREGADO (ficheiro): o MESMO leitor da Biblioteca, com um
        <video> no lugar do iframe do YouTube. Os comandos são os mesmos
@@ -1174,6 +1182,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
+  enviarComandoYoutubeRef.current = enviarComandoYoutube;
 
   const inlineIframeRef = React.useRef(null);
   const inlineVideoRef = React.useRef(null);
@@ -1244,6 +1253,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // enquanto o vídeo toca, e não há razão para voltar a desenhar o ecrã
   // a cada um — só interessa o valor no instante em que se clica.
   const currentTimeRef = React.useRef(0);
+  /* PREPARAR UM VÍDEO DO YOUTUBE: o YouTube só diz a duração depois de
+     começar a tocar. Ao abrir "Criar clipe" sem duração, toca-se um
+     instante sem som e pára-se logo — a barra fica pronta a usar sem ser
+     preciso carregar em play. */
+  const preparoRef = React.useRef(null);
+  const enviarComandoYoutubeRef = React.useRef(() => {});
   // Só liga os re-renders de tempo ao vivo quando há mesmo alguma coisa a
   // animar (a marcar uma anotação nova, ou o vídeo ativo já tem
   // anotações a desenhar) — nos restantes vídeos, `currentTimeRef` continua
@@ -1254,6 +1269,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   const precisaTempoJogoRef = React.useRef(false);
   const [tempoJogo, setTempoJogo] = useState(0);
   const [duracaoJogo, setDuracaoJogo] = useState(0);
+  const duracaoJogoRefBib = useRef(0);
+  duracaoJogoRefBib.current = duracaoJogo;
   const [liveTime, setLiveTime] = useState(0);
   // Estado do leitor (1 = a tocar, 3 = a carregar) — só para o botão
   // reproduzir/pausar da barra do clipe mostrar o ícone certo.
@@ -1288,7 +1305,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
       if (data && data.event === 'onStateChange' && typeof data.info === 'number') {
         setYtATocar(data.info === 1 || data.info === 3);
       }
-      if (data && data.event === 'infoDelivery' && data.info) {
+      // 'initialDelivery' traz, logo ao ligar, a duração do vídeo (antes de
+      // se carregar em play) — sem ela a barra do jogo ficava parada.
+      if (data && (data.event === 'infoDelivery' || data.event === 'initialDelivery') && data.info) {
         if (typeof data.info.playerState === 'number') {
           setYtATocar(data.info.playerState === 1 || data.info.playerState === 3);
         }
@@ -1298,7 +1317,17 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           // Jogo completo: tempo para a barra própria (a mesma dos clipes).
           if (precisaTempoJogoRef.current) setTempoJogo(data.info.currentTime);
         }
-        if (typeof data.info.duration === 'number' && data.info.duration > 0) setDuracaoJogo(data.info.duration);
+        if (typeof data.info.duration === 'number' && data.info.duration > 0) {
+          setDuracaoJogo(data.info.duration);
+          if (preparoRef.current) {
+            // "Preparar" (ver abaixo): já se sabe a duração — pára e volta ao sítio.
+            const alvo = preparoRef.current.alvo;
+            preparoRef.current = null;
+            enviarComandoYoutubeRef.current('pauseVideo');
+            enviarComandoYoutubeRef.current('seekTo', [alvo, true]);
+            enviarComandoYoutubeRef.current('unMute');
+          }
+        }
       }
     };
     window.addEventListener('message', onMessage);
@@ -1857,8 +1886,17 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     precisaTempoAoVivoRef.current = ativoEClipe;
     precisaTempoJogoRef.current = !!(temLeitorBib(active) && !ativoEClipe);
     setTempoJogo(0); setDuracaoJogo(0);
+    preparoRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ativoEClipe, active && active.id]);
+  // "Criar clipe" num jogo do YouTube ainda sem duração: preparar (ver
+  // `prepararDuracaoYoutube`), para a barra se poder arrastar já.
+  useEffect(() => {
+    if (!clipMode || !active || !active.youtubeId || ativoEClipe || duracaoJogo > 0) return undefined;
+    const t = setTimeout(prepararDuracaoYoutube, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clipMode, active && active.id, ativoEClipe, duracaoJogo]);
 
   // PAUSAS DE DESENHO, durante a reprodução normal (fora do modo de
   // desenho): ao passar pelo instante de uma pausa já guardada, o

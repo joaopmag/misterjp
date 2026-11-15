@@ -229,6 +229,20 @@ fixa; "palco" com altura reservada (`ALTURA_PALCO`) — mudar de modo não mexe
 na página; um jogo por link abre no lugar da grelha (← Jogos por link).
 Janelas Colar link / Enviar presas a 12vh do topo; o segundo campo do Colar
 link tem sempre a mesma altura.
+RONDA 15/11 (seis pontos): (1) Cortes: uma fila por jogo que desliza
+(`FilaDeslizante`), sem barra de scroll, com setas. (2) Clipes: abrir um
+clipe de link abre-o numa janela por cima (`linkEmJanela`, Esc fecha), a
+página não desce. (3) Barra amarela no 00:00 sem play: o YouTube só dá a
+duração depois de tocar; `prepararDuracaoYoutube` (MediaLibrary) toca sem
+som até chegar a duração, pausa e volta ao ponto (máx. 6 s). Também lê
+`initialDelivery`. (4) Relatórios de Jogo: trocar Competição/Amigáveis não
+mexe na página (`minHeight` da lista = altura antes da troca). (5) Enviar
+corte ou clipe para "Jogador (Scouting)": item com `scoutId`, aparece nos
+vídeos da ficha do jogador observado, nunca no Canal nem no Portal
+(`destinosSala.scouts`, destino `scout` em `enviarClipeParaSala`). (6)
+Apagar na Análise: confirmação e depois "Anular" durante `UNDO_SECONDS`
+(`apagarComAnular`); o ficheiro no Storage só se apaga quando o Anular
+expira (+3 s). Mesmo para jogos por link (`apagarLink`).
 
 **Travão "eliminação de 3 registos" nos Vídeos (14/11):** a sincronização
 Análise → fichas de adversário (`planoSincronizacaoFichas`, App.jsx) apaga
