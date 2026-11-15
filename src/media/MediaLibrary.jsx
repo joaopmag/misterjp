@@ -30,7 +30,10 @@ function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v))
 // O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
 function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
 
-export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, acaoLinha, soLink }, ref) {
+export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, acaoLinha, soLink, jogadoresAnaliseInd, aoClipeParaAtleta }, ref) {
+  // Análise de Vídeo (Links): ao guardar um clipe, pode ir também para a
+  // análise individual de um jogador (fica escolhido até se mudar).
+  const [atletaParaClipe, setAtletaParaClipe] = useState('');
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -2823,6 +2826,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     };
     if (!modoCanal) {
       setItems(prev => [novo, ...prev]);
+      if (atletaParaClipe && aoClipeParaAtleta) aoClipeParaAtleta(novo, atletaParaClipe);
       continuarACortar(novo.title);
       return;
     }
@@ -3054,6 +3058,14 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 padding: '8px 10px', color: (escuro ? T_ESCURO : T).cream, fontSize: 13, ...body,
               }}
             />
+            {(jogadoresAnaliseInd || []).length > 0 && (
+              <select value={atletaParaClipe} onChange={e => setAtletaParaClipe(e.target.value)} title="Análise individual: o clipe vai também para este jogador (e para o Portal dele)"
+                style={{ background: escuro ? '#000' : (escuro ? T_ESCURO : T).bg, border: `1px solid ${atletaParaClipe ? (escuro ? T_ESCURO : T).gold : (escuro ? T_ESCURO : T).line}`, borderRadius: 8,
+                  padding: '8px 10px', color: atletaParaClipe ? (escuro ? T_ESCURO : T).gold : (escuro ? T_ESCURO : T).cream, fontSize: 13, ...body, maxWidth: 220 }}>
+                <option value="">Análise individual: não</option>
+                {jogadoresAnaliseInd.map(j => <option key={j.id} value={String(j.id)}>Análise de {j.name}</option>)}
+              </select>
+            )}
             <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
           </>
         )}
@@ -4700,7 +4712,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 </div>
                 <div style={{
                   display: 'flex', flexDirection: 'column', gap: 8,
-                  height: '62vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
+                  // Análise (soLink): a lista não reserva altura — o leitor manda.
+                  ...(soLink ? { maxHeight: 460 } : { height: '62vh' }), overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
                 }}>
                   {modoCanal && grupoAtual && !termo ? (
                     // Dentro de um cartão: um bloco por secção — "Jogo

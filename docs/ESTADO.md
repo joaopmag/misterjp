@@ -185,9 +185,17 @@ em `videos` com `daAnalise: true` e ficam fora do Canal e do Portal
 (`2026-11_07_jogos_da_analise.sql`; o `publicado` desse SQL ficou sem uso, as
 cópias para o Canal não têm `daAnalise`). Os cortes por link aparecem no
 separador "Cortes", por jogo, com selo YouTube.
-ANÁLISE INDIVIDUAL PELO STAFF: botão "+ Análise individual" e "+" em cada
-cartão de jogador → `AnaliseIndividualModal` (jogador do plantel, cortes MP4
-e YouTube). Cada corte vira um clipe do jogador em `video_clips`
+ANÁLISE INDIVIDUAL PELO STAFF (refeito 15/11, a pedido): escolhe-se o
+jogador NO MOMENTO de criar — seletor "Análise individual" no Estúdio
+(painel do clipe, corte à mão e Codificar; fica escolhido até se mudar;
+`gravarIntervalo` cria também o clipe do jogador) e em Links (seletor ao
+lado de "Guardar clipe" no MediaLibrary, `aoClipeParaAtleta` no App). O
+modal "+ Análise individual" foi retirado. Um efeito no App mantém os
+clipes do jogador iguais ao corte de origem (desenhos `shapes` /
+`anotacoesPausa` e tempos dos cortes por link).
+SEPARADORES: "Cortes" (MP4 do Estúdio, cartões em várias linhas, sem barra
+de deslizar), "Clipes" (os dos links, por jogo) e "Análise individual".
+No modo Links, a lista ao lado do leitor já não reserva 62vh (`soLink`). Cada corte vira um clipe do jogador em `video_clips`
 (`origem: 'atleta'`, `criadoPorStaff: true`, `corteOrigemId`; MP4 = o
 ficheiro do corte com clipNoFicheiro 0..duração). Apagar no cartão apaga de
 vez (também no Portal); o ficheiro MP4 de um corte usado numa análise

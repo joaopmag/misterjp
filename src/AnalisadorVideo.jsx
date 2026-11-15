@@ -1784,94 +1784,11 @@ function ColarLinkModal({ destinos, onGuardar, onClose }) {
   );
 }
 
-/* ANÁLISE INDIVIDUAL FEITA PELO STAFF: um jogador do plantel (com cartão
-   ou ainda sem nada) e os cortes que entram na análise dele — cortes MP4
-   do Estúdio ou cortes por link (YouTube). Cada corte escolhido passa a
-   ser um clipe do jogador (como os que ele faz no Portal), marcado
-   `criadoPorStaff`. */
-function AnaliseIndividualModal({ jogadores, comCartao, cortesMp4, cortesLink, jaTem, inicial, onGuardar, onClose }) {
-  const [atletaId, setAtletaId] = useState((inicial && inicial.atletaId) || '');
-  const [jogo, setJogo] = useState('todos');
-  const [marcados, setMarcados] = useState(() => new Set([inicial && inicial.corteLinkId, inicial && inicial.corteMp4Id].filter(Boolean)));
-  const [erro, setErro] = useState('');
-  useFecharComEsc(onClose);
-  const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
-  const lista = React.useMemo(() => [
-    ...(cortesMp4 || []).map(c => {
-      const tag = TAGS.find(t => t.id === c.tagId);
-      return { id: c.id, tipo: 'mp4', c, titulo: (c.note || '').trim() || (tag && tag.label) || 'Corte', jogo: c.originalTitulo || 'Sem jogo', dur: c.duracao || 0, em: c.criadoEm || '' };
-    }),
-    ...(cortesLink || []).map(c => ({ id: c.id, tipo: 'link', c, titulo: c.title || 'Corte', jogo: c.clipOrigemTitulo || 'Jogo por link', dur: Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0)), em: c.criadoEm || '' })),
-  ].sort((a, b) => String(b.em).localeCompare(String(a.em))), [cortesMp4, cortesLink]);
-  const jogos = [...new Set(lista.map(x => x.jogo))];
-  const visiveis = lista.filter(x => jogo === 'todos' || x.jogo === jogo);
-  const ja = jaTem(atletaId);
-  const comC = (jogadores || []).filter(j => comCartao.has(String(j.id)));
-  const semC = (jogadores || []).filter(j => !comCartao.has(String(j.id)));
-  const alternar = (id) => setMarcados(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const escolhidos = lista.filter(x => marcados.has(x.id) && !ja.has(x.id));
-  const guardar = () => {
-    const j = (jogadores || []).find(x => String(x.id) === String(atletaId));
-    if (!j) { setErro('Escolhe o jogador.'); return; }
-    if (!escolhidos.length) { setErro('Escolhe pelo menos um corte.'); return; }
-    onGuardar(j, escolhidos);
-    onClose();
-  };
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '80vh', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><User size={16} /> Análise individual</div>
-          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
-        </div>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
-          Jogador
-          <select value={atletaId} onChange={e => setAtletaId(e.target.value)} style={campo}>
-            <option value="">Escolhe o jogador…</option>
-            {comC.length > 0 && <optgroup label="Já com análise">{comC.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}</optgroup>}
-            {semC.length > 0 && <optgroup label={comC.length ? 'Restante plantel' : 'Plantel'}>{semC.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}</optgroup>}
-          </select>
-        </label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.mutedDim }}>Cortes</span>
-          <select value={jogo} onChange={e => setJogo(e.target.value)} style={{ ...campo, width: 'auto', flex: 1, minWidth: 160, padding: '5px 8px', fontSize: 12 }}>
-            <option value="todos">Todos os jogos</option>
-            {jogos.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </div>
-        <div style={{ overflowY: 'auto', flex: 1, minHeight: 120, border: `1px solid ${T.line}`, borderRadius: 8 }}>
-          {visiveis.length === 0 && <div style={{ padding: 14, fontSize: 12.5, color: T.mutedDim }}>Ainda não há cortes. Faz cortes no Estúdio ou em Links.</div>}
-          {visiveis.map(x => {
-            const jaEsta = ja.has(x.id);
-            const on = marcados.has(x.id) || jaEsta;
-            return (
-              <label key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderBottom: `1px solid ${T.line}`, cursor: jaEsta ? 'default' : 'pointer', opacity: jaEsta ? 0.55 : 1 }}>
-                <input type="checkbox" checked={on} disabled={jaEsta} onChange={() => alternar(x.id)} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.titulo}</span>
-                  <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{x.jogo} · {Math.round(x.dur)}s{jaEsta ? ' · já está na análise' : ''}</span>
-                </span>
-                <span style={{ fontSize: 10.5, color: T.muted, border: `1px solid ${T.line}`, borderRadius: 6, padding: '1px 6px', flexShrink: 0 }}>{x.tipo === 'mp4' ? 'MP4' : 'YouTube'}</span>
-              </label>
-            );
-          })}
-        </div>
-        {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-          <span style={{ fontSize: 12, color: T.mutedDim, marginRight: 'auto' }}>Aparece no cartão do jogador e no Portal dele, só para ver.</span>
-          <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn variant="solid" onClick={guardar}><Check size={14} /> Juntar {escolhidos.length || ''}</Btn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
+function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicial }) {
   const d = destinos || { pastas: [], jogos: [], fichas: [] };
   const [titulo, setTitulo] = useState(() => (clip.note || '').trim() || [tag && tag.label, clip.originalTitulo].filter(Boolean).join(' · ') || 'Clipe');
   // Por omissão, Adversários (é para lá que vai a maior parte dos cortes).
-  const [destino, setDestino] = useState('adversario');
+  const [destino, setDestino] = useState(destinoInicial || 'adversario');
   const [pasta, setPasta] = useState(() => (d.pastas || [])[0] || '');
   const [pastaNova, setPastaNova] = useState('');
   const [jogoId, setJogoId] = useState('');
@@ -3614,7 +3531,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [linkAberto, setLinkAberto] = useState(null); // jogo/corte por link aberto no palco
   const [jogoParaCanal, setJogoParaCanal] = useState(null); // { tipo: 'ficheiro', v } — jogo carregado a enviar
   const [linkParaCanal, setLinkParaCanal] = useState(null); // jogo/corte por link a enviar para o Canal
-  const [novaAnaliseInd, setNovaAnaliseInd] = useState(null); // { atletaId } — análise individual feita pelo staff
   const painelLinksRef = useRef(null);
   const gruposCortesLink = React.useMemo(() => {
     const m = new Map();
@@ -3922,6 +3838,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      jogo). Usado pelo corte à mão e pela codificação (um toque numa
      etiqueta). Os desenhos do vídeo que caem dentro entram no clipe. */
   const [gravacoesCodif, setGravacoesCodif] = useState([]); // [{ id, label, cor }] a cortar agora
+  /* ANÁLISE INDIVIDUAL AO CORTAR: escolhe-se um jogador e cada corte
+     gravado vai também para a análise individual dele (cartão aqui e
+     Portal dele, só para ver). Fica escolhido até se mudar. */
+  const [atletaParaClipe, setAtletaParaClipe] = useState('');
+  const seletorAnaliseInd = (compacto) => (
+    <label title="Cada corte gravado vai também para a análise individual deste jogador (e para o Portal dele)."
+      style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: TV.mutedDim, letterSpacing: 0.3, ...body, ...(compacto ? { flexBasis: '100%' } : {}) }}>
+      <span style={{ textTransform: 'uppercase' }}>Análise individual</span>
+      <select value={atletaParaClipe} onChange={e => setAtletaParaClipe(e.target.value)}
+        style={{ width: '100%', background: TV.surface, border: `1px solid ${atletaParaClipe ? TV.gold : TV.line}`, borderRadius: 7, color: atletaParaClipe ? TV.gold : TV.cream, padding: '6px 8px', fontSize: 12, height: 32, ...body }}>
+        <option value="">Não (só corte)</option>
+        {(jogadores || []).map(j => <option key={j.id} value={String(j.id)}>{j.name}</option>)}
+      </select>
+    </label>
+  );
   const [avisoCodif, setAvisoCodif] = useState(null); // { texto, cor } — "Clipe gravado", some sozinho
   const avisoCodifTimer = useRef(null);
   const gravarIntervalo = async (ini, fim, tagId, nota) => {
@@ -3968,9 +3899,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         // Scouting (ver a sincronização em App). A nossa equipa não vai.
         equipa: equipaDosCortes && !ehNossaEquipa(equipaDosCortes, nomeNossaEquipa) ? equipaDosCortes : null,
       };
-      setClipes(prev => [novoClipe, ...(prev || [])]);
+      const jogadorInd = atletaParaClipe ? (jogadores || []).find(j => String(j.id) === atletaParaClipe) : null;
+      const clipeInd = jogadorInd ? {
+        id: uid(), origem: 'atleta', criadoPorStaff: true, atletaId: String(jogadorInd.id), atletaNome: jogadorInd.name || '',
+        titulo: (nota || '').trim() || (tag ? tag.label : 'Clipe'), note: '', corteOrigemId: novoClipe.id, originalTitulo: originalAtivo.titulo || '',
+        kind: 'video', dataUrl: novoClipe.publicUrl, clipNoFicheiro: true, clipInicio: 0, clipFim: novoClipe.duracao || 0, duracao: novoClipe.duracao || 0,
+        thumbUrl: novoClipe.thumbUrl, ...(novoClipe.shapes.length ? { shapes: novoClipe.shapes } : {}), criadoEm: new Date().toISOString(),
+      } : null;
+      setClipes(prev => [...(clipeInd ? [clipeInd] : []), novoClipe, ...(prev || [])]);
       if (avisoCodifTimer.current) clearTimeout(avisoCodifTimer.current);
-      setAvisoCodif({ texto: `Clipe gravado · ${tag ? tag.label : 'sem etiqueta'} · ${fmt(ini)}–${fmt(fim)}`, cor: tag ? tag.color : TV.good });
+      setAvisoCodif({ texto: `Clipe gravado · ${tag ? tag.label : 'sem etiqueta'} · ${fmt(ini)}–${fmt(fim)}${jogadorInd ? ` · análise de ${jogadorInd.name}` : ''}`, cor: tag ? tag.color : TV.good });
       avisoCodifTimer.current = setTimeout(() => setAvisoCodif(null), 2800);
       return true;
     } catch (e) {
@@ -4720,6 +4658,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       </div>
       <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…" rows={baixo ? 2 : 4}
         style={{ width: baixo ? '100%' : '100%', flexBasis: baixo ? '100%' : undefined, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
+      {!clipeEmDesenho && (jogadores || []).length > 0 && seletorAnaliseInd(baixo)}
       {erro && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erro}</div>}
       {erroSeguirFoco && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erroSeguirFoco}</div>}
       {clipeEmDesenho ? (
@@ -4847,6 +4786,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </div>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opcional)…" rows={2}
             style={{ width: '100%', background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
+          {(jogadores || []).length > 0 && <div style={{ marginTop: 6 }}>{seletorAnaliseInd(false)}</div>}
           <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <Btn variant="solid" onClick={() => guardarClipe(null)} disabled={aGuardarClipe} style={{ padding: '6px 10px', fontSize: 12 }}>
               {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Check size={13} />} {aGuardarClipe ? 'A gravar…' : 'Guardar sem etiqueta'}
@@ -5018,7 +4958,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             }} />
             {[
               { id: 'estudio', titulo: 'Estúdio', sub: 'Ficheiros · editor profissional, cortes MP4', Icon: Film, n: videosOriginais.length },
-              { id: 'links', titulo: 'Links', sub: 'YouTube · cortes por tempos, câmara lenta', Icon: Link2, n: (jogosLink || []).length },
+              { id: 'links', titulo: 'Links', sub: 'YouTube · clipes e desenho em câmara lenta', Icon: Link2, n: (jogosLink || []).length },
             ].map(m => {
               const on = modoEfetivo === m.id;
               return (
@@ -5100,7 +5040,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   {v.pronto === false ? (
                     <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
                   ) : (v.enviadoSala || []).length ? (
-                    <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: T.gold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Pronto · no Canal</span>
+                    <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: T.gold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                      {/* Onde está: "Jogos › J10 · …" ou "Adversários › …". */}
+                      {(v.enviadoSala || [])[(v.enviadoSala || []).length - 1].rotulo || 'No Canal'}
+                    </span>
                   ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
                     {enviarJogoFicheiroParaCanal && v.pronto !== false && (
@@ -5610,6 +5553,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </div>
                     );
                   })()}
+                  {(jogadores || []).length > 0 && <div style={{ marginBottom: 12 }}>{seletorAnaliseInd(false)}</div>}
                   {tituloSecao('Codificar · um toque cria o clipe')}
                   {GRUPOS_CODIFICAR.map(g => (
                     <div key={g.titulo} style={{ marginBottom: 8 }}>
@@ -5787,7 +5731,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       <div ref={areaCortesRef} style={{ marginTop: originalAtivo ? 26 : 14, minHeight: alturaAreaCortes || undefined }}>
         <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {[
-            { id: 'staff', label: `Cortes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length + (filtroTag ? 0 : (cortesLink || []).length)})`, Icon: Tag },
+            { id: 'staff', label: `Cortes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
+            // Clipes dos jogos por link (YouTube), feitos em Links.
+            ...(temLinks ? [{ id: 'clipes', label: `Clipes (${(cortesLink || []).length})`, Icon: Scissors }] : []),
             { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
           ].map(({ id, label, Icon }) => {
             const on = separadorClipes === id;
@@ -5811,15 +5757,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             cartão ou ainda sem nada) e os cortes. Aparecem no cartão dele e
             no Portal dele, como dele, só para ver. */}
         {separadorClipes === 'atletas' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Btn variant="solid" onClick={() => setNovaAnaliseInd({})}><Plus size={14} /> Análise individual</Btn>
-            <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>Escolhe um jogador do plantel e os cortes (MP4 ou YouTube) para a análise dele. Também aparecem no Portal do jogador.</span>
-          </div>
-        )}
-        {separadorClipes === 'atletas' && (
           clipesAtletas.length === 0 ? (
             <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
-              Ainda não há análise individual. Cria uma acima, ou os jogadores criam-na no Portal do Atleta (Sala de Vídeo): cada jogador com clipes ganha aqui o seu cartão.
+              Ainda não há análise individual. Ao gravar um corte (Estúdio) ou um clipe (Links), escolhe o jogador em "Análise individual"; os jogadores também a criam no Portal do Atleta. Cada jogador com clipes ganha aqui o seu cartão.
             </div>
           ) : (
             <>
@@ -5849,12 +5789,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         {g.nJogos > 1 && <> · {g.nJogos} jogos</>}
                       </span>
                     </span>
-                    {g.atletaId && (
-                      <button onClick={() => setNovaAnaliseInd({ atletaId: g.atletaId })} title={`Juntar cortes à análise de ${g.nome}`}
-                        style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', background: 'transparent', border: `1px solid ${T.line}`, color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Plus size={15} />
-                      </button>
-                    )}
                     {g.clipes.length > 1 && (
                       <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
                         title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
@@ -5932,7 +5866,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           )
         )}
 
-        {separadorClipes === 'staff' && clipesStaff.length === 0 && (filtroTag || gruposCortesLink.length === 0) && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há cortes guardados.</div>}
+        {separadorClipes === 'staff' && clipesStaff.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há cortes guardados.</div>}
 
         {separadorClipes === 'staff' && clipesStaff.length > 0 && (
           <>
@@ -5966,7 +5900,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>{g.titulo}</span>
                 <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'corte' : 'cortes'}</span>
               </div>
-            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x proximity', WebkitOverflowScrolling: 'touch' }}>
+            {/* Sem barra de deslizar: os cartões descem para a linha seguinte. */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingBottom: 6 }}>
               {g.clipes.map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
@@ -6050,16 +5985,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             jogo. Daqui vão para o Canal (Jogos ou Adversários) ou para a
             análise individual de um jogador. Não têm etiqueta: com um filtro
             de etiqueta escolhido, não aparecem. */}
-        {separadorClipes === 'staff' && !filtroTag && gruposCortesLink.length > 0 && (
-          <div style={{ marginTop: clipesStaff.length ? 18 : 0 }}>
+        {separadorClipes === 'clipes' && gruposCortesLink.length === 0 && (
+          <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
+            Ainda não há clipes. Em Links, abre um jogo e usa "Criar clipe".
+          </div>
+        )}
+        {separadorClipes === 'clipes' && gruposCortesLink.length > 0 && (
+          <div>
             {gruposCortesLink.map(g => (
               <div key={g.nome} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, ...body }}>
                   <Link2 size={13} color={T.mutedDim} style={{ alignSelf: 'center' }} />
                   <span style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>{g.nome}</span>
-                  <span style={{ fontSize: 12, color: T.mutedDim, fontFamily: 'monospace' }}>{g.cortes.length} {g.cortes.length === 1 ? 'corte' : 'cortes'} · YouTube</span>
+                  <span style={{ fontSize: 12, color: T.mutedDim, fontFamily: 'monospace' }}>{g.cortes.length} {g.cortes.length === 1 ? 'clipe' : 'clipes'} · YouTube</span>
                 </div>
-                <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingBottom: 6 }}>
                   {g.cortes.map(c => {
                     const enviado = (c.enviadoSala || []).length > 0;
                     const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
@@ -6077,8 +6017,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           <span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', fontFamily: 'monospace' }}>{Math.round(dur)}s</span>
                           <div style={{ position: 'absolute', left: 8, top: 8, display: 'flex', gap: 6 }}>
                             {enviarLinkParaCanal && botaoMini(enviado ? Check : Film, enviado ? `No Canal: ${(c.enviadoSala || []).map(e => e.rotulo).join('; ')}` : 'Enviar para o Canal', () => setLinkParaCanal(c), enviado ? T.good : undefined)}
-                            {botaoMini(User, 'Pôr na análise individual de um jogador', () => setNovaAnaliseInd({ corteLinkId: c.id }))}
-                            {apagarLink && botaoMini(Trash2, 'Apagar corte', () => apagarLink(c))}
+                            {apagarLink && botaoMini(Trash2, 'Apagar clipe', () => apagarLink(c))}
                           </div>
                         </div>
                         <div style={{ padding: '8px 10px' }}>
@@ -6178,6 +6117,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       {linkParaCanal && enviarLinkParaCanal && (
         <EnviarSalaModal
           key={`link-${linkParaCanal.id}`}
+          destinoInicial={typeof linkParaCanal.clipInicio === 'number' ? undefined : 'jogo'}
           clip={{ id: linkParaCanal.id, note: linkParaCanal.title || '', originalTitulo: linkParaCanal.clipOrigemTitulo || '', enviadoSala: linkParaCanal.enviadoSala || [] }}
           tag={null}
           destinos={destinosSala}
@@ -6192,6 +6132,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       {jogoParaCanal && enviarJogoFicheiroParaCanal && (
         <EnviarSalaModal
           key={`jogo-${jogoParaCanal.v.id}`}
+          destinoInicial="jogo"
           clip={{ id: jogoParaCanal.v.id, note: jogoParaCanal.v.titulo || '', originalTitulo: '', enviadoSala: jogoParaCanal.v.enviadoSala || [] }}
           tag={null}
           destinos={destinosSala}
@@ -6201,37 +6142,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             setJogoParaCanal(prev => (prev ? { ...prev, v: { ...prev.v, enviadoSala: [...(prev.v.enviadoSala || []), marca] } } : prev));
           }}
           onClose={() => setJogoParaCanal(null)}
-        />
-      )}
-      {novaAnaliseInd && (
-        <AnaliseIndividualModal
-          jogadores={jogadores}
-          comCartao={new Set(clipesAtletas.map(c => String(c.atletaId || '')).filter(Boolean))}
-          cortesMp4={clipesStaff.filter(c => c.publicUrl)}
-          cortesLink={cortesLink}
-          jaTem={(atletaId) => new Set(clipes.filter(c => ehClipeAtleta(c) && String(c.atletaId) === String(atletaId) && c.corteOrigemId).map(c => c.corteOrigemId))}
-          inicial={novaAnaliseInd}
-          onClose={() => setNovaAnaliseInd(null)}
-          onGuardar={(j, escolhidos) => {
-            const agora = Date.now();
-            const novos = escolhidos.map((x, i) => {
-              const c = x.c;
-              const comum = {
-                id: uid(), origem: 'atleta', criadoPorStaff: true, atletaId: String(j.id), atletaNome: j.name || '',
-                titulo: x.titulo, note: '', corteOrigemId: x.id, originalTitulo: x.jogo,
-                criadoEm: new Date(agora - i).toISOString(),
-              };
-              return x.tipo === 'mp4'
-                // Os desenhos vão com o clipe: `shapes` (cortes MP4 do Estúdio)
-                // ou `anotacoesPausa` (cortes por link, desenho da Sala).
-                ? { ...comum, kind: 'video', dataUrl: c.publicUrl, clipNoFicheiro: true, clipInicio: 0, clipFim: c.duracao || 0, duracao: c.duracao || 0, thumbUrl: c.thumbUrl || null,
-                    ...((c.shapes || []).length ? { shapes: c.shapes } : {}), ...(c.calibracao ? { calibracao: c.calibracao } : {}) }
-                : { ...comum, youtubeId: c.youtubeId, clipInicio: Number(c.clipInicio) || 0, clipFim: Number(c.clipFim) || 0, duracao: Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0)),
-                    ...((c.anotacoesPausa || []).length ? { anotacoesPausa: c.anotacoesPausa } : {}) };
-            });
-            setClipes(prev => [...novos, ...(prev || [])]);
-            setSeparadorClipes('atletas');
-          }}
         />
       )}
       {clipeParaSala && enviarParaSala && (

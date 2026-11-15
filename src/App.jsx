@@ -580,6 +580,35 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     return novo.map(v => (v.daAnalise && v.criadoEm ? v : { ...v, daAnalise: true, criadoEm: v.criadoEm || new Date().toISOString() }));
   });
   const linksAnaliseRef = useRef(null);
+  /* Os clipes que o staff pôs na análise individual de um jogador seguem
+     o corte de onde vieram: desenhos feitos ou mudados depois (e os tempos,
+     nos cortes por link) passam também para o clipe do jogador. */
+  useEffect(() => {
+    if (!clipesReady || !videosReady) return;
+    const porIdClipe = new Map((clipes || []).map(c => [c.id, c]));
+    const porIdVideo = new Map((videos || []).map(v => [v.id, v]));
+    const mudar = new Map();
+    (clipes || []).forEach(c => {
+      if (!c || !c.criadoPorStaff || !c.corteOrigemId) return;
+      const mp4 = porIdClipe.get(c.corteOrigemId);
+      if (mp4 && !mp4.criadoPorStaff) {
+        const sh = mp4.shapes || [];
+        if (JSON.stringify(sh) !== JSON.stringify(c.shapes || [])) mudar.set(c.id, { shapes: sh });
+        return;
+      }
+      const link = porIdVideo.get(c.corteOrigemId);
+      if (link) {
+        const a = link.anotacoesPausa || [];
+        const upd = {};
+        if (JSON.stringify(a) !== JSON.stringify(c.anotacoesPausa || [])) upd.anotacoesPausa = a;
+        if (typeof link.clipInicio === 'number' && (link.clipInicio !== c.clipInicio || link.clipFim !== c.clipFim)) {
+          Object.assign(upd, { clipInicio: link.clipInicio, clipFim: link.clipFim, duracao: Math.max(0, link.clipFim - link.clipInicio) });
+        }
+        if (Object.keys(upd).length) mudar.set(c.id, upd);
+      }
+    });
+    if (mudar.size) setClipes(prev => (prev || []).map(c => (mudar.has(c.id) ? { ...c, ...mudar.get(c.id) } : c)));
+  }, [clipes, videos, clipesReady, videosReady, setClipes]);
   /* Jogo por link novo, a partir do "Colar link" da Análise: título,
      link e, se se escolher, já enviado para o Canal (Jogos ou adversário). */
   const criarJogoLink = ({ titulo, url, destino, jogoId, fichaId, fichaNova, rotulo }) => {
@@ -1822,6 +1851,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                   items={videosAnalise} setItems={setVideosAnalise}
                   addLabel="Colar link" addButtonVariant="ghost" recentesPrimeiro semBotaoTopo soLink semCatalogo
                   acaoLinha={acaoLinha}
+                  jogadoresAnaliseInd={playersAtivos}
+                  aoClipeParaAtleta={(corte, atletaId) => {
+                    const j = (playersAtivos || []).find(x => String(x.id) === String(atletaId));
+                    if (!j) return;
+                    setClipes(prev => [{
+                      id: uid(), origem: 'atleta', criadoPorStaff: true, atletaId: String(j.id), atletaNome: j.name || '',
+                      titulo: corte.title || 'Clipe', note: '', corteOrigemId: corte.id, originalTitulo: corte.clipOrigemTitulo || '',
+                      youtubeId: corte.youtubeId, clipInicio: corte.clipInicio, clipFim: corte.clipFim, duracao: Math.max(0, corte.clipFim - corte.clipInicio),
+                      criadoEm: new Date().toISOString(),
+                    }, ...(prev || [])]);
+                  }}
                   emptyText="Ainda sem jogos por link."
                   emptyFirstLabel="Colar link"
                 />
