@@ -4782,7 +4782,25 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       ...s.itens.map(renderRow),
                       ];
                     })
-                  ) : visibleItems.map(renderRow)}
+                  ) : soLink && !termo ? (() => {
+                    /* ANÁLISE (links): cada jogo e, logo por baixo, os seus
+                       clipes (recolhidos para a direita). Clipes de um jogo
+                       que já não está na lista ficam no fim. */
+                    const jogosL = visibleItems.filter(v => !ehClipe(v));
+                    const ids = new Set(jogosL.map(v => v.id));
+                    const clipesDe = (id) => visibleItems.filter(v => ehClipe(v) && v.clipOrigemId === id);
+                    const soltos = visibleItems.filter(v => ehClipe(v) && !ids.has(v.clipOrigemId));
+                    const blocoClipes = (lista, chave) => lista.length > 0 && (
+                      <div key={chave} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginLeft: 18, paddingLeft: 10, borderLeft: `2px solid ${T.line}` }}>
+                        {lista.map(renderRow)}
+                      </div>
+                    );
+                    return [
+                      ...jogosL.flatMap(j => [renderRow(j), blocoClipes(clipesDe(j.id), `c-${j.id}`)]),
+                      soltos.length > 0 && <span key="soltos-h" style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginTop: 6 }}>Clipes de outros vídeos</span>,
+                      blocoClipes(soltos, 'soltos'),
+                    ].filter(Boolean);
+                  })() : visibleItems.map(renderRow)}
                 </div>
               </>
             )}
