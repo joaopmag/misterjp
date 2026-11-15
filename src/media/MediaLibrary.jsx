@@ -1154,6 +1154,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // (A antiga função "Adicionar anotação" — círculo/caixa de texto sobre
   // o vídeo — foi retirada a pedido. Anotações já gravadas em itens
   // antigos ficam no registo, mas deixam de ser desenhadas.)
+  const preparoRef = React.useRef(null);
+  const enviarComandoYoutubeRef = React.useRef(() => {});
   const prepararDuracaoYoutube = () => {
     if (duracaoJogoRefBib.current > 0 || !activeYoutubeIdRef.current || preparoRef.current) return;
     preparoRef.current = { alvo: currentTimeRef.current || 0 };
@@ -1257,8 +1259,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      começar a tocar. Ao abrir "Criar clipe" sem duração, toca-se um
      instante sem som e pára-se logo — a barra fica pronta a usar sem ser
      preciso carregar em play. */
-  const preparoRef = React.useRef(null);
-  const enviarComandoYoutubeRef = React.useRef(() => {});
   // Só liga os re-renders de tempo ao vivo quando há mesmo alguma coisa a
   // animar (a marcar uma anotação nova, ou o vídeo ativo já tem
   // anotações a desenhar) — nos restantes vídeos, `currentTimeRef` continua

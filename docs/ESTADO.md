@@ -401,6 +401,12 @@ pelo `server.js`.
 
 ## Aprendizagens que custaram a descobrir (não repetir)
 
+- 15/11: "Cannot access 'Cu' before initialization" ao abrir a app: um
+  `ref.current = função` corrido no corpo do componente ANTES da linha onde
+  o `useRef` é declarado (MediaLibrary, `enviarComandoYoutubeRef`). O eslint
+  e o build não apanham isto; só se vê a renderizar. Em cada entrega,
+  renderizar os componentes mexidos num harness (não basta compilar).
+
 - **Cortes começam antes do marcado.** O corte é feito sem recodificar
   (`-c copy`) e começa no fotograma-chave anterior, às vezes segundos
   antes nos vídeos Veo. `api/cortar-clipe.js` mede o início real
