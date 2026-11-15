@@ -611,7 +611,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [clipes, videos, clipesReady, videosReady, setClipes]);
   /* Jogo por link novo, a partir do "Colar link" da Análise: título,
      link e, se se escolher, já enviado para o Canal (Jogos ou adversário). */
-  const criarJogoLink = ({ titulo, url, destino, jogoId, fichaId, fichaNova, rotulo }) => {
+  const criarJogoLink = ({ titulo, url, destino, jogoId, fichaId, fichaNova, rotulo, equipasJogo }) => {
     const ytId = parseYouTubeId(url);
     const social = ytId ? null : detectSocialEmbed(url);
     if (!ytId && !social) throw new Error('Não reconheço este link. Usa o link do YouTube (youtu.be/… ou youtube.com/watch?v=…).');
@@ -620,8 +620,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       ...(ytId ? { youtubeId: ytId } : { social }),
     };
     let marcas = [];
-    if (destino === 'jogo' || destino === 'adversario') {
-      const item = enviarClipeParaSala({ clip: { ...jogo, linkAnalise: true }, titulo: jogo.title, destino, jogoId, fichaId, fichaNova });
+    if (destino === 'jogo' || destino === 'jogoAdversario') {
+      const item = enviarClipeParaSala({ clip: { ...jogo, linkAnalise: true }, titulo: jogo.title, destino, jogoId, fichaId, fichaNova, equipasJogo });
       marcas = [{ destino, rotulo: rotulo || (destino === 'jogo' ? 'Jogos' : 'Adversários'), itemId: item && item.id, em: new Date().toISOString() }];
     }
     setVideos(prev => [{ ...jogo, ...(marcas.length ? { enviadoSala: marcas } : {}) }, ...(prev || [])]);
@@ -1225,7 +1225,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     }
     return f.equipaCompeticao || f.nome;
   };
-  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova }) => {
+  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId, fichaNova, equipasJogo }) => {
     // Jogo ou corte por link (Análise de Vídeo): a cópia no Canal é o mesmo
     // link (YouTube), com os mesmos tempos se for um corte.
     const base = clip && clip.linkAnalise ? {
@@ -1253,6 +1253,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       const m = (matches || []).find(x => x.id === jogoId);
       if (!m) throw new Error('Escolhe o jogo.');
       item = { ...comum, categoria: 'jogo', jogoId: m.id, jornada: m.jornada || '', pasta: '' };
+    } else if (destino === 'jogoAdversario') {
+      /* JOGO DE ADVERSÁRIO INTEIRO (da Análise): vai para Sala de Vídeo ›
+         Canal › Adversários, como no "Adicionar vídeo" da Sala — as duas
+         equipas, e o vídeo aparece no cartão de cada uma. Não vai para a
+         ficha de Scouting (para lá só vão os cortes). */
+      const eqs = (equipasJogo || []).map(x => String(x || '').trim()).filter(Boolean);
+      if (!eqs.length) throw new Error('Escolhe as equipas do jogo.');
+      item = { ...comum, categoria: 'adversario', equipas: eqs, adversarioFichaId: null, pasta: '' };
     } else if (destino === 'adversario') {
       /* FICHA NOVA a partir da Análise de Vídeo: só com o nome. Se já houver
          uma ficha com esse nome, usa-se essa (não se duplica). O resto da
@@ -1832,6 +1840,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               criarJogoLink={criarJogoLink}
               enviarLinkParaCanal={enviarLinkParaCanal}
               enviarJogoFicheiroParaCanal={enviarJogoFicheiroParaCanal}
+              equipasCompeticao={nomesEquipasCompeticao(standings)}
               abrirLink={(id) => { if (linksAnaliseRef.current) linksAnaliseRef.current.irParaItem(id); }}
               renomearLink={(id, nome) => setVideosAnalise(prev => prev.map(v => (v.id === id ? { ...v, title: nome } : v)))}
               apagarLink={(v) => askConfirm({

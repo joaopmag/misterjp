@@ -1683,17 +1683,86 @@ function EquipasDoJogoModal({ titulo, equipas, onGuardar, onClose }) {
    Um ADVERSÁRIO (vai para a ficha da equipa, e vê-se também no Canal ›
    Adversários). O clipe não volta a ser carregado: o Canal passa a
    apontar para o mesmo MP4. */
-/* COLAR LINK (modo Links da Análise): título, link e para onde vai.
-   "Só na Análise" fica cá para trabalhar; "Jogos" ou "Adversários" fica cá
-   E vai já uma cópia para o Canal (o mesmo que "Enviar para o Canal"). */
-function ColarLinkModal({ destinos, onGuardar, onClose }) {
-  const d = destinos || { jogos: [], fichas: [] };
+/* PARA ONDE VAI UM JOGO INTEIRO (da Análise para a Sala de Vídeo): igual
+   ao "Adicionar vídeo" da Sala — "Jogo nosso" (Canal › Jogos, com o jogo
+   do calendário) ou "Jogo de adversário" (Canal › Adversários, com as duas
+   equipas). Os jogos inteiros nunca vão para a ficha de Scouting: para lá
+   só vão os cortes. Tudo com altura fixa: nada mexe ao trocar. */
+function useDestinoJogo(inicial) {
+  const [destino, setDestino] = useState(inicial || 'jogo');
+  const [jogoId, setJogoId] = useState('');
+  const [eqs, setEqs] = useState(['', '']);
+  return { destino, setDestino, jogoId, setJogoId, eqs, setEqs };
+}
+function validarDestinoJogo(dj, jogos) {
+  if (dj.destino === 'jogo') {
+    if (!dj.jogoId) return { erro: 'Escolhe o jogo do calendário.' };
+    return { dados: { destino: 'jogo', jogoId: dj.jogoId, rotulo: `Jogos › ${((jogos || []).find(j => j.id === dj.jogoId) || {}).rotulo || ''}` } };
+  }
+  if (dj.destino === 'jogoAdversario') {
+    const eqs = dj.eqs.map(x => x.trim()).filter(Boolean);
+    if (!eqs.length) return { erro: 'Escolhe as equipas do jogo.' };
+    return { dados: { destino: 'jogoAdversario', equipasJogo: eqs, rotulo: `Adversários › ${eqs.join(' vs ')}` } };
+  }
+  return { dados: { destino: null } };
+}
+function CamposDestinoJogo({ dj, jogos, equipas, comAnalise }) {
+  const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, height: 36, ...body };
+  const rotuloCampo = { display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim };
+  const nomes = equipas || [];
+  const opcao = (id, label) => (
+    <button type="button" onClick={() => dj.setDestino(id)} style={{
+      flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, ...body,
+      background: dj.destino === id ? T.crimson || '#B5393F' : 'transparent', color: dj.destino === id ? '#fff' : T.muted,
+      border: `1px solid ${dj.destino === id ? (T.crimson || '#B5393F') : T.line}`,
+    }}>{label}</button>
+  );
+  const equipaCampo = (i) => (nomes.length ? (
+    <select value={dj.eqs[i]} onChange={e => dj.setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))} style={campo}>
+      <option value="">{`Equipa ${i + 1}…`}</option>
+      {nomes.map(n => <option key={n} value={n}>{n}</option>)}
+    </select>
+  ) : (
+    <input value={dj.eqs[i]} onChange={e => dj.setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))} placeholder={`Equipa ${i + 1}`} maxLength={80} style={campo} />
+  ));
+  return (
+    <>
+      <div style={rotuloCampo}>
+        Para onde vai
+        <div style={{ display: 'flex', gap: 6 }}>
+          {comAnalise && opcao('analise', 'Só na Análise')}
+          {opcao('jogo', 'Jogo nosso')}
+          {opcao('jogoAdversario', 'Jogo de adversário')}
+        </div>
+      </div>
+      <div style={{ ...rotuloCampo, height: 58 }}>
+        {dj.destino === 'jogo' ? 'Jogo do calendário (Canal › Jogos)' : dj.destino === 'jogoAdversario' ? 'As duas equipas (Canal › Adversários)' : 'Destino'}
+        {dj.destino === 'jogo' ? (
+          <select value={dj.jogoId} onChange={e => dj.setJogoId(e.target.value)} style={campo}>
+            <option value="">Escolhe o jogo…</option>
+            {(jogos || []).map(j => <option key={j.id} value={j.id}>{j.rotulo}</option>)}
+          </select>
+        ) : dj.destino === 'jogoAdversario' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>{equipaCampo(0)}{equipaCampo(1)}</div>
+        ) : (
+          <div style={{ ...campo, color: T.mutedDim, display: 'flex', alignItems: 'center' }}>Fica só aqui na Análise, para trabalhar</div>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
+        {dj.destino === 'jogo' ? 'Vai para a Sala de Vídeo, no cartão do jogo, e aparece no Portal dos jogadores.'
+          : dj.destino === 'jogoAdversario' ? 'Vai para a Sala de Vídeo › Adversários, no cartão de cada equipa (não vai para o Scouting).'
+            : 'Mais tarde podes enviá-lo (ou os clipes) para a Sala de Vídeo.'}
+      </div>
+    </>
+  );
+}
+
+/* COLAR LINK (modo Links da Análise): link, nome e para onde vai. */
+function ColarLinkModal({ destinos, equipas, onGuardar, onClose }) {
+  const d = destinos || { jogos: [] };
   const [titulo, setTitulo] = useState('');
   const [url, setUrl] = useState('');
-  const [destino, setDestino] = useState('analise');
-  const [jogoId, setJogoId] = useState('');
-  const [fichaId, setFichaId] = useState('');
-  const [nomeFichaNova, setNomeFichaNova] = useState('');
+  const dj = useDestinoJogo('analise');
   const [erro, setErro] = useState('');
   useFecharComEsc(onClose);
   const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
@@ -1702,25 +1771,16 @@ function ColarLinkModal({ destinos, onGuardar, onClose }) {
     setErro('');
     if (!url.trim()) { setErro('Cola o link do vídeo.'); return; }
     if (!titulo.trim()) { setErro('Dá um nome ao jogo.'); return; }
+    const v = validarDestinoJogo(dj, d.jogos);
+    if (v.erro) { setErro(v.erro); return; }
     try {
-      const fichaNova = destino === 'adversario' && fichaId === '__nova__' ? { nome: nomeFichaNova.trim() } : null;
-      if (fichaNova && !fichaNova.nome) { setErro('Escreve o nome da equipa.'); return; }
-      const rotulo = destino === 'jogo' ? `Jogos › ${(d.jogos.find(j => j.id === jogoId) || {}).rotulo || ''}`
-        : destino === 'adversario' ? `Adversários › ${fichaNova ? fichaNova.nome : ((d.fichas.find(f => f.id === fichaId) || {}).rotulo || '')}` : '';
-      onGuardar({ titulo: titulo.trim(), url: url.trim(), destino: destino === 'analise' ? null : destino, jogoId, fichaId: fichaNova ? '' : fichaId, fichaNova, rotulo });
+      onGuardar({ titulo: titulo.trim(), url: url.trim(), ...v.dados });
       onClose();
     } catch (e) { setErro(e.message || String(e)); }
   };
-  const opcao = (id, label) => (
-    <button type="button" onClick={() => { setDestino(id); setErro(''); }} style={{
-      flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, ...body,
-      background: destino === id ? T.crimson || '#B5393F' : 'transparent', color: destino === id ? '#fff' : T.muted,
-      border: `1px solid ${destino === id ? (T.crimson || '#B5393F') : T.line}`,
-    }}>{label}</button>
-  );
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Link2 size={16} /> Colar link</div>
           <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
@@ -1733,51 +1793,56 @@ function ColarLinkModal({ destinos, onGuardar, onClose }) {
           Nome do jogo
           <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} placeholder="Ex.: 9.ª jornada · AFS vs Salgueiros (1.ª parte)" style={campo} />
         </label>
-        <div style={rotuloCampo}>
-          Para onde vai
-          <div style={{ display: 'flex', gap: 6 }}>
-            {opcao('analise', 'Só na Análise')}
-            {opcao('jogo', 'Canal › Jogos')}
-            {opcao('adversario', 'Adversários')}
-          </div>
-        </div>
-        {/* Um só lugar, sempre com a mesma altura, para o segundo campo:
-            a janela não cresce nem encolhe ao mudar o destino. */}
-        <div style={{ ...rotuloCampo, height: 58, justifyContent: 'flex-start' }}>
-          <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-            {destino === 'jogo' ? 'Jogo do calendário' : destino === 'adversario' ? (fichaId === '__nova__' ? 'Nome da equipa nova' : 'Equipa (ficha do adversário)') : 'Destino'}
-            {destino === 'adversario' && fichaId === '__nova__' && (
-              <button type="button" onClick={() => { setFichaId(''); setNomeFichaNova(''); }} style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, padding: 0, ...body }}>escolher da lista</button>
-            )}
-          </span>
-          {destino === 'jogo' ? (
-            <select value={jogoId} onChange={e => setJogoId(e.target.value)} style={{ ...campo, height: 36 }}>
-              <option value="">Escolhe o jogo…</option>
-              {(d.jogos || []).map(j => <option key={j.id} value={j.id}>{j.rotulo}</option>)}
-            </select>
-          ) : destino === 'adversario' ? (
-            fichaId === '__nova__' ? (
-              <input value={nomeFichaNova} onChange={e => setNomeFichaNova(e.target.value)} autoFocus placeholder="Nome da equipa" maxLength={80} style={{ ...campo, height: 36 }} />
-            ) : (
-              <select value={fichaId} onChange={e => setFichaId(e.target.value)} style={{ ...campo, height: 36 }}>
-                <option value="">Escolhe a equipa…</option>
-                {(d.fichas || []).map(f => <option key={f.id} value={f.id}>{f.rotulo}</option>)}
-                <option value="__nova__">+ Nova equipa…</option>
-              </select>
-            )
-          ) : (
-            <div style={{ ...campo, height: 36, color: T.mutedDim, display: 'flex', alignItems: 'center' }}>Fica só aqui na Análise, para trabalhar</div>
-          )}
-        </div>
-        <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
-          {destino === 'analise'
-            ? 'Mais tarde podes enviá-lo (ou os cortes) para o Canal.'
-            : 'Fica também aqui na Análise e vai já uma cópia para o Canal. Em Canal › Jogos aparece no Portal dos jogadores.'}
-        </div>
+        <CamposDestinoJogo dj={dj} jogos={d.jogos} equipas={equipas} comAnalise />
         <div style={{ fontSize: 12.5, color: T.bad, minHeight: 18 }}>{erro}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
           <Btn variant="solid" onClick={guardar}><Check size={14} /> Guardar</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ENVIAR UM JOGO INTEIRO PARA A SALA DE VÍDEO (ficheiro do Estúdio ou link). */
+function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
+  const d = destinos || { jogos: [] };
+  const [titulo, setTitulo] = useState(jogo.titulo || '');
+  const dj = useDestinoJogo('jogo');
+  const [erro, setErro] = useState('');
+  const [aEnviar, setAEnviar] = useState(false);
+  const [feito, setFeito] = useState('');
+  useFecharComEsc(onClose);
+  const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
+  const enviar = async () => {
+    setErro('');
+    const v = validarDestinoJogo(dj, d.jogos);
+    if (v.erro) { setErro(v.erro); return; }
+    try {
+      setAEnviar(true);
+      await onEnviar({ titulo: titulo.trim() || jogo.titulo || 'Jogo', ...v.dados });
+      setFeito(v.dados.rotulo);
+    } catch (e) { setErro(e.message || String(e)); } finally { setAEnviar(false); }
+  };
+  const ja = (jogo.enviadoSala || []).map(e => e.rotulo).filter(Boolean);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Film size={16} /> Enviar o jogo para a Sala de Vídeo</div>
+          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+          Título na Sala de Vídeo
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
+        </label>
+        <CamposDestinoJogo dj={dj} jogos={d.jogos} equipas={equipas} />
+        <div style={{ fontSize: 12, minHeight: 18, color: erro ? T.bad : T.good }}>
+          {erro || (feito ? `✓ Enviado: ${feito}` : (ja.length ? `Já está em: ${ja.join('; ')}` : ''))}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>{feito ? 'Fechar' : 'Cancelar'}</Btn>
+          {!feito && <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Film size={14} />} Enviar</Btn>}
         </div>
       </div>
     </div>
@@ -3012,7 +3077,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null, equipasCompeticao = [] }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -6112,12 +6177,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         />
       )}
       {colarLinkAberto && criarJogoLink && (
-        <ColarLinkModal destinos={destinosSala} onClose={() => setColarLinkAberto(false)} onGuardar={dados => criarJogoLink(dados)} />
+        <ColarLinkModal destinos={destinosSala} equipas={equipasCompeticao} onClose={() => setColarLinkAberto(false)} onGuardar={dados => criarJogoLink(dados)} />
       )}
-      {linkParaCanal && enviarLinkParaCanal && (
+      {linkParaCanal && enviarLinkParaCanal && typeof linkParaCanal.clipInicio !== 'number' && (
+        <EnviarJogoModal
+          key={`linkjogo-${linkParaCanal.id}`}
+          jogo={{ titulo: linkParaCanal.title || '', enviadoSala: linkParaCanal.enviadoSala || [] }}
+          destinos={destinosSala} equipas={equipasCompeticao}
+          onEnviar={dados => { enviarLinkParaCanal(linkParaCanal, dados); }}
+          onClose={() => setLinkParaCanal(null)}
+        />
+      )}
+      {linkParaCanal && enviarLinkParaCanal && typeof linkParaCanal.clipInicio === 'number' && (
         <EnviarSalaModal
           key={`link-${linkParaCanal.id}`}
-          destinoInicial={typeof linkParaCanal.clipInicio === 'number' ? undefined : 'jogo'}
           clip={{ id: linkParaCanal.id, note: linkParaCanal.title || '', originalTitulo: linkParaCanal.clipOrigemTitulo || '', enviadoSala: linkParaCanal.enviadoSala || [] }}
           tag={null}
           destinos={destinosSala}
@@ -6130,17 +6203,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         />
       )}
       {jogoParaCanal && enviarJogoFicheiroParaCanal && (
-        <EnviarSalaModal
+        <EnviarJogoModal
           key={`jogo-${jogoParaCanal.v.id}`}
-          destinoInicial="jogo"
-          clip={{ id: jogoParaCanal.v.id, note: jogoParaCanal.v.titulo || '', originalTitulo: '', enviadoSala: jogoParaCanal.v.enviadoSala || [] }}
-          tag={null}
-          destinos={destinosSala}
-          onEnviar={async dados => {
-            await enviarJogoFicheiroParaCanal(jogoParaCanal.v, dados);
-            const marca = { destino: dados.destino, rotulo: dados.rotulo };
-            setJogoParaCanal(prev => (prev ? { ...prev, v: { ...prev.v, enviadoSala: [...(prev.v.enviadoSala || []), marca] } } : prev));
-          }}
+          jogo={{ titulo: jogoParaCanal.v.titulo || '', enviadoSala: jogoParaCanal.v.enviadoSala || [] }}
+          destinos={destinosSala} equipas={equipasCompeticao}
+          onEnviar={dados => enviarJogoFicheiroParaCanal(jogoParaCanal.v, dados)}
           onClose={() => setJogoParaCanal(null)}
         />
       )}

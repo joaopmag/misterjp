@@ -193,6 +193,13 @@ lado de "Guardar clipe" no MediaLibrary, `aoClipeParaAtleta` no App). O
 modal "+ Análise individual" foi retirado. Um efeito no App mantém os
 clipes do jogador iguais ao corte de origem (desenhos `shapes` /
 `anotacoesPausa` e tempos dos cortes por link).
+JOGOS INTEIROS PARA A SALA (15/11): `EnviarJogoModal` / `CamposDestinoJogo`
+(e o Colar link): "Jogo nosso" (Canal › Jogos, jogo do calendário) ou
+"Jogo de adversário" (Canal › Adversários, as duas equipas das
+competições = `categoria:'adversario', equipas`, destino `jogoAdversario` em
+enviarClipeParaSala) — como o "Adicionar vídeo" da Sala. Jogos inteiros
+nunca vão para a ficha de Scouting; os cortes continuam a ir
+(`EnviarSalaModal`, destino `adversario`).
 SEPARADORES: "Cortes" (MP4 do Estúdio, cartões em várias linhas, sem barra
 de deslizar), "Clipes" (os dos links, por jogo) e "Análise individual".
 No modo Links, a lista ao lado do leitor já não reserva 62vh (`soLink`). Cada corte vira um clipe do jogador em `video_clips`
