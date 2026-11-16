@@ -283,7 +283,16 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   manter 172 px de altura com qualquer largura. `FilaDeslizante` com
   `larguraBase`: os cartões dos cortes esticam (variável CSS
   --mjp-cartao-fila) e a coluna das setas existe sempre, para todas as
-  filas acabarem na mesma margem. Tocar no vídeo do YouTube no editor põe a tocar /
+  filas acabarem na mesma margem.
+- CORTES, FASE A (16/11): "Cortes de ficheiros" e "Cortes de links" com o
+  mesmo desenho (`blocoCortes(lista, sep)`): filtros (Jogo, por omissão o
+  mais recente, ou "Todos os jogos"; pesquisa no texto; etiquetas), grelha
+  com as colunas dos jogos, duas filas e "Ver mais" (`grelhaCortes`).
+  "Todos os jogos" = um jogo por linha, fechado; abre-se um de cada vez.
+  Cartão único (`cartaoCorte`): barra da etiqueta, ✓ se está na Sala,
+  duração, e um só botão "⋯" (Partilhar, Editar, Enviar, Apagar). Estado em
+  `cortesVista[sep]` e `menuCorteId`. FASE B (por fazer): Análise
+  individual com fila de jogadores (avatar, nº de clipes) e grelha. Tocar no vídeo do YouTube no editor põe a tocar /
   em pausa (a camada por cima tapa o botão do YouTube).
 - Teste sem YouTube: `window.__MJP_YT_EMBED` aponta o iframe para um
   leitor falso (o harness usou um que fala o mesmo protocolo).

@@ -11,7 +11,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus, MoreHorizontal,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -3384,6 +3384,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
   const [editarClipeAoAbrir, setEditarClipeAoAbrir] = useState(false); // lápis no cartão: abre o clipe já em edição
   const [filtroTag, setFiltroTag] = useState(null);
+  // Separadores dos cortes: por separador { jogo, aberto, pesquisa, verMais }.
+  const [cortesVista, setCortesVista] = useState({});
+  const [menuCorteId, setMenuCorteId] = useState(null); // corte com o menu "⋯" aberto
+  useEffect(() => {
+    if (!menuCorteId) return undefined;
+    const fechar = () => setMenuCorteId(null);
+    const tecla = (e) => { if (e.key === 'Escape') fechar(); };
+    document.addEventListener('click', fechar);
+    window.addEventListener('keydown', tecla);
+    return () => { document.removeEventListener('click', fechar); window.removeEventListener('keydown', tecla); };
+  }, [menuCorteId]);
   // Separador da biblioteca de clipes: 'staff' (os clipes cortados aqui)
   // ou 'atletas' (Análise individual em clipes, criados no Portal).
   const [separadorClipes, setSeparadorClipes] = useState('staff');
@@ -4478,8 +4489,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const mesmos = videosOriginais.filter(v => v.titulo && v.titulo === clip.originalTitulo);
     return mesmos.length === 1 ? mesmos[0] : null;
   };
-  const agruparCortes = (base) => {
-    const lista = filtroTag ? base.filter(c => c.tagId === filtroTag) : base;
+  const agruparCortes = (base, { semEtiqueta = false } = {}) => {
+    const lista = filtroTag && !semEtiqueta ? base.filter(c => c.tagId === filtroTag) : base;
     const porJogo = new Map();
     lista.forEach(c => {
       const orig = originalDoClipe(c);
@@ -4499,117 +4510,151 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* Os cartões dos cortes (filtro por etiqueta e uma fila por jogo): para
      os cortes MP4 (separador Cortes) e para os clipes de links feitos no
      editor (separador Clipes). */
-  const blocoCortes = (listaC) => (
-          <>
-            {/* Filtro por etiqueta — só mostra as etiquetas que têm pelo
-               menos um clipe, para não encher a tira de opções vazias. */}
-            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10, WebkitOverflowScrolling: 'touch' }}>
-              <button onClick={() => setFiltroTag(null)}
-                style={{
-                  flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
-                  border: `1px solid ${T.muted}`, background: filtroTag == null ? T.muted : 'transparent', color: filtroTag == null ? T.bg : T.muted,
-                }}>
-                Todos
-              </button>
-              {TAGS.filter(tag => listaC.some(c => c.tagId === tag.id)).map(tag => (
-                <button key={tag.id} onClick={() => setFiltroTag(tag.id)}
-                  style={{
-                    flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
-                    border: `1px solid ${tag.color}`, background: filtroTag === tag.id ? tag.color : 'transparent', color: filtroTag === tag.id ? TEXT_ON_ACCENT : corTextoEtiqueta(tag.color),
-                  }}>
-                  {tag.label}
-                </button>
-              ))}
+  /* CORTES (ficheiros e links): filtros em cima (jogo, pesquisa, etiqueta)
+     e uma grelha com as mesmas colunas dos cartões dos jogos, duas filas e
+     "Ver mais". Com "Todos os jogos", cada jogo é uma linha fechada e só o
+     que se abre mostra os cartões: a página fica curta, haja 3 ou 30
+     jogos. Cada cartão tem um só botão "⋯" com as ações. */
+  const vistaCortesDe = (sep) => cortesVista[sep] || {};
+  const mudarVistaCortes = (sep, mudanca) => setCortesVista(p => ({ ...p, [sep]: { ...(p[sep] || {}), ...mudanca } }));
+  const cartaoCorte = (clip) => {
+    const tag = TAGS.find(t => t.id === clip.tagId);
+    const naSala = clipeNaSala(clip);
+    const menuAberto = menuCorteId === clip.id;
+    const itemMenu = (Icone, rotulo, acao, cor) => (
+      <button type="button" onClick={(e) => { e.stopPropagation(); setMenuCorteId(null); acao(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: cor || T.cream, fontSize: 12.5, textAlign: 'left', borderRadius: 6, ...body }}>
+        <Icone size={14} /> {rotulo}
+      </button>
+    );
+    return (
+      <div key={clip.id} style={{ position: 'relative', minWidth: 0 }}>
+        <button type="button" onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(clip); }}
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+            {clip.thumbUrl ? (
+              <img src={clip.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Film size={22} color={T.mutedDim} /></div>
+            )}
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color || T.line }} />
+            {naSala && (
+              <span title={`Na Sala de Vídeo: ${textoNaSala(clip)}`} style={{ position: 'absolute', top: 7, left: 7, width: 20, height: 20, borderRadius: 10, background: 'rgba(46,125,80,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Check size={12} color="#fff" />
+              </span>
+            )}
+            <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>
+              {Math.round(clip.duracao || 0)}s
+            </span>
+          </div>
+          <div style={{ padding: '7px 34px 8px 9px', minHeight: 44, boxSizing: 'border-box' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: corTextoEtiqueta(tag?.color) || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
+            <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {clip.note || `${typeof clip.origemInicio === 'number' ? fmt(clip.origemInicio) : ''}${clip.originalTitulo ? ` · ${parteDoTitulo(clip.originalTitulo) ? `Parte ${parteDoTitulo(clip.originalTitulo)}` : clip.originalTitulo}` : ''}`}
             </div>
-
-            {/* Cartões com miniatura, em tira horizontal — desliza-se com
-               o dedo, tal como numa galeria. Toca-se num cartão para abrir
-               o clipe. */}
-            {agruparCortes(listaC).map(g => (
-            <div key={g.chave} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '4px 0 8px', minWidth: 0 }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>{g.titulo}</span>
-                <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'corte' : 'cortes'}</span>
-              </div>
-            <FilaDeslizante>
-              {g.clipes.map(clip => {
-                const tag = TAGS.find(t => t.id === clip.tagId);
-                return (
-                  <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 'var(--mjp-cartao-fila, 148px)', scrollSnapAlign: 'start' }}>
-                  <button onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(clip); }}
-                    style={{
-                      width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block',
-                      background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body,
-                    }}>
-                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
-                      {clip.thumbUrl ? (
-                        <img src={clip.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Film size={22} color={T.mutedDim} />
-                        </div>
-                      )}
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color || T.line }} />
-                      <span style={{ position: 'absolute', bottom: 4, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>
-                        {Math.round(clip.duracao)}s
-                      </span>
-                    </div>
-                    <div style={{ padding: '7px 9px' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: corTextoEtiqueta(tag?.color) || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
-                      {clip.note ? (
-                        <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.note}</div>
-                      ) : (
-                        <div style={{ fontSize: 11, color: T.mutedDim }}>{clip.originalTitulo}</div>
-                      )}
-                    </div>
+          </div>
+        </button>
+        <button type="button" aria-label="Ações do corte" title="Ações" onClick={(e) => { e.stopPropagation(); setMenuCorteId(menuAberto ? null : clip.id); }}
+          style={{ position: 'absolute', right: 5, bottom: 9, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: menuAberto ? T.surfaceRaise : 'transparent', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+          <MoreHorizontal size={16} />
+        </button>
+        {menuAberto && (
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: 4, bottom: 38, zIndex: 20, minWidth: 190, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 4, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
+            {itemMenu(copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } })}
+            {itemMenu(Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); })}
+            {enviarParaSala && itemMenu(naSala ? Check : Film, naSala ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? T.good : undefined)}
+            {itemMenu(Trash2, 'Apagar', () => removerClipe(clip), T.bad)}
+          </div>
+        )}
+      </div>
+    );
+  };
+  // Grelha com as colunas dos jogos; fechada mostra duas filas.
+  const grelhaCortes = (lista, sep, chave) => {
+    const vista = vistaCortesDe(sep);
+    const abertos = vista.verMais || {};
+    const cols = Math.max(1, porLinhaOriginais);
+    const limite = cols * 2;
+    const todos = !!abertos[chave];
+    return (
+      <>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 10 }}>
+          {(todos ? lista : lista.slice(0, limite)).map(cartaoCorte)}
+        </div>
+        {lista.length > limite && (
+          <button type="button" onClick={() => mudarVistaCortes(sep, { verMais: { ...abertos, [chave]: !todos } })}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: 0, height: 28, marginTop: 6, ...body }}>
+            {todos ? <><ChevronUp size={14} /> Ver menos</> : <><ChevronDown size={14} /> Ver mais ({lista.length - limite})</>}
+          </button>
+        )}
+      </>
+    );
+  };
+  const blocoCortes = (listaC, sep = 'staff') => {
+    const vista = vistaCortesDe(sep);
+    const gruposTodos = agruparCortes(listaC, { semEtiqueta: true });
+    const termo = String(vista.pesquisa || '').trim().toLowerCase();
+    const filtrada = termo ? listaC.filter(c => {
+      const tg = TAGS.find(t => t.id === c.tagId);
+      return [c.note, tg && tg.label, c.originalTitulo].filter(Boolean).join(' ').toLowerCase().includes(termo);
+    }) : listaC;
+    const grupos = agruparCortes(filtrada);
+    const jogoSel = vista.jogo && (vista.jogo === 'todos' || gruposTodos.some(g => g.chave === vista.jogo)) ? vista.jogo : (gruposTodos[0] ? gruposTodos[0].chave : 'todos');
+    const campo = { background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 8, padding: '0 10px', height: 36, fontSize: 13, ...body, boxSizing: 'border-box' };
+    const pilula = (ativo, cor, rotulo, onClick, key) => (
+      <button key={key} type="button" onClick={onClick}
+        style={{
+          flex: '0 0 auto', padding: '0 12px', height: 32, borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
+          border: `1px solid ${cor}`, background: ativo ? cor : 'transparent', color: ativo ? (cor === T.muted ? T.bg : TEXT_ON_ACCENT) : (cor === T.muted ? T.muted : corTextoEtiqueta(cor)),
+        }}>{rotulo}</button>
+    );
+    const g1 = jogoSel !== 'todos' ? grupos.find(g => g.chave === jogoSel) : null;
+    return (
+      <div>
+        {/* FILTROS: sempre na mesma linha e com a mesma altura. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <select value={jogoSel} onChange={e => mudarVistaCortes(sep, { jogo: e.target.value, aberto: null })} aria-label="Jogo" style={{ ...campo, minWidth: 0, flex: '1 1 220px', maxWidth: 360 }}>
+            {gruposTodos.map(g => <option key={g.chave} value={g.chave}>{g.titulo} ({g.clipes.length})</option>)}
+            <option value="todos">Todos os jogos ({listaC.length})</option>
+          </select>
+          <input value={vista.pesquisa || ''} onChange={e => mudarVistaCortes(sep, { pesquisa: e.target.value })} placeholder="Procurar no texto dos cortes" aria-label="Procurar"
+            style={{ ...campo, flex: '1 1 200px', maxWidth: 320 }} />
+        </div>
+        <div className="mjp-sem-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 12, scrollbarWidth: 'none' }}>
+          {pilula(filtroTag == null, T.muted, 'Todas as etiquetas', () => setFiltroTag(null), 'todas')}
+          {TAGS.filter(tag => listaC.some(c => c.tagId === tag.id)).map(tag => pilula(filtroTag === tag.id, tag.color, tag.label, () => setFiltroTag(tag.id), tag.id))}
+        </div>
+        {jogoSel !== 'todos' ? (
+          g1 && g1.clipes.length ? grelhaCortes(g1.clipes, sep, g1.chave) : (
+            <div style={{ color: T.mutedDim, fontSize: 13, padding: '12px 0', ...body }}>Nenhum corte deste jogo com estes filtros.</div>
+          )
+        ) : grupos.length === 0 ? (
+          <div style={{ color: T.mutedDim, fontSize: 13, padding: '12px 0', ...body }}>Nenhum corte com estes filtros.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {grupos.map(g => {
+              const aberto = vista.aberto === g.chave;
+              const cores = [...new Set(g.clipes.map(c => (TAGS.find(t => t.id === c.tagId) || {}).color).filter(Boolean))];
+              return (
+                <div key={g.chave} style={{ border: `1px solid ${aberto ? T.gold : T.line}`, borderRadius: 10, background: T.surface }}>
+                  <button type="button" onClick={() => mudarVistaCortes(sep, { aberto: aberto ? null : g.chave })}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '0 12px', height: 46, background: 'none', border: 'none', cursor: 'pointer', color: T.cream, textAlign: 'left', ...body }}>
+                    {aberto ? <ChevronUp size={16} color={T.gold} /> : <ChevronDown size={16} color={T.muted} />}
+                    <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{g.titulo}</span>
+                    <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'corte' : 'cortes'}</span>
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
+                      {cores.slice(0, 6).map(cor => <span key={cor} style={{ width: 8, height: 8, borderRadius: 4, background: cor }} />)}
+                    </span>
                   </button>
-                  <button
-                    onClick={async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }}
-                    title="Partilhar o clipe" aria-label="Partilhar o clipe"
-                    style={{
-                      position: 'absolute', top: 7, left: 6, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                    }}>
-                    {copiedId === clip.id ? <Check size={13} color={T.good} /> : <Share2 size={13} color="#fff" />}
-                  </button>
-                  {/* Editar e apagar, ao lado do partilhar (mesmo estilo). */}
-                  <button
-                    onClick={() => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }}
-                    title="Editar o clipe" aria-label="Editar o clipe"
-                    style={{
-                      position: 'absolute', top: 7, left: 38, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                    }}>
-                    <Pencil size={13} color="#fff" />
-                  </button>
-                  <button
-                    onClick={() => removerClipe(clip)}
-                    title="Apagar o clipe" aria-label="Apagar o clipe"
-                    style={{
-                      position: 'absolute', top: 7, left: 70, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                    }}>
-                    <Trash2 size={13} color="#fff" />
-                  </button>
-                  {enviarParaSala && (
-                    <button
-                      onClick={() => setClipeParaSala(clip)}
-                      title={clipeNaSala(clip) ? `Na Sala de Vídeo: ${textoNaSala(clip)}` : 'Enviar para a Sala de Vídeo'} aria-label="Enviar para a Sala de Vídeo"
-                      style={{
-                        position: 'absolute', top: 7, left: 102, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
-                        background: clipeNaSala(clip) ? 'rgba(46,125,80,0.85)' : 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
-                      }}>
-                      {clipeNaSala(clip) ? <Check size={13} color="#fff" /> : <Film size={13} color="#fff" />}
-                    </button>
-                  )}
-                  </div>
-                );
-              })}
-            </FilaDeslizante>
-            </div>
-            ))}
-          </>
-  );
+                  {aberto && <div style={{ padding: '0 12px 12px' }}>{grelhaCortes(g.clipes, sep, g.chave)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Editar um clipe cortado: texto sempre; tempos, voltando a cortar o
   // original. Mantém o mesmo id (os links partilhados continuam válidos).
@@ -6391,7 +6436,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {separadorClipes === 'staff' && cortesFicheiro.length > 0 && blocoCortes(cortesFicheiro)}
 
         {/* Clipes dos jogos por link feitos no EDITOR: os mesmos cartões dos Cortes. */}
-        {separadorClipes === 'clipes' && clipesLinkEditor.length > 0 && blocoCortes(clipesLinkEditor)}
+        {separadorClipes === 'clipes' && clipesLinkEditor.length > 0 && blocoCortes(clipesLinkEditor, 'clipes')}
 
         {/* CORTES DOS JOGOS POR LINK (YouTube): juntos dos cortes MP4, por
             jogo. Daqui vão para o Canal (Jogos ou Adversários) ou para a
@@ -6403,7 +6448,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </div>
         )}
         {separadorClipes === 'clipes' && gruposCortesLink.length > 0 && (
-          <div>
+          <div style={clipesLinkEditor.length ? { marginTop: 22 } : undefined}>
+            {clipesLinkEditor.length > 0 && (
+              <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: T.mutedDim, margin: '0 0 10px', ...body }}>Clipes de antes do editor</div>
+            )}
             {gruposCortesLink.map(g => (
               <div key={g.nome} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, ...body }}>
