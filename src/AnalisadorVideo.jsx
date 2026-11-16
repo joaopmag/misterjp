@@ -2691,7 +2691,7 @@ async function descarregarClipeMp4(clip) {
   return entregarVideo(new Blob([blob], { type: tipo }), titulo);
 }
 
-/* JOGOS POR LINK NO EDITOR (só os novos, `editorAnalise`): o jogo do
+/* JOGOS POR LINK NO EDITOR (todos os do YouTube): o jogo do
    YouTube faz de "vídeo original" no editor dos ficheiros. Os cortes
    feitos nele ficam na mesma coleção dos cortes, com `fonte: 'youtube'`,
    o id do YouTube e os tempos do jogo (não há ficheiro: o YouTube não
@@ -3809,10 +3809,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   }, [linkAberto, jogosLink, cortesLink]);
   // Cartão de um jogo por link: igual ao dos carregados (imagem, nome,
   // lápis para mudar o nome, estado e ✕). Abre no separador "Jogos por link".
-  /* Jogo por link: os novos (editorAnalise) abrem no editor dos ficheiros;
-     os antigos continuam a abrir no leitor dos links. */
+  /* Jogo por link do YouTube: abre no editor dos ficheiros (todos os
+     jogos). Os clipes antigos de links continuam a abrir no leitor dos
+     links (separador Clipes). Outros links (redes sociais): leitor antigo. */
   const abrirLinkOuEditor = (v) => {
-    if (v && v.editorAnalise && v.youtubeId) { setLinkAberto(null); setOriginalAtivoId(v.id); limparMarcas(); return; }
+    if (v && v.youtubeId) { setLinkAberto(null); setOriginalAtivoId(v.id); limparMarcas(); return; }
     abrirJogoLink(v.id);
   };
   const cartaoLink = (v) => (

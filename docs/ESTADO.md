@@ -251,9 +251,10 @@ Apagar na Análise: confirmação e depois "Anular" durante `UNDO_SECONDS`
 expira (+3 s). Mesmo para jogos por link (`apagarLink`).
 
 **LINKS DO YOUTUBE NO EDITOR DOS FICHEIROS (16/11):**
-- Só os jogos por link NOVOS (`editorAnalise: true`, posto em `criarJogoLink`)
-  abrem no editor do Estúdio; os antigos e os clipes antigos (cortesLink)
-  continuam a abrir no leitor dos links, como antes.
+- Todos os jogos por link do YouTube abrem no editor do Estúdio (16/11:
+  a Adelaide esperava isto também nos jogos já existentes). Os clipes
+  antigos de links (cortesLink) continuam a abrir no leitor dos links.
+  (`editorAnalise: true` ainda é posto em `criarJogoLink`, sem efeito.)
 - `src/media/youtubeComoVideo.jsx`: o iframe do YouTube ganha as
   propriedades e eventos de um <video> (currentTime, paused, duration,
   play/pause, playbackRate, 'timeupdate', 'play', 'loadedmetadata'…), por
