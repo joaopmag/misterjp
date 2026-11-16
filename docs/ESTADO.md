@@ -308,6 +308,12 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   registo; quando fica preparado, a Análise envia-o sozinha para a Sala
   (efeito com `aEnviarPendentesRef`) e tira o `destinoPendente`; se falhar,
   `destinoPendenteErro` e o cartão diz "Não foi para a Sala · usa o botão".
+- Cartões de jogo (ficheiro e link) com 190 px: nome inteiro em até 2
+  linhas (sem lápis/ícones ao lado), informação por baixo e um só "⋯"
+  (`acoesJogo`: Mudar o nome, Enviar para a Sala, Apagar). No link, a
+  informação vai no fundo a amarelo ("YouTube · no Canal · Jogos").
+  Análise individual: sem botões por cima da grelha; com o jogador
+  escolhido, a fotografia dele vira o "ver seguidos" (play dourado).
 - Cortes abrem por omissão em "Todos os jogos". Análise individual mostra
   a fotografia do jogador (Plantel, `photo`) quando a tem.
 - Página não mexe com filtros: os rótulos dos separadores usam totais sem
