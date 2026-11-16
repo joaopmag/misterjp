@@ -26,9 +26,10 @@ const T = {
   campoFundo: '#111', campoTexto: '#fff', // caixas de texto fora do vídeo
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
-// Altura reservada ao "palco" da Análise (duas filas de cartões e a linha
-// do "Ver mais"): igual nos dois modos, para nada mexer ao trocar.
-const ALTURA_PALCO = 356;
+/* Cartões de jogo (ficheiro e link) com a MESMA altura fixa, e a grelha
+   sempre com o espaço de duas filas: mudar Estúdio ↔ Links não mexe. */
+const ALTURA_CARTAO_JOGO = 172;
+const ALTURA_GRELHA_JOGOS = ALTURA_CARTAO_JOGO * 2 + 10;
 
 /* MODO CLARO — segue a escolha feita na app (mesma chave 'mjp-tema').
    `TV` é a paleta escura fixa: a bancada do vídeo (leitor, barra de
@@ -3735,7 +3736,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     <div key={v.id} role="button" tabIndex={0} onClick={() => abrirJogoLink(v.id)}
       onKeyDown={e => { if (e.key === 'Enter') abrirJogoLink(v.id); }}
       style={{
-        display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', width: 172, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
         borderRadius: 10, border: `1px solid ${T.line}`, background: T.surface,
       }}>
       <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
@@ -3771,6 +3772,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {apagarLink && <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarLink(v); }} />}
           </span>
         </div>
+        {/* A mesma terceira linha dos cartões de ficheiro (altura igual). */}
+        <div style={{ fontSize: 10.5, minHeight: 15, display: 'flex', alignItems: 'center', color: T.mutedDim, whiteSpace: 'nowrap' }}>Link · não ocupa espaço</div>
       </div>
     </div>
   );
@@ -5250,13 +5253,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             )}
           </div>
         ) : (
-        <div key={modoEfetivo} style={{ minHeight: temLinks ? ALTURA_PALCO : undefined, animation: 'mjpPalco .22s ease' }}>
-        <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+        <div key={modoEfetivo} style={{ animation: 'mjpPalco .22s ease' }}>
+        <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 10, marginBottom: 10, minHeight: temLinks ? ALTURA_GRELHA_JOGOS : undefined }}>
           {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
             <button key={v.id} onClick={() => { if (v.ficheiroApagado) return; setOriginalAtivoId(v.id); limparMarcas(); }}
               title={v.ficheiroApagado ? 'O jogo completo já foi apagado. Os cortes e clipes ficaram guardados.' : undefined}
               style={{
-                display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: v.ficheiroApagado ? 'default' : 'pointer', padding: 0, ...body, overflow: 'hidden',
+                display: 'flex', flexDirection: 'column', width: 172, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: v.ficheiroApagado ? 'default' : 'pointer', padding: 0, ...body, overflow: 'hidden',
                 borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
                 background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
               }}>
@@ -5347,24 +5350,25 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </div>
         {grelhaJogos.length > porLinhaOriginais * 2 - 1 ? (
           <button onClick={() => setVerTodosOriginais(v => !v)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '2px 0', marginBottom: 6, ...body }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '0', height: 24, marginBottom: 6, ...body }}>
             {verTodosOriginais
               ? <><ChevronUp size={14} /> Ver menos</>
               : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais * 2 - 1)})</>}
           </button>
         ) : <div style={{ height: 24, marginBottom: 6 }} />}
-        {/* AVISO DOS 90 DIAS: sempre a mesma altura no Estúdio (vazia sem
-            nada a avisar), para a página não mexer. */}
-        {modoEfetivo !== 'links' && (
-          <div style={{ minHeight: 20, marginBottom: 6, fontSize: 12, color: aApagarEmBreve.length ? T.warn : T.mutedDim, ...body }}>
+        {/* AVISO DOS 90 DIAS (Estúdio) e nota dos links: sempre a mesma
+            altura (duas linhas no telemóvel), para a página não mexer. */}
+        {modoEfetivo === 'links' ? (
+          <div style={{ minHeight: 34, lineHeight: '17px', marginBottom: 6, fontSize: 12, color: T.mutedDim, ...body }}>
+            {(jogosLink || []).length === 0 ? 'Cola o link do YouTube de um jogo para fazeres cortes e desenhos sem carregar nada.' : 'Os links do YouTube ficam sempre e não ocupam espaço.'}
+          </div>
+        ) : (
+          <div style={{ minHeight: 34, lineHeight: '17px', marginBottom: 6, fontSize: 12, color: aApagarEmBreve.length ? T.warn : T.mutedDim, ...body }}>
             {aApagarEmBreve.length
               ? `${aApagarEmBreve.length === 1 ? '1 jogo completo vai ser apagado' : `${aApagarEmBreve.length} jogos completos vão ser apagados`} nos próximos ${DIAS_AVISO} dias. Os cortes e clipes ficam. Corta o que ainda queres guardar.`
-              : 'Os jogos completos ficam 90 dias. Os cortes e clipes ficam sempre.'}
-          </div>
-        )}
-        {modoEfetivo === 'links' && (jogosLink || []).length === 0 && (
-          <div style={{ color: T.mutedDim, fontSize: 12.5, padding: '4px 0', ...body }}>
-            Cola o link do YouTube de um jogo para fazeres cortes e desenhos sem carregar nada.
+              : videosOriginais.length === 0
+                ? 'Carrega o vídeo de um jogo ou treino para começares a marcar cortes. Os jogos completos ficam 90 dias.'
+                : 'Os jogos completos ficam 90 dias. Os cortes e clipes ficam sempre.'}
           </div>
         )}
         </div>
@@ -5388,7 +5392,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </div>
       )}
 
-      {!originalAtivo && modoEfetivo === 'estudio' && videosOriginais.length === 0 && (
+      {!originalAtivo && !temLinks && modoEfetivo === 'estudio' && videosOriginais.length === 0 && (
         <div style={{ color: T.mutedDim, fontSize: 13, padding: '30px 0', textAlign: 'center' }}>
           Carrega o vídeo de um jogo ou treino para começares a marcar cortes.
         </div>
