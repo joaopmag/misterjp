@@ -301,6 +301,15 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   com "Ver seguidos"; sem jogador, os clipes mais recentes de todos. O
   código antigo dos cartões grandes (renderClipesCartao, cartaoPainel)
   ficou sem uso.
+- CARREGAR FICHEIRO = COLAR LINK (16/11): escolhido o ficheiro, abre a
+  mesma janela do "Colar link" (`ColarLinkModal` com `ficheiro`): nome do
+  jogo, para onde vai, destino. A barra "Nome do vídeo" no topo saiu.
+  `iniciarUploadVideo(file, nome, destino)` guarda `destinoPendente` no
+  registo; quando fica preparado, a Análise envia-o sozinha para a Sala
+  (efeito com `aEnviarPendentesRef`) e tira o `destinoPendente`; se falhar,
+  `destinoPendenteErro` e o cartão diz "Não foi para a Sala · usa o botão".
+- Cortes abrem por omissão em "Todos os jogos". Análise individual mostra
+  a fotografia do jogador (Plantel, `photo`) quando a tem.
 - Página não mexe com filtros: os rótulos dos separadores usam totais sem
   filtros, e antes de mudar um filtro a área guarda a altura que tinha
   (`fixarAlturaCortes`). Tocar no vídeo do YouTube no editor põe a tocar /

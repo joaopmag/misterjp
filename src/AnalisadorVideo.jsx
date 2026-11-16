@@ -1827,9 +1827,12 @@ function CamposDestinoJogo({ dj, jogos, equipas, comAnalise }) {
 }
 
 /* COLAR LINK (modo Links da Análise): link, nome e para onde vai. */
-function ColarLinkModal({ destinos, equipas, onGuardar, onClose }) {
+/* NOVO JOGO: o MESMO formulário para colar um link e para carregar um
+   ficheiro (nome do jogo, para onde vai, destino). No ficheiro, a linha do
+   link mostra o ficheiro escolhido (mesma altura). */
+function ColarLinkModal({ destinos, equipas, onGuardar, onClose, ficheiro = null }) {
   const d = destinos || { jogos: [] };
-  const [titulo, setTitulo] = useState('');
+  const [titulo, setTitulo] = useState(() => (ficheiro ? ficheiro.name.replace(/\.[^.]+$/, '') : ''));
   const [url, setUrl] = useState('');
   const dj = useDestinoJogo('analise');
   const [erro, setErro] = useState('');
@@ -1838,7 +1841,7 @@ function ColarLinkModal({ destinos, equipas, onGuardar, onClose }) {
   const rotuloCampo = { display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim };
   const guardar = () => {
     setErro('');
-    if (!url.trim()) { setErro('Cola o link do vídeo.'); return; }
+    if (!ficheiro && !url.trim()) { setErro('Cola o link do vídeo.'); return; }
     if (!titulo.trim()) { setErro('Dá um nome ao jogo.'); return; }
     const v = validarDestinoJogo(dj, d.jogos);
     if (v.erro) { setErro(v.erro); return; }
@@ -1851,22 +1854,31 @@ function ColarLinkModal({ destinos, equipas, onGuardar, onClose }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Link2 size={16} /> Colar link</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}>{ficheiro ? <><Upload size={16} /> Carregar ficheiro</> : <><Link2 size={16} /> Colar link</>}</div>
           <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
         </div>
-        <label style={rotuloCampo}>
-          Link do vídeo
-          <input value={url} onChange={e => setUrl(e.target.value)} autoFocus placeholder="https://youtu.be/…" style={campo} />
-        </label>
+        {ficheiro ? (
+          <label style={rotuloCampo}>
+            Ficheiro
+            <div style={{ ...campo, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={ficheiro.name}>
+              {ficheiro.name} · {ficheiro.size >= 1e9 ? formatarGB(ficheiro.size) : `${Math.max(1, Math.round(ficheiro.size / 1e6))} MB`}
+            </div>
+          </label>
+        ) : (
+          <label style={rotuloCampo}>
+            Link do vídeo
+            <input value={url} onChange={e => setUrl(e.target.value)} autoFocus placeholder="https://youtu.be/…" style={campo} />
+          </label>
+        )}
         <label style={rotuloCampo}>
           Nome do jogo
-          <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} placeholder="Ex.: 9.ª jornada · AFS vs Salgueiros (1.ª parte)" style={campo} />
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} autoFocus={!!ficheiro} maxLength={120} placeholder="Ex.: 9.ª jornada · AFS vs Salgueiros (1.ª parte)" style={campo} />
         </label>
         <CamposDestinoJogo dj={dj} jogos={d.jogos} equipas={equipas} comAnalise />
         <div style={{ fontSize: 12.5, color: T.bad, minHeight: 18 }}>{erro}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn variant="solid" onClick={guardar}><Check size={14} /> Guardar</Btn>
+          <Btn variant="solid" onClick={guardar}>{ficheiro ? <><Upload size={14} /> Carregar</> : <><Check size={14} /> Guardar</>}</Btn>
         </div>
       </div>
     </div>
@@ -4518,6 +4530,22 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* Os cartões dos cortes (filtro por etiqueta e uma fila por jogo): para
      os cortes MP4 (separador Cortes) e para os clipes de links feitos no
      editor (separador Clipes). */
+  /* JOGO CARREGADO COM DESTINO ESCOLHIDO AO CARREGAR (`destinoPendente`):
+     quando fica preparado, vai sozinho para a Sala de Vídeo, como se se
+     tivesse usado o botão do cartão. */
+  const aEnviarPendentesRef = useRef(new Set());
+  useEffect(() => {
+    if (!enviarJogoFicheiroParaCanal) return;
+    (videosOriginais || []).forEach(o => {
+      if (!o || !o.destinoPendente || o.pronto === false || o.erroPreparacao || o.ficheiroApagado || aEnviarPendentesRef.current.has(o.id)) return;
+      aEnviarPendentesRef.current.add(o.id);
+      const semPendente = (x) => { const { destinoPendente, ...resto } = x; return resto; };
+      Promise.resolve(enviarJogoFicheiroParaCanal(o, { titulo: o.titulo || 'Jogo', ...o.destinoPendente }))
+        .then(() => setVideosOriginais(prev => (prev || []).map(x => (x.id === o.id ? semPendente(x) : x))))
+        .catch(e => setVideosOriginais(prev => (prev || []).map(x => (x.id === o.id ? { ...semPendente(x), destinoPendenteErro: String((e && e.message) || e).slice(0, 160) } : x))));
+    });
+  }, [videosOriginais, enviarJogoFicheiroParaCanal, setVideosOriginais]);
+
   /* ANÁLISE INDIVIDUAL (fase B). */
   const cartaoClipeAtleta = (c, comNome) => {
     const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
@@ -4582,6 +4610,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const limiteClipes = cols * 2;
     const campo = { background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 8, padding: '0 10px', height: 36, fontSize: 13, ...body, boxSizing: 'border-box' };
     const iniciais = (n) => String(n || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+    const fotoAtleta = (g) => { const j = (jogadores || []).find(x => g.atletaId && String(x.id) === String(g.atletaId)); return (j && j.photo) || null; };
     return (
       <div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
@@ -4604,7 +4633,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   background: on ? T.surfaceRaise : T.surface, border: `1px solid ${on ? T.gold : T.line}`, borderRadius: 10, boxSizing: 'border-box',
                 }}>
                 <span style={{ position: 'relative', width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: on ? T.goldFundo : T.surfaceRaise, color: on ? '#111' : T.gold, border: `1.5px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, boxSizing: 'border-box' }}>
-                  {iniciais(g.nome)}
+                  {/* Fotografia do jogador (Plantel), se tiver; senão, as iniciais. */}
+                  {fotoAtleta(g)
+                    ? <img src={fotoAtleta(g)} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block' }} />
+                    : iniciais(g.nome)}
                   {novos && <span title="Clipes novos esta semana" style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: 5, background: T.good, border: `2px solid ${T.surface}` }} />}
                 </span>
                 <span style={{ minWidth: 0, flex: 1 }}>
@@ -4740,7 +4772,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       return [c.note, tg && tg.label, c.originalTitulo].filter(Boolean).join(' ').toLowerCase().includes(termo);
     }) : listaC;
     const grupos = agruparCortes(filtrada);
-    const jogoSel = vista.jogo && (vista.jogo === 'todos' || gruposTodos.some(g => g.chave === vista.jogo)) ? vista.jogo : (gruposTodos[0] ? gruposTodos[0].chave : 'todos');
+    // Por omissão: todos os jogos (cada um numa linha fechada).
+    const jogoSel = vista.jogo && (vista.jogo === 'todos' || gruposTodos.some(g => g.chave === vista.jogo)) ? vista.jogo : 'todos';
     const campo = { background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 8, padding: '0 10px', height: 36, fontSize: 13, ...body, boxSizing: 'border-box' };
     const pilula = (ativo, cor, rotulo, onClick, key) => (
       <button key={key} type="button" onClick={onClick}
@@ -5582,25 +5615,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {(erro || uploadVideoEstado?.erro) && <div style={{ background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 8, padding: 10, marginBottom: 12, color: T.cream, fontSize: 13 }}>{erro || uploadVideoEstado.erro}</div>}
 
-      {/* Nome do vídeo — pede-se antes de começar a enviar, para a lista
-         não ficar cheia de nomes de ficheiro em bruto do telemóvel. */}
-      {ficheiroPendente && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>Nome do vídeo:</span>
-          <input
-            autoFocus
-            value={nomeVideoInput}
-            onChange={e => setNomeVideoInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && nomeVideoInput.trim()) { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); } }}
-            style={{ flex: '1 1 180px', background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 4, padding: '6px 9px', fontSize: 13, ...body }}
-          />
-          <Btn variant="solid" disabled={!nomeVideoInput.trim()} onClick={() => { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); }}>
-            <Upload size={13} /> Carregar
-          </Btn>
-          <Btn variant="ghost" onClick={() => setFicheiroPendente(null)}>Cancelar</Btn>
-        </div>
-      )}
-
       {/* Vídeos originais carregados — caixas retangulares com pré-visualização,
          só visíveis quando não há nenhum aberto (para não ocupar espaço por
          cima do leitor). Com um vídeo aberto, mostra-se só uma barra fina
@@ -5733,7 +5747,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       {v.recusadoQuota ? 'Não carregado (limite)' : 'Jogo completo apagado'}
                     </span>
                   ) : v.pronto === false ? (
-                    <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
+                    <span title={v.destinoPendente ? `Quando estiver pronto vai para: ${v.destinoPendente.rotulo || 'Sala de Vídeo'}` : undefined} style={{ fontSize: 11, color: T.warn, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                      A preparar…{v.destinoPendente ? ` → ${v.destinoPendente.rotulo || 'Sala'}` : ''}
+                    </span>
+                  ) : v.destinoPendenteErro && !(v.enviadoSala || []).length ? (
+                    <span title={v.destinoPendenteErro} style={{ fontSize: 11, color: T.bad, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>Não foi para a Sala · usa o botão</span>
                   ) : (v.enviadoSala || []).length ? (
                     <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: T.gold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                       {/* Onde está: "Jogos › J10 · …" ou "Adversários › …". */}
@@ -6617,6 +6635,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       )}
       {colarLinkAberto && criarJogoLink && (
         <ColarLinkModal destinos={destinosSala} equipas={equipasCompeticao} onClose={() => setColarLinkAberto(false)} onGuardar={dados => criarJogoLink(dados)} />
+      )}
+      {/* Carregar ficheiro: o mesmo formulário do "Colar link" (nome, para
+          onde vai, destino), numa janela por cima: a página não mexe. */}
+      {ficheiroPendente && (
+        <ColarLinkModal ficheiro={ficheiroPendente} destinos={destinosSala} equipas={equipasCompeticao}
+          onClose={() => setFicheiroPendente(null)}
+          onGuardar={({ titulo, url, ...dest }) => { iniciarUploadVideo(ficheiroPendente, titulo, dest); setFicheiroPendente(null); }} />
       )}
       {linkParaCanal && enviarLinkParaCanal && typeof linkParaCanal.clipInicio !== 'number' && (
         <EnviarJogoModal

@@ -473,7 +473,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     setVideosOriginais(prev => [...(prev || []), novo]);
     prepararOriginal(novo);
   }, [setVideosOriginais, prepararOriginal]);
-  const iniciarUploadVideo = useCallback(async (file, nomePersonalizado) => {
+  const iniciarUploadVideo = useCallback(async (file, nomePersonalizado, destinoPendente = null) => {
     // QUOTA: com a equipa no limite, nem começa o envio (seriam minutos a
     // carregar um jogo que o serviço depois recusava).
     const usado = espacoJogosUsado(videosOriginais);
@@ -567,6 +567,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
          confirmar em segundo plano (ver `confirmarOriginalDepois`). */
       const novo = {
         id: uid(), storagePath: caminho, titulo: (nomePersonalizado && nomePersonalizado.trim()) || file.name.replace(/\.[^.]+$/, ''),
+        // Para onde vai (escolhido ao carregar, como no "Colar link"): a
+        // Análise envia-o sozinha para a Sala quando ficar preparado.
+        ...(destinoPendente && destinoPendente.destino && destinoPendente.destino !== 'analise' ? { destinoPendente } : {}),
         tamanho: file.size, criadoEm: new Date().toISOString(),
         // pronto:false até o video-worker (serviço à parte) confirmar que já
         // reorganizou o ficheiro para arrancar depressa. Chega sozinho via
