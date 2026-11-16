@@ -28,9 +28,11 @@ const T = {
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
 /* Cartões de jogo (ficheiro e link) com a MESMA altura fixa, e a grelha
-   sempre com o espaço de duas filas: mudar Estúdio ↔ Links não mexe. */
+   sempre com o espaço de uma fila: mudar Ficheiros ↔ Links não mexe. */
 const ALTURA_CARTAO_JOGO = 172;
-const ALTURA_GRELHA_JOGOS = ALTURA_CARTAO_JOGO * 2 + 10;
+const ALTURA_MINIATURA_JOGO = 97; // altura fixa: o cartão alarga para encher a linha sem mudar de altura
+// Uma só fila de cartões (o resto em "Ver mais"), a toda a largura.
+const ALTURA_GRELHA_JOGOS = ALTURA_CARTAO_JOGO;
 
 /* MODO CLARO — segue a escolha feita na app (mesma chave 'mjp-tema').
    `TV` é a paleta escura fixa: a bancada do vídeo (leitor, barra de
@@ -1624,27 +1626,27 @@ function useEcraInteiro() {
 
 // Esc fecha o leitor (em janela inteira já não há fundo onde clicar).
 /* UMA LINHA POR JOGO QUE DESLIZA, sem barra de deslizar à vista e sem
-   cartões cortados: a janela mostra só cartões inteiros (quantos cabem) e
-   as setas ficam FORA dos cartões, numa coluna própria à direita. Anda uma
-   "página" de cada vez e pára sempre no início de um cartão. */
-function FilaDeslizante({ children, gap = 10 }) {
+   cartões cortados. Com `larguraBase`, os cartões ESTICAM para encher a
+   largura toda (quantos cabem com essa largura mínima), menos a coluna das
+   setas à direita: a fila acaba na mesma margem que o resto da página. Os
+   filhos usam `width: var(--mjp-cartao-fila)`. Anda uma "página" de cada
+   vez e pára sempre no início de um cartão. */
+function FilaDeslizante({ children, gap = 10, larguraBase = 160 }) {
   const caixaRef = useRef(null);
   const ref = useRef(null);
   const [pontas, setPontas] = useState({ esq: false, dir: false });
-  const [largura, setLargura] = useState(null); // largura da janela (só cartões inteiros)
+  const [cartao, setCartao] = useState(larguraBase);
   const SETAS = 44;
   const medir = () => {
     const el = ref.current; const caixa = caixaRef.current;
     if (!el || !caixa) return;
-    const primeiro = el.firstElementChild;
-    const passo = primeiro ? primeiro.getBoundingClientRect().width + gap : 0;
     const total = caixa.clientWidth;
-    let w = null;
-    if (passo > gap && el.scrollWidth > total + 2) {
-      const cabem = Math.max(1, Math.floor((total - SETAS + gap) / passo));
-      w = Math.round(cabem * passo - gap);
+    if (total > 0) {
+      const util = total - SETAS;
+      const cabem = Math.max(1, Math.floor((util + gap) / (larguraBase + gap)));
+      const w = Math.floor(((util - gap * (cabem - 1)) / cabem) * 10) / 10;
+      setCartao(prev => (Math.abs(prev - w) < 0.5 ? prev : w));
     }
-    setLargura(prev => (prev === w ? prev : w));
     const esq = el.scrollLeft > 4;
     const dir = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
     setPontas(p => (p.esq === esq && p.dir === dir ? p : { esq, dir }));
@@ -1661,6 +1663,7 @@ function FilaDeslizante({ children, gap = 10 }) {
   // Mais ou menos cartões: volta a medir.
   useEffect(() => { medir(); });
   const andar = (dir) => { const el = ref.current; if (el) el.scrollBy({ left: dir * (el.clientWidth + gap), behavior: 'smooth' }); };
+  const haSetas = pontas.esq || pontas.dir;
   const seta = (dir, Icone, ativa) => (
     <button type="button" aria-label={dir < 0 ? 'Anteriores' : 'Seguintes'} onClick={() => andar(dir)} disabled={!ativa}
       style={{
@@ -1669,18 +1672,17 @@ function FilaDeslizante({ children, gap = 10 }) {
       }}><Icone size={16} /></button>
   );
   return (
-    <div ref={caixaRef} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+    <div ref={caixaRef} style={{ display: 'flex', alignItems: 'center', gap: 0, '--mjp-cartao-fila': `${cartao}px` }}>
       <style>{'.mjp-fila::-webkit-scrollbar{display:none}.mjp-fila>*{scroll-snap-align:start}'}</style>
       <div ref={ref} className="mjp-fila" onScroll={medir}
-        style={{ display: 'flex', gap, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'none', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', minWidth: 0, ...(largura ? { width: largura, flex: '0 0 auto' } : { flex: 1 }) }}>
+        style={{ display: 'flex', gap, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'none', scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch', minWidth: 0, flex: 1 }}>
         {children}
       </div>
-      {largura && (
-        <div style={{ width: SETAS, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-          {seta(1, ChevronRight, pontas.dir)}
-          {seta(-1, ChevronLeft, pontas.esq)}
-        </div>
-      )}
+      {/* A coluna das setas existe sempre (a fila acaba sempre no mesmo sítio). */}
+      <div style={{ width: SETAS, flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, visibility: haSetas ? 'visible' : 'hidden' }}>
+        {seta(1, ChevronRight, pontas.dir)}
+        {seta(-1, ChevronLeft, pontas.esq)}
+      </div>
     </div>
   );
 }
@@ -3820,10 +3822,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     <div key={v.id} role="button" tabIndex={0} onClick={() => abrirLinkOuEditor(v)}
       onKeyDown={e => { if (e.key === 'Enter') abrirLinkOuEditor(v); }}
       style={{
-        display: 'flex', flexDirection: 'column', width: 172, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
         borderRadius: 10, border: `1px solid ${T.line}`, background: T.surface,
       }}>
-      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+      <div style={{ position: 'relative', width: '100%', height: ALTURA_MINIATURA_JOGO, flexShrink: 0, background: T.surfaceRaise }}>
         {v.youtubeId ? (
           <img src={`https://img.youtube.com/vi/${v.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         ) : (
@@ -4533,7 +4535,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {g.clipes.map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
-                  <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 148, scrollSnapAlign: 'start' }}>
+                  <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 'var(--mjp-cartao-fila, 148px)', scrollSnapAlign: 'start' }}>
                   <button onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(clip); }}
                     style={{
                       width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block',
@@ -5496,16 +5498,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </div>
         ) : (
         <div key={modoEfetivo} style={{ animation: 'mjpPalco .22s ease' }}>
-        <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 10, marginBottom: 10, minHeight: temLinks ? ALTURA_GRELHA_JOGOS : undefined }}>
-          {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
+        {/* Grelha a toda a largura (as colunas esticam até à margem dos cartões
+            Ficheiros | Links); fechada, só uma fila. */}
+        <div ref={grelhaOriginaisRef} style={{ display: 'grid', gridTemplateColumns: `repeat(${porLinhaOriginais}, minmax(0, 1fr))`, alignContent: 'start', gap: 10, marginBottom: 10, minHeight: temLinks ? ALTURA_GRELHA_JOGOS : undefined }}>
+          {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(0, porLinhaOriginais - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
             <button key={v.id} onClick={() => { if (v.ficheiroApagado) return; setOriginalAtivoId(v.id); limparMarcas(); }}
               title={v.ficheiroApagado ? 'O jogo completo já foi apagado. Os cortes e clipes ficaram guardados.' : undefined}
               style={{
-                display: 'flex', flexDirection: 'column', width: 172, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: v.ficheiroApagado ? 'default' : 'pointer', padding: 0, ...body, overflow: 'hidden',
+                display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', textAlign: 'left', cursor: v.ficheiroApagado ? 'default' : 'pointer', padding: 0, ...body, overflow: 'hidden',
                 borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
                 background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
               }}>
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+              <div style={{ position: 'relative', width: '100%', height: ALTURA_MINIATURA_JOGO, flexShrink: 0, background: T.surfaceRaise }}>
                 {v.thumbUrl ? (
                   <img src={v.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...(v.ficheiroApagado ? { opacity: 0.35, filter: 'grayscale(1)' } : {}) }} />
                 ) : (
@@ -5569,7 +5573,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           {modoEfetivo === 'links' ? (
             <button type="button" onClick={() => setColarLinkAberto(true)}
               style={{
-                width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
+                width: '100%', minWidth: 0, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', fontSize: 12,
               }}>
               <Link2 size={16} />
@@ -5578,7 +5582,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           ) : (
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}
               style={{
-                width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
+                width: '100%', minWidth: 0, height: ALTURA_CARTAO_JOGO, boxSizing: 'border-box', borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploadVideoEstado?.ativo ? 'default' : 'pointer', fontSize: 12,
               }}>
               {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
@@ -5590,12 +5594,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </button>
           )}
         </div>
-        {grelhaJogos.length > porLinhaOriginais * 2 - 1 ? (
+        {grelhaJogos.length > porLinhaOriginais - 1 ? (
           <button onClick={() => setVerTodosOriginais(v => !v)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '0', height: 24, marginBottom: 6, ...body }}>
             {verTodosOriginais
               ? <><ChevronUp size={14} /> Ver menos</>
-              : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais * 2 - 1)})</>}
+              : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais - 1)})</>}
           </button>
         ) : <div style={{ height: 24, marginBottom: 6 }} />}
         {/* AVISO DOS 90 DIAS (Estúdio) e nota dos links: sempre a mesma
@@ -6407,7 +6411,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <span style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>{g.nome}</span>
                   <span style={{ fontSize: 12, color: T.mutedDim, fontFamily: 'monospace' }}>{g.cortes.length} {g.cortes.length === 1 ? 'clipe' : 'clipes'} · YouTube</span>
                 </div>
-                <FilaDeslizante>
+                <FilaDeslizante larguraBase={220}>
                   {g.cortes.map(c => {
                     const enviado = (c.enviadoSala || []).length > 0;
                     const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
@@ -6418,7 +6422,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </button>
                     );
                     return (
-                      <div key={c.id} style={{ flex: '0 0 230px', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
+                      <div key={c.id} style={{ flex: '0 0 auto', width: 'var(--mjp-cartao-fila, 230px)', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
                         <div onClick={() => abrirClipeLinkNoPalco(c.id)} style={{ position: 'relative', aspectRatio: '16/9', background: T.surfaceRaise, cursor: 'pointer' }}>
                           {c.youtubeId && <img src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                           <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 10.5, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Play size={10} /> YouTube</span>

@@ -276,7 +276,14 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   de altura fixa); separadores "Cortes de ficheiros", "Cortes de links" e
   "Análise individual"; página com SectionHeader "Análise de Vídeo ·
   Editar, desenhar e visualizar em ficheiros ou links do YouTube." (em App).
-  Cartões de link sem a terceira linha de texto, mesma altura fixa. Tocar no vídeo do YouTube no editor põe a tocar /
+  Cartões de link sem a terceira linha de texto, mesma altura fixa.
+- Grelha dos jogos (16/11): CSS grid com tantas colunas quantas cabem
+  (172 px mínimo) a esticar até à margem direita; fechada mostra UMA fila
+  (o resto em "Ver mais"); miniatura com altura fixa (97 px) para o cartão
+  manter 172 px de altura com qualquer largura. `FilaDeslizante` com
+  `larguraBase`: os cartões dos cortes esticam (variável CSS
+  --mjp-cartao-fila) e a coluna das setas existe sempre, para todas as
+  filas acabarem na mesma margem. Tocar no vídeo do YouTube no editor põe a tocar /
   em pausa (a camada por cima tapa o botão do YouTube).
 - Teste sem YouTube: `window.__MJP_YT_EMBED` aponta o iframe para um
   leitor falso (o harness usou um que fala o mesmo protocolo).
