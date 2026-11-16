@@ -250,6 +250,41 @@ Apagar na Análise: confirmação e depois "Anular" durante `UNDO_SECONDS`
 (`apagarComAnular`); o ficheiro no Storage só se apaga quando o Anular
 expira (+3 s). Mesmo para jogos por link (`apagarLink`).
 
+**JOGOS INTEIROS 90 DIAS, CLIPES SEMPRE (15/11, decidido com a Adelaide):**
+- Jogo inteiro carregado (video_originais, bucket videos-originais) fica 90
+  dias desde `criadoEm`; o staff pode prolongar UMA vez +30 dias
+  (`prolongadoEm`, botão "+30 dias" no cartão quando faltam ≤ 15 dias).
+  Contas iguais na app (`src/media/retencao.js`) e no worker (`retencao.js`).
+- Cartão do Estúdio: "Disponível até dd/mm" → "Apaga em N dias · +30 dias"
+  → depois "Jogo completo apagado · N cortes guardados" (não abre). Linha de
+  aviso por baixo da grelha, sempre com a mesma altura.
+- Quota por equipa só para jogos inteiros com ficheiro: 30 GB por omissão,
+  `planos_equipa.limites.jogos_gb` muda-a. A app não deixa começar o envio
+  acima do limite (mostra "x de 30 GB" no cartão Carregar ficheiro); o
+  worker volta a verificar em /processar (413, tira o ficheiro, registo com
+  `ficheiroApagado` + `recusadoQuota`). O worker grava `tamanhoFinal`
+  (depois de recomprimido), que é o que conta.
+- CLIPES SEMPRE: clipes sobre jogos carregados (Portal em video_clips e
+  staff no Canal em videos) apontam para /api/video-jogo. O worker
+  (`clipesProprios.js`), de 3 em 3 min, corta cada um para
+  videos-clipes/<equipa>/proprios/<id>.mp4 (`c-<id>` para os do Canal) e
+  grava `ficheiroProprio = { url, path, inicio, fim }` (tempos do jogo); a
+  base continua com os tempos do jogo e o link do jogo, para editar no
+  jogo. O Portal toca já o MP4 (`comMp4Proprio` em media/organizacao.js,
+  usado em `clipeAtletaParaCanal` e no `ClipAtletaModal`; editar sem o jogo
+  soma o deslocamento, `deslocEdicaoRef`; assinatura do vídeo junto com os
+  tempos do jogo).
+- Quando o jogo deixa de existir, o clipe é FIXADO: passa a apontar só para
+  o MP4, tempos dentro do ficheiro, desenhos (`anotacoesPausa.tempoVideo`)
+  deslocados, `origemJogo` guardado, sai `ficheiroProprio`. Acontece: aos
+  90 dias (worker, antes de apagar; se algum clipe não der, adia um dia);
+  ao apagar à mão na Análise (o "Anular" acaba → POST /apagar-jogo no
+  worker, que salva os clipes, tira as cópias do Canal e apaga o ficheiro);
+  ao tirar o jogo do Canal (de 30 em 30 min, link com 404 → fixa).
+- SQL `2026-11_09_clipes_mp4_proprio.sql`: `clipes_por_materializar`
+  (devolve tabela, id, equipa; só service_role) e `video_publico` com MP4.
+- Worker: RETENCAO_DESLIGADA=1 desliga a limpeza automática (90 dias).
+
 **Travão "eliminação de 3 registos" nos Vídeos (14/11):** a sincronização
 Análise → fichas de adversário (`planoSincronizacaoFichas`, App.jsx) apaga
 as cópias automáticas de cortes que já não existem (ex.: apagar um vídeo

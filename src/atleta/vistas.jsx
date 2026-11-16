@@ -8,7 +8,7 @@ import { T, body, display, TEXT_ON_ACCENT, mono } from '../base/tema';
 import { ChevronLeft, ChevronRight, Loader2, Check, FileText } from 'lucide-react';
 import { momentoTexto } from '../dominio/treino';
 import { DiagramThumbAnimado } from '../treino/diagramas';
-import { MAX_CLIPE_ATLETA_SEG } from '../media/organizacao';
+import { MAX_CLIPE_ATLETA_SEG, comMp4Proprio } from '../media/organizacao';
 import { supabase } from '../supabaseClient';
 import { MediaLibrary } from '../media/MediaLibrary';
 import { useIsMobile, EmptyState, Btn, Field, TextArea } from '../base/ui';
@@ -128,7 +128,9 @@ export function PlayerTreinoView({ code, teamId, onBack }) {
 /* Um clipe gravado por um jogador (tabela `video_clips`, origem
    'atleta') no formato de um corte do Canal — assim aparece dentro do
    cartão do jogo de onde saiu, com a mesma barra do clipe. */
-export function clipeAtletaParaCanal(c) {
+export function clipeAtletaParaCanal(c0) {
+  // MP4 próprio do clipe (sobrevive ao jogo), quando cobre os tempos.
+  const c = comMp4Proprio(c0);
   return {
     id: c.id,
     title: c.titulo || '(sem título)',
@@ -137,6 +139,7 @@ export function clipeAtletaParaCanal(c) {
     ...(!c.youtubeId && c.dataUrl ? { kind: 'video', dataUrl: c.dataUrl, clipNoFicheiro: true } : {}),
     clipInicio: Number(c.clipInicio),
     clipFim: Number(c.clipFim),
+    ...(c.mp4Proprio ? { clipInicioJogo: c.clipInicioJogo, clipFimJogo: c.clipFimJogo, mp4Proprio: true } : {}),
     clipOrigemId: c.clipOrigemId || c.videoOrigemId || null,
     clipOrigemTitulo: c.originalTitulo || '',
     jogoId: c.jogoId || null,

@@ -71,6 +71,31 @@ export function numDoJogo(m) {
 
 export function ehClipe(v) { return !!v && typeof v.clipInicio === 'number'; }
 
+/* CLIPE DE JOGADOR COM MP4 PRÓPRIO (video-worker, clipesProprios.js).
+   Na base o clipe guarda sempre os tempos DO JOGO (clipInicio/clipFim) e o
+   link do jogo; `ficheiroProprio = { url, inicio, fim }` é um MP4 só desse
+   troço (inicio/fim = tempos do jogo que cobre). Se cobre os tempos de
+   agora, toca-se esse ficheiro (sobrevive ao jogo), com os tempos
+   deslocados para dentro dele. `clipInicioJogo`/`clipFimJogo` guardam os
+   tempos do jogo (editar, assinatura do vídeo junto). Sem MP4 que cubra:
+   o clipe fica como estava. */
+export function comMp4Proprio(c) {
+  if (!c) return c;
+  const fp = c.ficheiroProprio;
+  const i = Number(c.clipInicio); const f = Number(c.clipFim);
+  if (!fp || typeof fp.url !== 'string' || !/^https?:\/\//.test(fp.url)) return c;
+  const a = Number(fp.inicio); const b = Number(fp.fim);
+  if (![i, f, a, b].every(Number.isFinite) || a > i + 0.05 || f > b + 0.05) return c;
+  return {
+    ...c, kind: 'video', dataUrl: fp.url, clipNoFicheiro: true,
+    clipInicio: Math.max(0, i - a), clipFim: Math.max(0, f - a),
+    clipInicioJogo: i, clipFimJogo: f, mp4Proprio: true,
+    ...(Array.isArray(c.anotacoesPausa) && c.anotacoesPausa.length
+      ? { anotacoesPausa: c.anotacoesPausa.map(x => (x && Number.isFinite(Number(x.tempoVideo)) ? { ...x, tempoVideo: Math.max(0, Number(x.tempoVideo) - a) } : x)) }
+      : {}),
+  };
+}
+
 // A origem de um corte (se ainda existir na lista), para herdar o sítio.
 export function origemDe(v, byId) {
   return ehClipe(v) && v.clipOrigemId && byId[v.clipOrigemId] && byId[v.clipOrigemId] !== v ? byId[v.clipOrigemId] : null;

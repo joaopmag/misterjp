@@ -16,6 +16,7 @@ import AnalisadorVideo, {
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
   TAGS_ANALISE, ehNossaEquipa,
 } from './AnalisadorVideo';
+import { QUOTA_JOGOS_GB_OMISSAO, espacoJogosUsado, formatarGB } from './media/retencao';
 import {
   ZoomIn, Info, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
@@ -356,6 +357,20 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [videos, setVideos, videosReady, videosMeta, autorizarRemocaoVideos] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady, documentosMeta] = useCollectionSync('documentos', notifyEdit, teamId);
   const [videosOriginais, setVideosOriginais, , videosOriginaisMeta] = useCollectionSync('video_originais', notifyEdit, teamId);
+  /* JOGOS INTEIROS CARREGADOS: 90 dias (+30 uma vez) e quota de espaço por
+     equipa (video-worker/retencao.js). A quota vem de
+     planos_equipa.limites.jogos_gb; sem valor, 30 GB. */
+  const [quotaJogosBytes, setQuotaJogosBytes] = useState(QUOTA_JOGOS_GB_OMISSAO * 1e9);
+  useEffect(() => {
+    if (!teamId) return undefined;
+    let vivo = true;
+    supabase.from('planos_equipa').select('limites').eq('team_id', teamId).maybeSingle()
+      .then(({ data }) => {
+        const gb = Number(data && data.limites && data.limites.jogos_gb);
+        if (vivo) setQuotaJogosBytes((Number.isFinite(gb) && gb > 0 ? gb : QUOTA_JOGOS_GB_OMISSAO) * 1e9);
+      }, () => {});
+    return () => { vivo = false; };
+  }, [teamId]);
   const [clipes, setClipes, clipesReady, clipesMeta] = useCollectionSync('video_clips', notifyEdit, teamId);
 
   // Upload de vídeo definido aqui (não dentro de AnalisadorVideo) de propósito:
@@ -396,7 +411,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenWorker}` },
       body: JSON.stringify({ teamId, storagePath: novo.storagePath, id: novo.id }),
       ...(controlo ? { signal: controlo.signal } : {}),
-    }).then((r) => {
+    }).then(async (r) => {
+      // 413 = limite de espaço da equipa: o serviço já tirou o ficheiro.
+      if (r.status === 413) {
+        let msg = 'A equipa chegou ao limite de espaço para jogos inteiros.';
+        try { const j = await r.json(); if (j && j.error) msg = j.error; } catch (e) { /* fica a mensagem genérica */ }
+        setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id ? { ...v, pronto: true, aguardarStorage: false, erroPreparacao: msg, ficheiroApagado: true, recusadoQuota: true } : v)));
+        return;
+      }
       if (!r.ok) libertar(`O serviço de preparação recusou o vídeo (${r.status}) — ficou disponível tal como foi carregado.`);
     }).catch(() => {
       libertar('O serviço de preparação não respondeu — o vídeo ficou disponível tal como foi carregado.');
@@ -444,6 +466,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     prepararOriginal(novo);
   }, [setVideosOriginais, prepararOriginal]);
   const iniciarUploadVideo = useCallback(async (file, nomePersonalizado) => {
+    // QUOTA: com a equipa no limite, nem começa o envio (seriam minutos a
+    // carregar um jogo que o serviço depois recusava).
+    const usado = espacoJogosUsado(videosOriginais);
+    if (usado >= quotaJogosBytes) {
+      setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `A equipa chegou ao limite de espaço para jogos inteiros (${formatarGB(usado)} de ${formatarGB(quotaJogosBytes)}). Apaga um jogo antigo (os cortes e clipes ficam) e volta a carregar.` });
+      return;
+    }
     setUploadVideoEstado({ ativo: true, progresso: 0, finalizando: false, erro: '' });
     // Pede ao telemóvel para não apagar o ecrã enquanto o vídeo envia — em
     // muitos telemóveis, o ecrã apagar-se corta a ligação de rede do
@@ -562,7 +591,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       document.removeEventListener('visibilitychange', reAdquirirWakeLock);
       wakeLock?.release().catch(() => {});
     }
-  }, [teamId, setVideosOriginais, ficheiroOriginalDisponivel, prepararOriginal, confirmarOriginalDepois]);
+  }, [teamId, setVideosOriginais, ficheiroOriginalDisponivel, prepararOriginal, confirmarOriginalDepois, videosOriginais, quotaJogosBytes]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
   const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId && (!v.daAnalise || !!v.publicado));
@@ -1845,7 +1874,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
+            <AnalisadorVideo teamId={teamId} quotaJogosBytes={quotaJogosBytes} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
               jogosLink={videosAnalise.filter(v => !ehClipe(v))}
               cortesLink={videosAnalise.filter(v => ehClipe(v))}
               jogadores={playersAtivos}

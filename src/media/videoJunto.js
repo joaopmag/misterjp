@@ -19,9 +19,11 @@ const VERSAO_FORMATO = 'v1-720p';
 
 export const urlDoServicoVideo = () => (import.meta.env.VITE_VIDEO_WORKER_URL || '').replace(/\/+$/, '');
 
-/* ids já filtrados (só clipes que existem); porId: Map id → clipe. */
+/* ids já filtrados (só clipes que existem); porId: Map id → clipe.
+   Tempos DO JOGO (com MP4 próprio, a app desloca os tempos para dentro do
+   ficheiro; o serviço assina sempre com os da base). */
 export function assinaturaDoVideoJunto(ids, porId) {
-  return `${VERSAO_FORMATO}|${ids.map(id => { const c = porId.get(id) || {}; return `${id}@${Number(c.clipInicio)}-${Number(c.clipFim)}`; }).join('|')}`;
+  return `${VERSAO_FORMATO}|${ids.map(id => { const c = porId.get(id) || {}; return `${id}@${Number(c.clipInicioJogo ?? c.clipInicio)}-${Number(c.clipFimJogo ?? c.clipFim)}`; }).join('|')}`;
 }
 
 // Todos os clipes são de vídeos carregados (dá para fazer o MP4 no servidor)?

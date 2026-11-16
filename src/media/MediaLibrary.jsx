@@ -1122,6 +1122,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // pedido enquanto o vídeo de origem ainda não está aberto — trocar de
   // vídeo limpa o modo clipe (ver o efeito de `activeId`).
   const [edicaoClipeId, setEdicaoClipeId] = useState(null);
+  const deslocEdicaoRef = useRef(0); // MP4 próprio sem o jogo: tempos do ficheiro → tempos do jogo
   const edicaoPendenteRef = React.useRef(null);
   /* Depois de gravar um clipe, fica-se no MESMO vídeo, ainda no modo de
      corte e com as marcas limpas, para continuar a cortar o jogo. */
@@ -1143,6 +1144,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     setNotaClipe(e.nota || '');
     setErroClipeAtleta('');
     setEdicaoClipeId(e.clipeId);
+    deslocEdicaoRef.current = Number(e.desloc) || 0;
   };
 
   // Comandos ao leitor do YouTube por postMessage "cru" (o mesmo
@@ -2825,7 +2827,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
       setErroClipeAtleta('');
       if (edicaoClipeId) {
         const id = edicaoClipeId;
-        editarClipeAtleta({ clipeId: id, inicio, fim, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
+        editarClipeAtleta({ clipeId: id, inicio: inicio + deslocEdicaoRef.current, fim: fim + deslocEdicaoRef.current, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
           .then(() => { sairDoModoClipe(); setSecao('meus'); setGrupo(null); setActiveId(id); })
           .catch(e => {
             setErroClipeAtleta((e && e.message) || 'As alterações não ficaram gravadas. Tenta outra vez.');
@@ -2952,7 +2954,14 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     if (!editarClipeAtleta || !v || v.doStaff) return;
     const origem = v.clipOrigemId && items.find(x => x.id === v.clipOrigemId && !ehClipe(x));
     const alvo = origem || v;
-    const pedido = { abrirEm: alvo.id, clipeId: v.id, inicio: v.clipInicio, fim: v.clipFim, titulo: v.title, nota: v.notaAtleta || '' };
+    // Com MP4 próprio, o clipe toca com tempos dentro do ficheiro; no jogo
+    // de origem edita-se com os tempos do jogo. Sem o jogo, edita-se no
+    // próprio MP4 e, ao gravar, soma-se o deslocamento (a base guarda
+    // sempre tempos do jogo).
+    const ini = origem && v.clipInicioJogo != null ? v.clipInicioJogo : v.clipInicio;
+    const fi = origem && v.clipFimJogo != null ? v.clipFimJogo : v.clipFim;
+    const desloc = !origem && v.clipInicioJogo != null ? v.clipInicioJogo - v.clipInicio : 0;
+    const pedido = { abrirEm: alvo.id, clipeId: v.id, inicio: ini, fim: fi, titulo: v.title, nota: v.notaAtleta || '', desloc };
     if (alvo.id === (active && active.id)) { aplicarEdicao(pedido); return; }
     edicaoPendenteRef.current = pedido;
     if (origem) irPara(origem); else { setSecao('meus'); setActiveId(v.id); }

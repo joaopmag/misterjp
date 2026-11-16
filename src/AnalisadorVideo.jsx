@@ -4,6 +4,8 @@ import { escolherPartilha } from './base/escolherPartilha';
 import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import { offerUndo, UNDO_SECONDS } from './base/ui';
+import { comMp4Proprio } from './media/organizacao';
+import { dataApagar, diasParaApagar, DIAS_AVISO, DIAS_PROLONGAR, espacoJogosUsado, formatarGB, dataCurtaPt } from './media/retencao';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
@@ -2677,7 +2679,9 @@ function partilharClipeFicheiro(clip) {
    ao fim de um clipe, passa sozinho ao seguinte (`onFimClipe`) em vez
    de voltar ao início. Sem `posicao`, é o comportamento de sempre (um
    clipe só, em ciclo). */
-function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSeguinte, onFimClipe }) {
+function ClipAtletaModal({ clip: clipBase, onClose, onRemove, posicao, onAnterior, onSeguinte, onFimClipe }) {
+  // MP4 próprio do clipe (sobrevive ao jogo), quando cobre os tempos.
+  const clip = React.useMemo(() => comMp4Proprio(clipBase), [clipBase]);
   const iframeRef = useRef(null);
   const inicio = Math.max(0, Number(clip.clipInicio) || 0);
   const fim = Math.max(inicio + 1, Number(clip.clipFim) || 0);
@@ -3154,7 +3158,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null, equipasCompeticao = [] }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null, equipasCompeticao = [], quotaJogosBytes = 30e9 }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -3516,6 +3520,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [cartaoPainel, setCartaoPainel] = useState(null); // { chave, left, width, top } — onde abrir a coluna
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
+  // Apagado (90 dias) enquanto estava aberto: fecha o editor.
+  useEffect(() => {
+    if (originalAtivo && originalAtivo.ficheiroApagado) setOriginalAtivoId(null);
+  }, [originalAtivo]);
   /* EQUIPA DOS CORTES. O vídeo guarda as duas equipas do jogo (ou
      sugerem-se pelo título) e a equipa escolhida para os cortes; cada
      corte novo leva essa equipa e vai sozinho para a ficha dela em
@@ -3986,20 +3994,69 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     offerUndo(`${rotulo} apagado.`, () => { anulado = true; repor(); });
     if (depois) setTimeout(() => { if (!anulado) depois(); }, (UNDO_SECONDS + 3) * 1000);
   };
+  /* 90 DIAS (media/retencao.js). */
+  const espacoUsado = espacoJogosUsado(videosOriginais);
+  const aApagarEmBreve = (videosOriginais || []).filter(v => v && !v.ficheiroApagado && v.pronto !== false && (diasParaApagar(v) ?? 999) <= DIAS_AVISO);
+  const prolongarJogo = (v) => {
+    setVideosOriginais(prev => (prev || []).map(x => (x.id === v.id && !x.prolongadoEm ? { ...x, prolongadoEm: new Date().toISOString() } : x)));
+  };
+  // Uma linha por cartão (sempre a mesma altura): até quando fica o jogo,
+  // o aviso com "Manter +30 dias" (uma vez), ou quantos cortes ficaram.
+  const linhaRetencao = (v) => {
+    const estilo = { fontSize: 10.5, minHeight: 15, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, whiteSpace: 'nowrap' };
+    if (v.ficheiroApagado) {
+      const n = (clipes || []).filter(c => c.originalId === v.id).length;
+      return <div style={{ ...estilo, color: T.mutedDim }}>{v.recusadoQuota ? 'Apaga este registo' : `${n} ${n === 1 ? 'corte guardado' : 'cortes guardados'}`}</div>;
+    }
+    const quando = dataApagar(v);
+    if (!quando || v.pronto === false) return <div style={estilo} />;
+    const dias = diasParaApagar(v);
+    if (dias > DIAS_AVISO) return <div style={{ ...estilo, color: T.mutedDim }}>Disponível até {dataCurtaPt(quando)}</div>;
+    return (
+      <div style={{ ...estilo, color: T.warn }}>
+        <span>{dias === 0 ? 'Apaga hoje' : `Apaga em ${dias} ${dias === 1 ? 'dia' : 'dias'}`}</span>
+        {!v.prolongadoEm && (
+          <span role="button" tabIndex={0} title={`Manter o jogo completo mais ${DIAS_PROLONGAR} dias (só uma vez)`}
+            onClick={(e) => { e.stopPropagation(); prolongarJogo(v); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); prolongarJogo(v); } }}
+            style={{ color: T.gold, fontWeight: 600, cursor: 'pointer' }}>+{DIAS_PROLONGAR} dias</span>
+        )}
+      </div>
+    );
+  };
+
   const apagarOriginal = (video) => {
     const executar = () => {
       if (originalAtivoId === video.id) { setOriginalAtivoId(null); limparMarcas(); }
       apagarComAnular(`Vídeo "${video.titulo}"`, {
         remover: () => setVideosOriginais(prev => prev.filter(v => v.id !== video.id)),
         repor: () => setVideosOriginais(prev => (prev.some(v => v.id === video.id) ? prev : [video, ...prev])),
-        depois: async () => { try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* fica órfão */ } },
+        // O serviço de vídeo salva primeiro os clipes que apontam para este
+        // jogo (MP4 próprio), tira as cópias do Canal e só depois apaga o
+        // ficheiro. Sem serviço (ou se falhar), apaga-se só o ficheiro.
+        depois: async () => {
+          if (video.ficheiroApagado) return;
+          const URL_WORKER = import.meta.env.VITE_VIDEO_WORKER_URL;
+          if (URL_WORKER) {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const r = await fetch(`${URL_WORKER}/apagar-jogo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(session && session.access_token) || ''}` },
+                body: JSON.stringify({ teamId, storagePath: video.storagePath }),
+              });
+              if (r.ok) return;
+            } catch (e) { /* segue para o caminho simples */ }
+          }
+          try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* fica órfão */ }
+        },
       });
     };
     if (askConfirm) {
       askConfirm({
         title: 'Apagar vídeo?',
         label: `Vídeo "${video.titulo}"`,
-        note: 'Os clipes já cortados dele mantêm-se — só o vídeo completo desaparece.',
+        note: video.ficheiroApagado ? 'O jogo completo já tinha sido apagado. Sai só o registo; os cortes ficam.' : 'Os cortes e clipes feitos dele ficam guardados. Só o jogo completo desaparece.',
         confirmLabel: 'Apagar',
         onConfirm: executar,
       });
@@ -4244,7 +4301,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const desenharNoClipe = (clip, opcoes = {}) => {
     const orig = originalDoClipe(clip);
     if (!clip.publicUrl) { window.alert('Este corte ainda não tem vídeo disponível.'); return; }
-    if (!orig || !orig.storagePath) {
+    if (!orig || !orig.storagePath || orig.ficheiroApagado) {
       window.alert('Não encontrei o vídeo original deste clipe, por isso não dá para desenhar nele. Abre o clipe, carrega no lápis e escolhe o vídeo original.');
       return;
     }
@@ -4334,7 +4391,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       return;
     }
     const original = escolhido || originalDoClipe(clip);
-    if (!original || !original.storagePath) throw new Error('Escolhe o vídeo original para mudar os tempos. Sem ele, só dá para mudar o texto.');
+    if (!original || !original.storagePath || original.ficheiroApagado) throw new Error(original && original.ficheiroApagado ? 'O jogo completo deste corte já foi apagado (90 dias). Dá para mudar o texto, não os tempos.' : 'Escolhe o vídeo original para mudar os tempos. Sem ele, só dá para mudar o texto.');
     const resp = await fetch('/api/cortar-clipe', {
       method: 'POST',
       headers: await cabecalhosComSessao(),
@@ -5196,15 +5253,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         <div key={modoEfetivo} style={{ minHeight: temLinks ? ALTURA_PALCO : undefined, animation: 'mjpPalco .22s ease' }}>
         <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
           {(verTodosOriginais ? grelhaJogos : grelhaJogos.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(({ tipo, v }) => (tipo === 'link' ? cartaoLink(v) : (
-            <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
+            <button key={v.id} onClick={() => { if (v.ficheiroApagado) return; setOriginalAtivoId(v.id); limparMarcas(); }}
+              title={v.ficheiroApagado ? 'O jogo completo já foi apagado. Os cortes e clipes ficaram guardados.' : undefined}
               style={{
-                display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
+                display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: v.ficheiroApagado ? 'default' : 'pointer', padding: 0, ...body, overflow: 'hidden',
                 borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
                 background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
               }}>
               <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
                 {v.thumbUrl ? (
-                  <img src={v.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <img src={v.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...(v.ficheiroApagado ? { opacity: 0.35, filter: 'grayscale(1)' } : {}) }} />
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Film size={20} color={T.mutedDim} />
@@ -5235,7 +5293,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  {v.pronto === false ? (
+                  {v.ficheiroApagado ? (
+                    <span style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                      {v.recusadoQuota ? 'Não carregado (limite)' : 'Jogo completo apagado'}
+                    </span>
+                  ) : v.pronto === false ? (
                     <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
                   ) : (v.enviadoSala || []).length ? (
                     <span title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, color: T.gold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -5244,7 +5306,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </span>
                   ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-                    {enviarJogoFicheiroParaCanal && v.pronto !== false && (
+                    {enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && (
                       <Film size={13} color={(v.enviadoSala || []).length ? T.gold : T.muted} aria-label="Enviar o jogo para o Canal"
                         onClick={(e) => { e.stopPropagation(); setJogoParaCanal({ tipo: 'ficheiro', v }); }}>
                         <title>Enviar o jogo para o Canal (Jogos ou Adversários) e para o Portal</title>
@@ -5253,6 +5315,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
                   </span>
                 </div>
+                {linhaRetencao(v)}
               </div>
             </button>
           )))}
@@ -5275,6 +5338,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               }}>
               {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
               {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar ficheiro'}
+              <span title="Espaço dos jogos inteiros da equipa. Os cortes e clipes não contam."
+                style={{ fontSize: 10.5, color: espacoUsado >= quotaJogosBytes ? T.bad : espacoUsado >= quotaJogosBytes * 0.8 ? T.warn : T.mutedDim }}>
+                {formatarGB(espacoUsado)} de {formatarGB(quotaJogosBytes)}
+              </span>
             </button>
           )}
         </div>
@@ -5286,6 +5353,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               : <><ChevronDown size={14} /> Ver mais ({grelhaJogos.length - (porLinhaOriginais * 2 - 1)})</>}
           </button>
         ) : <div style={{ height: 24, marginBottom: 6 }} />}
+        {/* AVISO DOS 90 DIAS: sempre a mesma altura no Estúdio (vazia sem
+            nada a avisar), para a página não mexer. */}
+        {modoEfetivo !== 'links' && (
+          <div style={{ minHeight: 20, marginBottom: 6, fontSize: 12, color: aApagarEmBreve.length ? T.warn : T.mutedDim, ...body }}>
+            {aApagarEmBreve.length
+              ? `${aApagarEmBreve.length === 1 ? '1 jogo completo vai ser apagado' : `${aApagarEmBreve.length} jogos completos vão ser apagados`} nos próximos ${DIAS_AVISO} dias. Os cortes e clipes ficam. Corta o que ainda queres guardar.`
+              : 'Os jogos completos ficam 90 dias. Os cortes e clipes ficam sempre.'}
+          </div>
+        )}
         {modoEfetivo === 'links' && (jogosLink || []).length === 0 && (
           <div style={{ color: T.mutedDim, fontSize: 12.5, padding: '4px 0', ...body }}>
             Cola o link do YouTube de um jogo para fazeres cortes e desenhos sem carregar nada.
@@ -6268,7 +6344,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           onShare={async () => { if (await partilharClipeFicheiro(clipeAReproduzir) === 'copiado') { setCopiedId(clipeAReproduzir.id); setTimeout(() => setCopiedId(null), 1600); } }}
           onSaveEdit={(dados) => editarClipeFicheiro(clipeAReproduzir, dados)}
           editarAoAbrir={editarClipeAoAbrir}
-          originais={videosOriginais.filter(v => v.storagePath)}
+          originais={videosOriginais.filter(v => v.storagePath && !v.ficheiroApagado)}
           originalSugeridoId={(originalDoClipe(clipeAReproduzir) || {}).id || null}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
