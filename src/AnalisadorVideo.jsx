@@ -11,7 +11,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus, MoreHorizontal,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus, MoreHorizontal, Tv,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1917,7 +1917,7 @@ function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Film size={16} /> Enviar o jogo para a Sala de Vídeo</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}><Tv size={16} /> Enviar o jogo para a Sala de Vídeo</div>
           <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
         </div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
@@ -1930,7 +1930,7 @@ function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>{feito ? 'Fechar' : 'Cancelar'}</Btn>
-          {!feito && <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Film size={14} />} Enviar</Btn>}
+          {!feito && <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Tv size={14} />} Enviar</Btn>}
         </div>
       </div>
     </div>
@@ -2079,7 +2079,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
             {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-              <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Film size={14} />} Enviar</Btn>
+              <Btn variant="solid" onClick={enviar} disabled={aEnviar}>{aEnviar ? <Loader2 size={14} className="spin" /> : <Tv size={14} />} Enviar</Btn>
             </div>
           </>
         )}
@@ -2402,7 +2402,7 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
               gravacaoClipe ? 'Parar' : 'Vídeo c/ desenhos', gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos,
               { ativo: !!gravacaoClipe, title: 'Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)' })}
             {onDesenhar && botaoAcao(<ArrowUpRight size={15} />, `Desenhar${(clip.shapes || []).length ? ` (${clip.shapes.length})` : ''}`, onDesenhar)}
-            {onEnviarSala && botaoAcao(clipeNaSala(clip) ? <Check size={15} color={TV.good} /> : <Film size={15} />, 'Sala de Vídeo', onEnviarSala, { title: clipeNaSala(clip) ? `Na Sala de Vídeo: ${textoNaSala(clip)}` : 'Enviar para a Sala de Vídeo' })}
+            {onEnviarSala && botaoAcao(clipeNaSala(clip) ? <Check size={15} color={TV.good} /> : <Tv size={15} />, 'Sala de Vídeo', onEnviarSala, { title: clipeNaSala(clip) ? `Na Sala de Vídeo: ${textoNaSala(clip)}` : 'Enviar para a Sala de Vídeo' })}
             {botaoAcao(<Pencil size={15} />, aEditar ? 'Fechar edição' : 'Editar', aEditar ? () => setAEditar(false) : abrirEdicao, { ativo: aEditar, title: 'Editar texto e tempos' })}
             {botaoAcao(<Trash2 size={15} />, 'Apagar', onRemove, { perigo: true })}
           </div>}
@@ -2556,6 +2556,46 @@ function jogoDoClipeAtleta(c) {
     return { chave, nome };
   }
   return { chave: 'yt:' + ((c && c.youtubeId) || 'sem-video'), nome: 'Jogo sem nome' };
+}
+
+/* MINIATURA DE UM CLIPE SEM IMAGEM (clipes dos jogadores feitos sobre um
+   jogo carregado). Antes era um <video> direto: cada vez que o cartão
+   voltava a montar (ex.: ao escolher o jogador, a lista passa a vir por
+   jogo) o vídeo carregava de novo e o cartão ficava PRETO até chegar a
+   imagem. Agora:
+   - o <video> fica invisível até ter a imagem (por baixo fica o fundo do
+     cartão, não preto);
+   - a imagem é guardada (canvas → JPEG pequeno) numa cache da sessão, e da
+     vez seguinte aparece logo, sem vídeo nenhum.
+   Se o servidor não deixar ler a imagem (CORS), volta a tentar sem isso:
+   não se guarda, mas também não fica preto. */
+const cacheMiniaturasClipe = new Map();
+function MiniaturaClipeVideo({ chave, src, t, style }) {
+  const [img, setImg] = useState(() => cacheMiniaturasClipe.get(chave) || null);
+  const [visivel, setVisivel] = useState(false);
+  const [semCors, setSemCors] = useState(false);
+  if (img) return <img src={img} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...style }} />;
+  const aoTerImagem = (e) => {
+    const v = e.currentTarget;
+    setVisivel(true);
+    if (semCors || !v.videoWidth) return;
+    try {
+      const w = 320, h = Math.round((w * v.videoHeight) / v.videoWidth) || 180;
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(v, 0, 0, w, h);
+      const url = cv.toDataURL('image/jpeg', 0.72);
+      cacheMiniaturasClipe.set(chave, url);
+      // Fica no <video> já visível; a imagem guardada serve a próxima vez.
+    } catch (err) { /* sem CORS: não dá para guardar */ }
+  };
+  return (
+    <video key={semCors ? 'sem' : 'com'} src={`${src}#t=${t}`} muted playsInline preload="metadata"
+      onLoadedMetadata={() => setTimeout(() => setVisivel(true), 1500)}
+      crossOrigin={semCors ? undefined : 'anonymous'}
+      onLoadedData={aoTerImagem} onSeeked={aoTerImagem}
+      onError={() => { if (!semCors) setSemCors(true); }}
+      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: 'transparent', pointerEvents: 'none', opacity: visivel ? 1 : 0, transition: 'opacity 120ms', ...style }} />
+  );
 }
 
 function mmss(seg) {
@@ -3585,8 +3625,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           background: 'transparent', border: 'none', ...body,
                         }}>
                         {!c.youtubeId && c.dataUrl ? (
-                          <video src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata"
-                            style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000', pointerEvents: 'none' }} />
+                          <span style={{ width: 56, height: 42, borderRadius: 4, flexShrink: 0, overflow: 'hidden', background: T.surfaceRaise, display: 'block' }}>
+                            <MiniaturaClipeVideo chave={`${c.id}:${c.dataUrl}:${c.clipInicio}`} src={c.dataUrl} t={(Number(c.clipInicio) || 0) + 0.5} />
+                          </span>
                         ) : (
                           <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
                             style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
@@ -3823,7 +3864,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap',
                   border: `1px solid ${enviado ? T.good : T.gold}`, background: 'transparent', color: enviado ? T.good : T.gold,
                 }}>
-                {enviado ? <><Check size={12} /> No Canal</> : <><Film size={12} /> Enviar para o Canal</>}
+                {enviado ? <><Check size={12} /> No Canal</> : <><Tv size={12} /> Enviar para o Canal</>}
               </button>
             );
           });
@@ -3929,7 +3970,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     {/* Ações diretas, em coluna à direita do texto. */}
     {iconesNoCorpo([
       renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
-      enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+      enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
       apagarLink && [X, 'Apagar', () => apagarLink(v), '#ff8a8a'],
     ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
     </div>
@@ -4599,8 +4640,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             ) : c.youtubeId ? (
               <img src={miniaturaYoutube(c.youtubeId)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
             ) : c.dataUrl ? (
-              <video src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#000', pointerEvents: 'none' }} />
+              <MiniaturaClipeVideo chave={`${c.id}:${c.dataUrl}:${c.clipInicio}`} src={c.dataUrl} t={(Number(c.clipInicio) || 0) + 0.5} />
             ) : (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Film size={22} color={T.mutedDim} /></div>
             )}
@@ -4781,7 +4821,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {iconesNoCorpo([
           [copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }],
           [Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }],
-          enviarParaSala && [naSala ? Check : Film, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar outra vez)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
+          enviarParaSala && [naSala ? Check : Tv, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar outra vez)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
           [X, 'Apagar', () => removerClipe(clip), '#ff8a8a'],
         ], { colunas: 2 })}
       </div>
@@ -5808,7 +5848,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {/* Ações diretas, em coluna à direita do texto. */}
             {iconesNoCorpo([
               !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
-              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
               [X, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), '#ff8a8a'],
             ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
             </div>
@@ -6579,7 +6619,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           <span style={{ position: 'absolute', left: 8, bottom: 8, fontSize: 10.5, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Play size={10} /> YouTube</span>
                           <span style={{ position: 'absolute', right: 8, bottom: 8, fontSize: 11, background: 'rgba(0,0,0,.65)', color: '#fff', borderRadius: 6, padding: '2px 7px', fontFamily: 'monospace' }}>{Math.round(dur)}s</span>
                           <div style={{ position: 'absolute', left: 8, top: 8, display: 'flex', gap: 6 }}>
-                            {enviarLinkParaCanal && botaoMini(enviado ? Check : Film, enviado ? `No Canal: ${(c.enviadoSala || []).map(e => e.rotulo).join('; ')}` : 'Enviar para o Canal', () => setLinkParaCanal(c), enviado ? T.good : undefined)}
+                            {enviarLinkParaCanal && botaoMini(enviado ? Check : Tv, enviado ? `No Canal: ${(c.enviadoSala || []).map(e => e.rotulo).join('; ')}` : 'Enviar para o Canal', () => setLinkParaCanal(c), enviado ? T.good : undefined)}
                             {apagarLink && botaoMini(Trash2, 'Apagar clipe', () => apagarLink(c))}
                           </div>
                         </div>

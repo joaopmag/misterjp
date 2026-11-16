@@ -319,6 +319,15 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   em até 2 linhas (190 px de cartão). No link, a informação vai no fundo a
   amarelo ("No Canal · Jogos" / "Só na Análise"; o ícone de link diz que
   é do YouTube).
+- 16/11: ícone de "Enviar para a Sala" passa a ser o da Sala de Vídeo na
+  barra lateral (`Tv`), em todos os botões e janelas da Análise. Na barra
+  lateral, Análise de Vídeo vem a seguir a Scouting.
+- Miniatura dos clipes dos jogadores sem imagem (`MiniaturaClipeVideo`):
+  o <video> fica invisível até ter a imagem (antes ficava preto ao voltar
+  a montar o cartão) e a imagem fica guardada numa cache da sessão
+  (canvas → JPEG), por isso da segunda vez aparece logo. Tenta com
+  `crossOrigin`; se o servidor não deixar, volta a carregar sem isso (não
+  guarda, mas também não fica preto).
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.
