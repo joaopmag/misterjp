@@ -29,7 +29,7 @@ const T = {
 const TEXT_ON_ACCENT = '#FBF3F0';
 /* Cartões de jogo (ficheiro e link) com a MESMA altura fixa, e a grelha
    sempre com o espaço de uma fila: mudar Ficheiros ↔ Links não mexe. */
-const ALTURA_CARTAO_JOGO = 190; // miniatura 97 + nome em 2 linhas + 2 linhas de informação
+const ALTURA_CARTAO_JOGO = 190; // miniatura 97 (com os ícones por cima) + nome em 2 linhas + 2 linhas de informação
 const ALTURA_MINIATURA_JOGO = 97; // altura fixa: o cartão alarga para encher a linha sem mudar de altura
 // Uma só fila de cartões (o resto em "Ver mais"), a toda a largura.
 const ALTURA_GRELHA_JOGOS = ALTURA_CARTAO_JOGO;
@@ -3850,35 +3850,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     abrirJogoLink(v.id);
   };
   /* CARTÃO DE JOGO (ficheiro e link), o mesmo desenho: nome inteiro em
-     até duas linhas, por baixo a informação, e um só "⋯" com as ações
-     (Mudar o nome, Enviar para a Sala, Apagar). */
+     até duas linhas, por baixo os ícones diretos (Mudar o nome, Enviar
+     para a Sala, Apagar) e a informação. */
   const estiloNome2Linhas = {
     fontSize: 12.5, fontWeight: 600, color: T.cream, lineHeight: '16px', height: 32, overflow: 'hidden',
     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
   };
-  const TOPO_ACOES_JOGO = ALTURA_MINIATURA_JOGO + 8 + 32 + 6 - 5;
-  const acoesJogo = (id, acoes) => {
-    const chave = `jogo:${id}`;
-    const aberto = menuCorteId === chave;
-    return (
-      <>
-        <button type="button" aria-label="Ações do jogo" title="Ações" onClick={(e) => { e.stopPropagation(); setMenuCorteId(aberto ? null : chave); }}
-          style={{ position: 'absolute', right: 6, top: TOPO_ACOES_JOGO, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aberto ? T.surfaceRaise : 'transparent', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-          <MoreHorizontal size={16} />
-        </button>
-        {aberto && (
-          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: 4, top: TOPO_ACOES_JOGO + 30, zIndex: 20, minWidth: 210, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 4, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
-            {acoes.filter(Boolean).map(([Icone, rotulo, acao, cor]) => (
-              <button key={rotulo} type="button" onClick={(e) => { e.stopPropagation(); setMenuCorteId(null); acao(); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: cor || T.cream, fontSize: 12.5, textAlign: 'left', borderRadius: 6, ...body }}>
-                <Icone size={14} /> {rotulo}
-              </button>
-            ))}
-          </div>
-        )}
-      </>
-    );
-  };
+  /* Ícones diretos (sem menu): no cartão do jogo, na linha da informação;
+     nos cortes e clipes, num grupo escuro no canto da imagem. */
+  const iconeAcao = ([Icone, titulo, acao, cor], i, sobreImagem) => (
+    <button key={i} type="button" title={titulo} aria-label={titulo} onClick={(e) => { e.stopPropagation(); acao(); }}
+      style={{
+        width: sobreImagem ? 26 : 22, height: sobreImagem ? 26 : 22, borderRadius: sobreImagem ? 13 : 6, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
+        background: sobreImagem ? 'rgba(0,0,0,0.62)' : 'transparent', color: cor || (sobreImagem ? '#fff' : T.muted),
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+      <Icone size={sobreImagem ? 13 : 13} />
+    </button>
+  );
+  const iconesJogo = (acoes) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0, marginLeft: 'auto' }}>
+      {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, false))}
+    </span>
+  );
+  const iconesSobreImagem = (acoes) => (
+    <span style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4 }}>
+      {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, true))}
+    </span>
+  );
   const cartaoLink = (v) => (
     <div key={v.id} style={{ position: 'relative', minWidth: 0 }}>
     <div role="button" tabIndex={0} onClick={() => abrirLinkOuEditor(v)} title={v.title || 'Jogo'}
@@ -3893,6 +3892,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Link2 size={20} color={T.mutedDim} /></div>
         )}
+        {/* Ações diretas, por cima da imagem (como nos cortes). */}
+        {iconesSobreImagem([
+          renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
+          enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+          apagarLink && [X, 'Apagar', () => apagarLink(v), '#ff8a8a'],
+        ])}
       </div>
       <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {editandoNomeId === v.id ? (
@@ -3903,7 +3908,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         ) : (
           <div style={estiloNome2Linhas}>{v.title || 'Jogo'}</div>
         )}
-        {/* Linha das ações (o "⋯" fica à direita, por cima). */}
         <div aria-hidden style={{ minHeight: 16 }} />
         {/* Sem data (um link não se apaga): a informação vai no fundo, a amarelo. */}
         <div title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, lineHeight: '16px', color: T.gold, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -3912,11 +3916,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </div>
       </div>
     </div>
-    {acoesJogo(v.id, [
-      renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
-      enviarLinkParaCanal && [Film, (v.enviadoSala || []).length ? 'Enviar outra vez para a Sala' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v)],
-      apagarLink && [Trash2, 'Apagar', () => apagarLink(v), T.bad],
-    ])}
     </div>
   );
 
@@ -4574,13 +4573,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const cartaoClipeAtleta = (c, comNome) => {
     const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
     const jogo = jogoDoClipeAtleta(c);
-    const menuAberto = menuCorteId === c.id;
-    const itemMenu = (Icone, rotulo, acao, cor) => (
-      <button type="button" onClick={(e) => { e.stopPropagation(); setMenuCorteId(null); acao(); }}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: cor || T.cream, fontSize: 12.5, textAlign: 'left', borderRadius: 6, ...body }}>
-        <Icone size={14} /> {rotulo}
-      </button>
-    );
     return (
       <div key={c.id} style={{ position: 'relative', minWidth: 0 }}>
         <button type="button" onClick={() => setClipeAtletaAberto(c)}
@@ -4598,26 +4590,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             )}
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: c.criadoPorStaff ? T.gold : T.line }} />
             {c.criadoPorStaff && <span style={{ position: 'absolute', top: 7, left: 7, fontSize: 10, fontWeight: 700, color: '#111', background: T.goldFundo, borderRadius: 4, padding: '1px 5px', ...body }}>STAFF</span>}
-            {c.apagadoPeloAtleta && <span title="O jogador apagou este clipe no Portal. Continua disponível aqui." style={{ position: 'absolute', top: 7, right: 7, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: '1px 5px', ...body }}>Apagado no Portal</span>}
+            {c.apagadoPeloAtleta && <span title="O jogador apagou este clipe no Portal. Continua disponível aqui." style={{ position: 'absolute', bottom: 5, left: 6, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: '1px 5px', ...body }}>Apagado no Portal</span>}
             <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>{Math.round(dur)}s</span>
           </div>
-          <div style={{ padding: '7px 34px 8px 9px', minHeight: 44, boxSizing: 'border-box' }}>
+          <div style={{ padding: '7px 9px 8px', minHeight: 44, boxSizing: 'border-box' }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{comNome ? (c.atletaNome || 'Atleta') : (c.titulo || '(sem título)')}</div>
             <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {comNome ? (c.titulo || jogo.nome) : `${mmss(c.clipInicio)} · ${jogo.nome}`}
+              {comNome ? `${jogo.nome}` : `${mmss(c.clipInicio)}–${mmss(c.clipFim)}${dataCurta(c.criadoEm) ? ` · ${dataCurta(c.criadoEm)}` : ''}`}
             </div>
           </div>
         </button>
-        <button type="button" aria-label="Ações do clipe" title="Ações" onClick={(e) => { e.stopPropagation(); setMenuCorteId(menuAberto ? null : c.id); }}
-          style={{ position: 'absolute', right: 5, bottom: 9, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: menuAberto ? T.surfaceRaise : 'transparent', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-          <MoreHorizontal size={16} />
-        </button>
-        {menuAberto && (
-          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: 4, bottom: 38, zIndex: 20, minWidth: 190, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 4, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
-            {itemMenu(copiedId === c.id ? Check : Share2, copiedId === c.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } })}
-            {itemMenu(Trash2, 'Apagar daqui', () => removerClipe(c), T.bad)}
-          </div>
-        )}
+        {iconesSobreImagem([
+          [copiedId === c.id ? Check : Share2, copiedId === c.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }],
+          [X, 'Apagar daqui (o jogador continua a tê-lo no Portal)', () => removerClipe(c), '#ff8a8a'],
+        ])}
       </div>
     );
   };
@@ -4697,10 +4683,45 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <span style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: T.mutedDim, ...body }}>Clipes mais recentes · escolhe um jogador para ver só os dele</span>
           )}
         </div>
+        {sel ? (
+          /* Jogador escolhido: os clipes separados POR JOGO (o mais recente
+             primeiro), cada jogo com o seu "ver seguidos". */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {(() => {
+              const porJogo = [];
+              sel.clipes.forEach(c => {
+                const j = jogoDoClipeAtleta(c);
+                let g = porJogo.find(x => x.chave === j.chave);
+                if (!g) { g = { ...j, clipes: [] }; porJogo.push(g); }
+                g.clipes.push(c);
+              });
+              return porJogo.map(jg => (
+                <div key={jg.chave}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minHeight: 26 }}>
+                    <span style={{ width: 3, height: 16, borderRadius: 2, background: T.gold, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, ...body, minWidth: 0, overflowWrap: 'anywhere' }}>{jg.nome}</span>
+                    <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{jg.clipes.length} {jg.clipes.length === 1 ? 'clipe' : 'clipes'}</span>
+                    {jg.clipes.length > 1 && (
+                      <button type="button" onClick={() => setSequenciaAtleta({ clipes: jg.clipes, indice: 0 })}
+                        title={`Ver os ${jg.clipes.length} clipes de ${sel.nome} neste jogo, seguidos`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body, background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold, borderRadius: 999, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>
+                        <Play size={10} fill={T.gold} /> {jg.clipes.length}
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 10 }}>
+                    {jg.clipes.map(c => cartaoClipeAtleta(c, false))}
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 10 }}>
           {(verMaisClipesAtleta ? listaClipes : listaClipes.slice(0, limiteClipes)).map(c => cartaoClipeAtleta(c, !sel))}
         </div>
-        {listaClipes.length > limiteClipes && (
+        )}
+        {!sel && listaClipes.length > limiteClipes && (
           <button type="button" onClick={() => { fixarAlturaCortes(); setVerMaisClipesAtleta(v => !v); }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: 0, height: 28, marginTop: 6, ...body }}>
             {verMaisClipesAtleta ? <><ChevronUp size={14} /> Ver menos</> : <><ChevronDown size={14} /> Ver mais ({listaClipes.length - limiteClipes})</>}
@@ -4719,13 +4740,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const cartaoCorte = (clip) => {
     const tag = TAGS.find(t => t.id === clip.tagId);
     const naSala = clipeNaSala(clip);
-    const menuAberto = menuCorteId === clip.id;
-    const itemMenu = (Icone, rotulo, acao, cor) => (
-      <button type="button" onClick={(e) => { e.stopPropagation(); setMenuCorteId(null); acao(); }}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: cor || T.cream, fontSize: 12.5, textAlign: 'left', borderRadius: 6, ...body }}>
-        <Icone size={14} /> {rotulo}
-      </button>
-    );
     return (
       <div key={clip.id} style={{ position: 'relative', minWidth: 0 }}>
         <button type="button" onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(clip); }}
@@ -4737,34 +4751,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Film size={22} color={T.mutedDim} /></div>
             )}
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color || T.line }} />
-            {naSala && (
-              <span title={`Na Sala de Vídeo: ${textoNaSala(clip)}`} style={{ position: 'absolute', top: 7, left: 7, width: 20, height: 20, borderRadius: 10, background: 'rgba(46,125,80,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Check size={12} color="#fff" />
-              </span>
-            )}
             <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>
               {Math.round(clip.duracao || 0)}s
             </span>
           </div>
-          <div style={{ padding: '7px 34px 8px 9px', minHeight: 44, boxSizing: 'border-box' }}>
+          <div style={{ padding: '7px 9px 8px', minHeight: 44, boxSizing: 'border-box' }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: corTextoEtiqueta(tag?.color) || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
             <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {clip.note || `${typeof clip.origemInicio === 'number' ? fmt(clip.origemInicio) : ''}${clip.originalTitulo ? ` · ${parteDoTitulo(clip.originalTitulo) ? `Parte ${parteDoTitulo(clip.originalTitulo)}` : clip.originalTitulo}` : ''}`}
+              {clip.note || `Minuto ${typeof clip.origemInicio === 'number' ? fmt(clip.origemInicio) : '—'}${parteDoTitulo(clip.originalTitulo) ? ` · ${parteDoTitulo(clip.originalTitulo)}.ª parte` : ''}`}
             </div>
           </div>
         </button>
-        <button type="button" aria-label="Ações do corte" title="Ações" onClick={(e) => { e.stopPropagation(); setMenuCorteId(menuAberto ? null : clip.id); }}
-          style={{ position: 'absolute', right: 5, bottom: 9, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: menuAberto ? T.surfaceRaise : 'transparent', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
-          <MoreHorizontal size={16} />
-        </button>
-        {menuAberto && (
-          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: 4, bottom: 38, zIndex: 20, minWidth: 190, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 4, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
-            {itemMenu(copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } })}
-            {itemMenu(Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); })}
-            {enviarParaSala && itemMenu(naSala ? Check : Film, naSala ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? T.good : undefined)}
-            {itemMenu(Trash2, 'Apagar', () => removerClipe(clip), T.bad)}
-          </div>
-        )}
+        {iconesSobreImagem([
+          [copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }],
+          [Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }],
+          enviarParaSala && [naSala ? Check : Film, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar outra vez)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
+          [X, 'Apagar', () => removerClipe(clip), '#ff8a8a'],
+        ])}
       </div>
     );
   };
@@ -5749,6 +5752,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     <Loader2 size={16} className="spin" color="#fff" />
                   </span>
                 )}
+                {/* Ações diretas, por cima da imagem (como nos cortes). */}
+                {iconesSobreImagem([
+                  !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
+                  enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+                  [X, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), '#ff8a8a'],
+                ])}
               </div>
               <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {editandoNomeId === v.id ? (
@@ -5765,7 +5774,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <div style={estiloNome2Linhas}>{v.titulo}</div>
                 )}
                 {/* Informação (à direita fica o "⋯", por cima). */}
-                <div style={{ display: 'flex', alignItems: 'center', minHeight: 16, paddingRight: 28 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 16 }}>
                   {v.ficheiroApagado ? (
                     <span style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                       {v.recusadoQuota ? 'Não carregado (limite)' : 'Jogo completo apagado'}
@@ -5786,11 +5795,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {linhaRetencao(v)}
               </div>
             </button>
-            {acoesJogo(v.id, [
-              !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
-              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [Film, (v.enviadoSala || []).length ? 'Enviar outra vez para a Sala' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v })],
-              [Trash2, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), T.bad],
-            ])}
             </div>
           )))}
           {/* CARTÃO DE ADICIONAR, conforme a forma de trabalhar: no Estúdio
