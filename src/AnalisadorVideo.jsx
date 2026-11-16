@@ -30,7 +30,14 @@ const TEXT_ON_ACCENT = '#FBF3F0';
 /* Cartões de jogo (ficheiro e link) com a MESMA altura fixa, e a grelha
    sempre com o espaço de uma fila: mudar Ficheiros ↔ Links não mexe. */
 const ALTURA_CARTAO_JOGO = 190; // miniatura 97 (com os ícones por cima) + nome em 2 linhas + 2 linhas de informação
-const ALTURA_MINIATURA_JOGO = 97; // altura fixa: o cartão alarga para encher a linha sem mudar de altura
+const ALTURA_MINIATURA_JOGO = 97;
+// Margem direita do texto que fica para a coluna de ações (22 px + folgas).
+const LARGURA_ICONES_JOGO = 34;
+const LARGURA_ICONES_1 = 32;
+const LARGURA_ICONES_2 = 47;
+// Corpo dos cartões de cortes e clipes: duas linhas de texto e a grelha
+// 2×2 de ações (2 × 20 + 1) cabem sem o cartão mudar de altura.
+const ALTURA_CORPO_CORTE = 54; // altura fixa: o cartão alarga para encher a linha sem mudar de altura
 // Uma só fila de cartões (o resto em "Ver mais"), a toda a largura.
 const ALTURA_GRELHA_JOGOS = ALTURA_CARTAO_JOGO;
 
@@ -3858,10 +3865,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   /* Ícones diretos (sem menu): no cartão do jogo, na linha da informação;
      nos cortes e clipes, num grupo escuro no canto da imagem. */
-  const iconeAcao = ([Icone, titulo, acao, cor], i, sobreImagem) => (
+  const iconeAcao = ([Icone, titulo, acao, cor], i, sobreImagem, lado = 22) => (
     <button key={i} type="button" title={titulo} aria-label={titulo} onClick={(e) => { e.stopPropagation(); acao(); }}
       style={{
-        width: sobreImagem ? 26 : 22, height: sobreImagem ? 26 : 22, borderRadius: sobreImagem ? 13 : 6, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
+        width: sobreImagem ? 26 : lado, height: sobreImagem ? 26 : lado, borderRadius: sobreImagem ? 13 : 6, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
         background: sobreImagem ? 'rgba(0,0,0,0.62)' : 'transparent', color: cor || (sobreImagem ? '#fff' : T.muted),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
@@ -3873,9 +3880,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, false))}
     </span>
   );
-  const iconesSobreImagem = (acoes) => (
-    <span style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4 }}>
-      {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, true))}
+  /* Ações na zona do texto, encostadas à direita (fora da imagem): a
+     imagem fica limpa e os ícones leem-se como parte do cartão. Ficam fora
+     do botão do cartão (um botão não pode ter botões dentro), por cima da
+     margem direita que o texto deixa livre (LARGURA_ICONES_*).
+     `topo` (px desde o topo do cartão) ou, sem ele, presos ao fundo.
+     `colunas`: 1 = pilha vertical; 2 = grelha 2×2. */
+  const iconesNoCorpo = (acoes, { topo = null, colunas = 1 } = {}) => (
+    <span style={{
+      position: 'absolute', right: colunas > 1 ? 3 : 5, ...(topo != null ? { top: topo } : { bottom: 4 }),
+      display: 'grid', gridTemplateColumns: `repeat(${colunas}, ${colunas > 1 ? 20 : 22}px)`, gap: colunas > 1 ? 1 : 2,
+    }}>
+      {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, false, colunas > 1 ? 20 : 22))}
     </span>
   );
   const cartaoLink = (v) => (
@@ -3892,14 +3908,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Link2 size={20} color={T.mutedDim} /></div>
         )}
-        {/* Ações diretas, por cima da imagem (como nos cortes). */}
-        {iconesSobreImagem([
-          renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
-          enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
-          apagarLink && [X, 'Apagar', () => apagarLink(v), '#ff8a8a'],
-        ])}
       </div>
-      <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ padding: `8px ${LARGURA_ICONES_JOGO}px 8px 10px`, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {editandoNomeId === v.id ? (
           <input autoFocus value={nomeEditado} onChange={e => setNomeEditado(e.target.value)} onClick={e => e.stopPropagation()}
             onKeyDown={e => { if (e.key === 'Enter') { if (renomearLink && nomeEditado.trim()) renomearLink(v.id, nomeEditado.trim()); setEditandoNomeId(null); } if (e.key === 'Escape') setEditandoNomeId(null); }}
@@ -3909,13 +3919,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           <div style={estiloNome2Linhas}>{v.title || 'Jogo'}</div>
         )}
         <div aria-hidden style={{ minHeight: 16 }} />
-        {/* Sem data (um link não se apaga): a informação vai no fundo, a amarelo. */}
+        {/* Sem data (um link não se apaga): a informação vai no fundo, a amarelo. O ícone de link já diz que é do YouTube. */}
         <div title={(v.enviadoSala || []).map(e => e.rotulo).join('; ')} style={{ fontSize: 11, lineHeight: '16px', color: T.gold, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>
           <Link2 size={11} style={{ flexShrink: 0 }} />
-          {(v.enviadoSala || []).length ? `YouTube · no Canal · ${String((v.enviadoSala || [])[(v.enviadoSala || []).length - 1].rotulo || '').split(' › ')[0] || 'Sala'}` : 'YouTube · só na Análise'}
+          {(v.enviadoSala || []).length ? `No Canal · ${String((v.enviadoSala || [])[(v.enviadoSala || []).length - 1].rotulo || '').split(' › ')[0] || 'Sala'}` : 'Só na Análise'}
         </div>
       </div>
     </div>
+    {/* Ações diretas, em coluna à direita do texto. */}
+    {iconesNoCorpo([
+      renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
+      enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+      apagarLink && [X, 'Apagar', () => apagarLink(v), '#ff8a8a'],
+    ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
     </div>
   );
 
@@ -4593,17 +4609,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {c.apagadoPeloAtleta && <span title="O jogador apagou este clipe no Portal. Continua disponível aqui." style={{ position: 'absolute', bottom: 5, left: 6, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: '1px 5px', ...body }}>Apagado no Portal</span>}
             <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>{Math.round(dur)}s</span>
           </div>
-          <div style={{ padding: '7px 9px 8px', minHeight: 44, boxSizing: 'border-box' }}>
+          <div style={{ padding: `7px ${LARGURA_ICONES_1}px 8px 9px`, minHeight: ALTURA_CORPO_CORTE, boxSizing: 'border-box' }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{comNome ? (c.atletaNome || 'Atleta') : (c.titulo || '(sem título)')}</div>
             <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {comNome ? `${jogo.nome}` : `${mmss(c.clipInicio)}–${mmss(c.clipFim)}${dataCurta(c.criadoEm) ? ` · ${dataCurta(c.criadoEm)}` : ''}`}
             </div>
           </div>
         </button>
-        {iconesSobreImagem([
+        {iconesNoCorpo([
           [copiedId === c.id ? Check : Share2, copiedId === c.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }],
           [X, 'Apagar daqui (o jogador continua a tê-lo no Portal)', () => removerClipe(c), '#ff8a8a'],
-        ])}
+        ], { colunas: 1 })}
       </div>
     );
   };
@@ -4755,19 +4771,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {Math.round(clip.duracao || 0)}s
             </span>
           </div>
-          <div style={{ padding: '7px 9px 8px', minHeight: 44, boxSizing: 'border-box' }}>
+          <div style={{ padding: `7px ${LARGURA_ICONES_2}px 8px 9px`, minHeight: ALTURA_CORPO_CORTE, boxSizing: 'border-box' }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: corTextoEtiqueta(tag?.color) || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
             <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {clip.note || `Minuto ${typeof clip.origemInicio === 'number' ? fmt(clip.origemInicio) : '—'}${parteDoTitulo(clip.originalTitulo) ? ` · ${parteDoTitulo(clip.originalTitulo)}.ª parte` : ''}`}
             </div>
           </div>
         </button>
-        {iconesSobreImagem([
+        {iconesNoCorpo([
           [copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }],
           [Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }],
           enviarParaSala && [naSala ? Check : Film, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar outra vez)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
           [X, 'Apagar', () => removerClipe(clip), '#ff8a8a'],
-        ])}
+        ], { colunas: 2 })}
       </div>
     );
   };
@@ -5752,14 +5768,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     <Loader2 size={16} className="spin" color="#fff" />
                   </span>
                 )}
-                {/* Ações diretas, por cima da imagem (como nos cortes). */}
-                {iconesSobreImagem([
-                  !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
-                  enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
-                  [X, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), '#ff8a8a'],
-                ])}
               </div>
-              <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ padding: `8px ${LARGURA_ICONES_JOGO}px 8px 10px`, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {editandoNomeId === v.id ? (
                   <input
                     autoFocus
@@ -5773,7 +5783,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 ) : (
                   <div style={estiloNome2Linhas}>{v.titulo}</div>
                 )}
-                {/* Informação (à direita fica o "⋯", por cima). */}
+                {/* Informação (as ações ficam na coluna à direita). */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 16 }}>
                   {v.ficheiroApagado ? (
                     <span style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -5795,6 +5805,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {linhaRetencao(v)}
               </div>
             </button>
+            {/* Ações diretas, em coluna à direita do texto. */}
+            {iconesNoCorpo([
+              !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
+              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Film, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+              [X, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), '#ff8a8a'],
+            ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
             </div>
           )))}
           {/* CARTÃO DE ADICIONAR, conforme a forma de trabalhar: no Estúdio
