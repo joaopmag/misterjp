@@ -3387,6 +3387,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Separadores dos cortes: por separador { jogo, aberto, pesquisa, verMais }.
   const [cortesVista, setCortesVista] = useState({});
   const [menuCorteId, setMenuCorteId] = useState(null); // corte com o menu "⋯" aberto
+  const [atletaSel, setAtletaSel] = useState(null); // Análise individual: chave do jogador escolhido
+  const [pesquisaAtleta, setPesquisaAtleta] = useState('');
+  const [verTodosAtletas, setVerTodosAtletas] = useState(false);
+  const [verMaisClipesAtleta, setVerMaisClipesAtleta] = useState(false);
   useEffect(() => {
     if (!menuCorteId) return undefined;
     const fechar = () => setMenuCorteId(null);
@@ -3400,6 +3404,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [separadorClipes, setSeparadorClipes] = useState('staff');
   const areaCortesRef = useRef(null);
   const [alturaAreaCortes, setAlturaAreaCortes] = useState(0);
+  // Antes de mudar um filtro (etiqueta, jogo, jogador, "Ver mais"): a área
+  // dos cortes guarda a altura que tem, para a página não encolher e os
+  // separadores não subirem.
+  const fixarAlturaCortes = () => { const el = areaCortesRef.current; if (el) { const h = el.getBoundingClientRect().height; setAlturaAreaCortes(a => Math.max(a, h)); } };
   // Quantos cartões de vídeo cabem numa linha (172px + 10px de espaço).
   const grelhaOriginaisRef = useRef(null);
   const [porLinhaOriginais, setPorLinhaOriginais] = useState(6);
@@ -4510,13 +4518,146 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* Os cartões dos cortes (filtro por etiqueta e uma fila por jogo): para
      os cortes MP4 (separador Cortes) e para os clipes de links feitos no
      editor (separador Clipes). */
+  /* ANÁLISE INDIVIDUAL (fase B). */
+  const cartaoClipeAtleta = (c, comNome) => {
+    const dur = Math.max(0, (Number(c.clipFim) || 0) - (Number(c.clipInicio) || 0));
+    const jogo = jogoDoClipeAtleta(c);
+    const menuAberto = menuCorteId === c.id;
+    const itemMenu = (Icone, rotulo, acao, cor) => (
+      <button type="button" onClick={(e) => { e.stopPropagation(); setMenuCorteId(null); acao(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: cor || T.cream, fontSize: 12.5, textAlign: 'left', borderRadius: 6, ...body }}>
+        <Icone size={14} /> {rotulo}
+      </button>
+    );
+    return (
+      <div key={c.id} style={{ position: 'relative', minWidth: 0 }}>
+        <button type="button" onClick={() => setClipeAtletaAberto(c)}
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body }}>
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+            {c.thumbUrl ? (
+              <img src={c.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : c.youtubeId ? (
+              <img src={miniaturaYoutube(c.youtubeId)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : c.dataUrl ? (
+              <video src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#000', pointerEvents: 'none' }} />
+            ) : (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Film size={22} color={T.mutedDim} /></div>
+            )}
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: c.criadoPorStaff ? T.gold : T.line }} />
+            {c.criadoPorStaff && <span style={{ position: 'absolute', top: 7, left: 7, fontSize: 10, fontWeight: 700, color: '#111', background: T.goldFundo, borderRadius: 4, padding: '1px 5px', ...body }}>STAFF</span>}
+            {c.apagadoPeloAtleta && <span title="O jogador apagou este clipe no Portal. Continua disponível aqui." style={{ position: 'absolute', top: 7, right: 7, fontSize: 10, color: '#fff', background: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: '1px 5px', ...body }}>Apagado no Portal</span>}
+            <span style={{ position: 'absolute', bottom: 5, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>{Math.round(dur)}s</span>
+          </div>
+          <div style={{ padding: '7px 34px 8px 9px', minHeight: 44, boxSizing: 'border-box' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{comNome ? (c.atletaNome || 'Atleta') : (c.titulo || '(sem título)')}</div>
+            <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {comNome ? (c.titulo || jogo.nome) : `${mmss(c.clipInicio)} · ${jogo.nome}`}
+            </div>
+          </div>
+        </button>
+        <button type="button" aria-label="Ações do clipe" title="Ações" onClick={(e) => { e.stopPropagation(); setMenuCorteId(menuAberto ? null : c.id); }}
+          style={{ position: 'absolute', right: 5, bottom: 9, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: menuAberto ? T.surfaceRaise : 'transparent', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+          <MoreHorizontal size={16} />
+        </button>
+        {menuAberto && (
+          <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', right: 4, bottom: 38, zIndex: 20, minWidth: 190, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 4, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
+            {itemMenu(copiedId === c.id ? Check : Share2, copiedId === c.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } })}
+            {itemMenu(Trash2, 'Apagar daqui', () => removerClipe(c), T.bad)}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const blocoAnaliseIndividual = () => {
+    const cols = Math.max(1, porLinhaOriginais);
+    const termo = String(pesquisaAtleta || '').trim().toLowerCase();
+    const jogadoresF = cartoesAtletas.filter(g => !termo || g.nome.toLowerCase().includes(termo));
+    const sel = cartoesAtletas.find(g => g.chave === atletaSel) || null;
+    const limiteJog = cols * 2;
+    const jogVisiveis = verTodosAtletas ? jogadoresF : jogadoresF.slice(0, limiteJog);
+    const semanaPassada = Date.now() - 7 * 864e5;
+    const recentes = [...cartoesAtletas.flatMap(g => g.clipes)].sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+    const listaClipes = sel ? sel.clipes : recentes;
+    const limiteClipes = cols * 2;
+    const campo = { background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 8, padding: '0 10px', height: 36, fontSize: 13, ...body, boxSizing: 'border-box' };
+    const iniciais = (n) => String(n || '').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+    return (
+      <div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          <select value={jogoFiltroEfetivo} onChange={e => { fixarAlturaCortes(); setJogoFiltroAtletas(e.target.value); }} aria-label="Jogo" style={{ ...campo, flex: '1 1 220px', maxWidth: 360 }}>
+            <option value="todos">Todos os jogos ({clipesAtletas.length})</option>
+            {jogosAtletas.map(j => <option key={j.chave} value={j.chave}>{j.nome} ({j.total})</option>)}
+          </select>
+          <input value={pesquisaAtleta} onChange={e => setPesquisaAtleta(e.target.value)} placeholder="Procurar jogador" aria-label="Procurar jogador" style={{ ...campo, flex: '1 1 200px', maxWidth: 320 }} />
+        </div>
+        {/* JOGADORES: cartões pequenos com as mesmas colunas da página. */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 10 }}>
+          {jogVisiveis.map(g => {
+            const on = g.chave === atletaSel;
+            const novos = g.clipes.some(c => new Date(c.criadoEm || 0).getTime() > semanaPassada);
+            return (
+              <button key={g.chave} type="button" onClick={() => { fixarAlturaCortes(); setAtletaSel(on ? null : g.chave); setVerMaisClipesAtleta(false); }}
+                title={g.nome}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: '0 10px', minWidth: 0, cursor: 'pointer', textAlign: 'left', ...body,
+                  background: on ? T.surfaceRaise : T.surface, border: `1px solid ${on ? T.gold : T.line}`, borderRadius: 10, boxSizing: 'border-box',
+                }}>
+                <span style={{ position: 'relative', width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: on ? T.goldFundo : T.surfaceRaise, color: on ? '#111' : T.gold, border: `1.5px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, boxSizing: 'border-box' }}>
+                  {iniciais(g.nome)}
+                  {novos && <span title="Clipes novos esta semana" style={{ position: 'absolute', top: -2, right: -2, width: 9, height: 9, borderRadius: 5, background: T.good, border: `2px solid ${T.surface}` }} />}
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.nome}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: T.mutedDim, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {jogadoresF.length > limiteJog && (
+          <button type="button" onClick={() => { fixarAlturaCortes(); setVerTodosAtletas(v => !v); }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: 0, height: 28, marginTop: 6, ...body }}>
+            {verTodosAtletas ? <><ChevronUp size={14} /> Ver menos jogadores</> : <><ChevronDown size={14} /> Ver todos os jogadores ({jogadoresF.length})</>}
+          </button>
+        )}
+        {/* CLIPES: do jogador escolhido, ou os mais recentes de todos. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0 10px', minHeight: 40 }}>
+          {sel ? (
+            <>
+              <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{sel.nome}</span>
+              <span style={{ fontSize: 12, color: T.mutedDim, flexShrink: 0, ...mono }}>{sel.clipes.length} {sel.clipes.length === 1 ? 'clipe' : 'clipes'}{sel.nJogos > 1 ? ` · ${sel.nJogos} jogos` : ''}</span>
+              <span style={{ flex: 1 }} />
+              {sel.clipes.length > 1 && (
+                <Btn variant="solid" onClick={() => setSequenciaAtleta({ clipes: sel.clipes, indice: 0 })} style={{ padding: '7px 12px', fontSize: 12.5 }}>
+                  <Play size={13} /> Ver seguidos
+                </Btn>
+              )}
+              <Btn variant="ghost" onClick={() => { fixarAlturaCortes(); setAtletaSel(null); }} style={{ padding: '7px 10px', fontSize: 12.5 }}><X size={13} /> Todos</Btn>
+            </>
+          ) : (
+            <span style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: T.mutedDim, ...body }}>Clipes mais recentes · escolhe um jogador para ver só os dele</span>
+          )}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 10 }}>
+          {(verMaisClipesAtleta ? listaClipes : listaClipes.slice(0, limiteClipes)).map(c => cartaoClipeAtleta(c, !sel))}
+        </div>
+        {listaClipes.length > limiteClipes && (
+          <button type="button" onClick={() => { fixarAlturaCortes(); setVerMaisClipesAtleta(v => !v); }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: 0, height: 28, marginTop: 6, ...body }}>
+            {verMaisClipesAtleta ? <><ChevronUp size={14} /> Ver menos</> : <><ChevronDown size={14} /> Ver mais ({listaClipes.length - limiteClipes})</>}
+          </button>
+        )}
+      </div>
+    );
+  };
   /* CORTES (ficheiros e links): filtros em cima (jogo, pesquisa, etiqueta)
      e uma grelha com as mesmas colunas dos cartões dos jogos, duas filas e
      "Ver mais". Com "Todos os jogos", cada jogo é uma linha fechada e só o
      que se abre mostra os cartões: a página fica curta, haja 3 ou 30
      jogos. Cada cartão tem um só botão "⋯" com as ações. */
   const vistaCortesDe = (sep) => cortesVista[sep] || {};
-  const mudarVistaCortes = (sep, mudanca) => setCortesVista(p => ({ ...p, [sep]: { ...(p[sep] || {}), ...mudanca } }));
+  const mudarVistaCortes = (sep, mudanca) => { fixarAlturaCortes(); setCortesVista(p => ({ ...p, [sep]: { ...(p[sep] || {}), ...mudanca } })); };
   const cartaoCorte = (clip) => {
     const tag = TAGS.find(t => t.id === clip.tagId);
     const naSala = clipeNaSala(clip);
@@ -4621,8 +4762,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             style={{ ...campo, flex: '1 1 200px', maxWidth: 320 }} />
         </div>
         <div className="mjp-sem-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 12, scrollbarWidth: 'none' }}>
-          {pilula(filtroTag == null, T.muted, 'Todas as etiquetas', () => setFiltroTag(null), 'todas')}
-          {TAGS.filter(tag => listaC.some(c => c.tagId === tag.id)).map(tag => pilula(filtroTag === tag.id, tag.color, tag.label, () => setFiltroTag(tag.id), tag.id))}
+          {pilula(filtroTag == null, T.muted, 'Todas as etiquetas', () => { fixarAlturaCortes(); setFiltroTag(null); }, 'todas')}
+          {TAGS.filter(tag => listaC.some(c => c.tagId === tag.id)).map(tag => pilula(filtroTag === tag.id, tag.color, tag.label, () => { fixarAlturaCortes(); setFiltroTag(tag.id); }, tag.id))}
         </div>
         {jogoSel !== 'todos' ? (
           g1 && g1.clipes.length ? grelhaCortes(g1.clipes, sep, g1.chave) : (
@@ -6296,7 +6437,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       <div ref={areaCortesRef} style={{ marginTop: originalAtivo ? 26 : 14, minHeight: alturaAreaCortes || undefined }}>
         <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {[
-            { id: 'staff', label: `Cortes de ficheiros (${(filtroTag ? cortesFicheiro.filter(c => c.tagId === filtroTag) : cortesFicheiro).length})`, Icon: Tag },
+            // Totais SEM filtros: o rótulo não muda de largura ao escolher uma etiqueta.
+            { id: 'staff', label: `Cortes de ficheiros (${cortesFicheiro.length})`, Icon: Tag },
             // Clipes dos jogos por link (YouTube), feitos em Links.
             ...(temLinks ? [{ id: 'clipes', label: `Cortes de links (${(cortesLink || []).length + clipesLinkEditor.length})`, Icon: Scissors }] : []),
             { id: 'atletas', label: `Análise individual (${clipesAtletas.length})`, Icon: User },
@@ -6321,114 +6463,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {/* O STAFF TAMBÉM CRIA ANÁLISE INDIVIDUAL: escolhe o jogador (com
             cartão ou ainda sem nada) e os cortes. Aparecem no cartão dele e
             no Portal dele, como dele, só para ver. */}
+        {/* ANÁLISE INDIVIDUAL: em cima os jogadores (um cartão pequeno cada,
+            com o nº de clipes); escolhido um, por baixo os clipes dele numa
+            grelha com os mesmos cartões dos cortes. Sem jogador escolhido,
+            os clipes mais recentes de todos. */}
         {separadorClipes === 'atletas' && (
           clipesAtletas.length === 0 ? (
             <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
-              Ainda não há análise individual. Ao gravar um corte (Estúdio) ou um clipe (Links), escolhe o jogador em "Análise individual"; os jogadores também a criam no Portal do Atleta. Cada jogador com clipes ganha aqui o seu cartão.
+              Ainda não há análise individual. Ao gravar um corte, escolhe o jogador em "Análise individual"; os jogadores também a criam no Portal do Atleta.
             </div>
-          ) : (
-            <>
-            {/* alignItems 'start': abrir um cartão já não estica o do lado.
-                overflowAnchor 'none': o browser deixa de "corrigir" o scroll
-                sozinho quando a lista cresce (era isso que fazia a página
-                mexer toda ao carregar em "Mostrar mais"). */}
-            <div ref={grelhaAtletasRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'stretch', overflowAnchor: 'none' }}>
-              {cartoesAtletas.map(g => (
-                <div key={g.chave} ref={el => { if (el) cartaoRefs.current[g.chave] = el; else delete cartaoRefs.current[g.chave]; }}
-                  style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                  {/* CABEÇALHO — nome sempre inteiro (pode ocupar duas linhas),
-                     com o nº de clipes por baixo; o "Ver seguidos" passou a
-                     um botão redondo de play, para não roubar espaço ao nome. */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px 12px 14px', borderBottom: `1px solid ${T.line}` }}>
-                    <span style={{
-                      width: 38, height: 38, borderRadius: '50%', background: T.surfaceRaise, color: T.gold, flexShrink: 0,
-                      border: `1.5px solid ${T.gold}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, ...body,
-                    }}>
-                      {g.nome.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{g.nome}</span>
-                      <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>
-                        {g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}
-                        {g.nJogos > 1 && <> · {g.nJogos} jogos</>}
-                      </span>
-                    </span>
-                    {g.clipes.length > 1 && (
-                      <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
-                        title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
-                        aria-label={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
-                        style={{
-                          width: 40, height: 40, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
-                          background: T.goldFundo, border: 'none', color: '#111',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-                        }}>
-                        <Play size={17} fill="#111" style={{ marginLeft: 2 }} />
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', height: ALTURA_LINHA_CARTAO * CLIPES_VISIVEIS, overflow: 'hidden' }}>
-                    {renderClipesCartao(g, g.clipes.slice(0, CLIPES_VISIVEIS), true)}
-                  </div>
-                  {/* Sempre presente (mesmo com poucos clipes), para todos os
-                      cartões terem o mesmo tamanho. Abre a lista inteira numa
-                      coluna por cima do próprio cartão, da mesma largura. */}
-                  {(
-                    <button onClick={(e) => {
-                      const el = cartaoRefs.current[g.chave];
-                      const r = el ? el.getBoundingClientRect() : null;
-                      setCartaoPainel({ chave: g.chave, left: r ? r.left : null, width: r ? r.width : null, top: r ? Math.max(12, r.top) : null });
-                    }}
-                      style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...body, marginTop: 'auto',
-                        background: 'transparent', border: 'none', color: T.muted, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
-                      }}>
-                      <ChevronDown size={14} /> Ver todos ({g.clipes.length})
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            {(() => {
-              const g = cartaoPainel && cartoesAtletas.find(x => x.chave === cartaoPainel.chave);
-              // Com um clipe aberto, o painel fica escondido — e volta ao
-              // fechar o clipe (X), para continuar a ver os outros.
-              if (!g || clipeAtletaAberto || sequenciaAtleta) return null;
-              const emColuna = cartaoPainel.left != null && typeof window !== 'undefined' && window.innerWidth >= 700;
-              return (
-                <div onClick={() => setCartaoPainel(null)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', ...(emColuna ? {} : { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }) }}>
-                  <div onClick={e => e.stopPropagation()} style={{
-                    background: T.surface, border: `1px solid ${T.gold}`, borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                    boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-                    ...(emColuna
-                      // COLUNA por cima do próprio cartão, com a largura dele.
-                      ? { position: 'absolute', left: cartaoPainel.left, width: cartaoPainel.width, top: cartaoPainel.top, maxHeight: `calc(100vh - ${cartaoPainel.top + 12}px)` }
-                      : { width: '100%', maxWidth: 560, maxHeight: '86vh' }),
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px 12px 16px', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
-                      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{g.nome}</span>
-                        <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}{g.nJogos > 1 ? ` · ${g.nJogos} jogos` : ''}</span>
-                      </span>
-                      {g.clipes.length > 1 && (
-                        <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
-                          title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
-                          style={{ width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', background: T.goldFundo, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <Play size={15} fill="#111" color="#111" style={{ marginLeft: 2 }} />
-                        </button>
-                      )}
-                      <button onClick={() => setCartaoPainel(null)} title="Fechar" style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 6, display: 'flex' }}><X size={18} /></button>
-                    </div>
-                    <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                      {renderClipesCartao(g, g.clipes)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-            </>
-          )
+          ) : blocoAnaliseIndividual()
         )}
 
         {separadorClipes === 'staff' && cortesFicheiro.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há cortes guardados.</div>}

@@ -291,8 +291,19 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   "Todos os jogos" = um jogo por linha, fechado; abre-se um de cada vez.
   Cartão único (`cartaoCorte`): barra da etiqueta, ✓ se está na Sala,
   duração, e um só botão "⋯" (Partilhar, Editar, Enviar, Apagar). Estado em
-  `cortesVista[sep]` e `menuCorteId`. FASE B (por fazer): Análise
-  individual com fila de jogadores (avatar, nº de clipes) e grelha. Tocar no vídeo do YouTube no editor põe a tocar /
+  `cortesVista[sep]` e `menuCorteId`.
+- ANÁLISE INDIVIDUAL, FASE B (16/11, `blocoAnaliseIndividual`): filtros
+  (Jogo, procurar jogador); jogadores em cartões pequenos (iniciais, nº de
+  clipes, ponto verde = clipes novos nos últimos 7 dias) com as colunas da
+  página, duas filas e "Ver todos os jogadores"; escolhido um, os clipes
+  dele numa grelha (`cartaoClipeAtleta`, barra dourada e "STAFF" se foi o
+  treinador, "Apagado no Portal", menu "⋯" com Partilhar e Apagar daqui),
+  com "Ver seguidos"; sem jogador, os clipes mais recentes de todos. O
+  código antigo dos cartões grandes (renderClipesCartao, cartaoPainel)
+  ficou sem uso.
+- Página não mexe com filtros: os rótulos dos separadores usam totais sem
+  filtros, e antes de mudar um filtro a área guarda a altura que tinha
+  (`fixarAlturaCortes`). Tocar no vídeo do YouTube no editor põe a tocar /
   em pausa (a camada por cima tapa o botão do YouTube).
 - Teste sem YouTube: `window.__MJP_YT_EMBED` aponta o iframe para um
   leitor falso (o harness usou um que fala o mesmo protocolo).
