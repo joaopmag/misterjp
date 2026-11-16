@@ -272,6 +272,12 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   editor com o troço do clipe.
 - Para o Canal / fichas / Portal os desenhos vão como paragens da Sala
   (`formasParaPausas` → `anotacoesPausa`, tempos do jogo).
+- Nomes (16/11): comutador "Ficheiros" | "Links" (sem subtítulos, 60 px
+  de altura fixa); separadores "Cortes de ficheiros", "Cortes de links" e
+  "Análise individual"; página com SectionHeader "Análise de Vídeo ·
+  Editar, desenhar e visualizar ficheiros ou links do YouTube." (em App).
+  Cartões de link sem a terceira linha de texto, mesma altura fixa. Tocar no vídeo do YouTube no editor põe a tocar /
+  em pausa (a camada por cima tapa o botão do YouTube).
 - Teste sem YouTube: `window.__MJP_YT_EMBED` aponta o iframe para um
   leitor falso (o harness usou um que fala o mesmo protocolo).
 

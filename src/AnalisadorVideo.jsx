@@ -3856,8 +3856,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {apagarLink && <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarLink(v); }} />}
           </span>
         </div>
-        {/* A mesma terceira linha dos cartões de ficheiro (altura igual). */}
-        <div style={{ fontSize: 10.5, minHeight: 15, display: 'flex', alignItems: 'center', color: T.mutedDim, whiteSpace: 'nowrap' }}>Link · não ocupa espaço</div>
+        {/* A terceira linha dos cartões de ficheiro, vazia: os cartões têm a
+            mesma altura fixa (ALTURA_CARTAO_JOGO) e a página não mexe. */}
+        <div aria-hidden style={{ minHeight: 15 }} />
       </div>
     </div>
   );
@@ -5444,7 +5445,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             mexe em nada na página. */}
         {temLinks && (
           <div role="tablist" aria-label="Forma de trabalhar" style={{
-            position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', marginBottom: 14, height: 74,
+            position: 'relative', display: 'grid', gridTemplateColumns: '1fr 1fr', marginBottom: 14, height: 60,
             borderRadius: 16, border: `1px solid ${T.line}`, background: T.surface, padding: 4, boxSizing: 'border-box', overflow: 'hidden',
           }}>
             <span aria-hidden style={{
@@ -5453,8 +5454,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               transform: modoEfetivo === 'links' ? 'translateX(100%)' : 'translateX(0)', transition: 'transform .28s cubic-bezier(.4,.1,.2,1)',
             }} />
             {[
-              { id: 'estudio', titulo: 'Estúdio', sub: 'Ficheiros · editor profissional, cortes MP4', Icon: Film, n: videosOriginais.length },
-              { id: 'links', titulo: 'Links', sub: 'YouTube · clipes e desenho em câmara lenta', Icon: Link2, n: (jogosLink || []).length },
+              { id: 'estudio', titulo: 'Ficheiros', Icon: Film, n: videosOriginais.length },
+              { id: 'links', titulo: 'Links', Icon: Link2, n: (jogosLink || []).length },
             ].map(m => {
               const on = modoEfetivo === m.id;
               return (
@@ -5470,7 +5471,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 15, fontWeight: 700, color: on ? T.cream : T.muted, transition: 'color .28s' }}>{m.titulo}</span>
-                    <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.sub}</span>
                   </span>
                   <span style={{ fontSize: 20, fontWeight: 700, color: on ? T.gold : T.mutedDim, flexShrink: 0, fontVariantNumeric: 'tabular-nums', transition: 'color .28s' }}>{m.n}</span>
                 </button>
@@ -5684,7 +5684,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <>
                   {ytEditor ? (
                     <YoutubeComoVideo youtubeId={ytEditor.id} inicio={ytEditor.inicio} fim={ytEditor.fim} videoRef={videoRef}
-                      onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} onClick={() => {}} />
+                      onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
                   ) : (
                   <video ref={videoRef} src={urlEditor} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} playsInline
                     onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
@@ -6247,10 +6247,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       <div ref={areaCortesRef} style={{ marginTop: originalAtivo ? 26 : 14, minHeight: alturaAreaCortes || undefined }}>
         <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {[
-            { id: 'staff', label: `Cortes (${(filtroTag ? cortesFicheiro.filter(c => c.tagId === filtroTag) : cortesFicheiro).length})`, Icon: Tag },
+            { id: 'staff', label: `Cortes de ficheiros (${(filtroTag ? cortesFicheiro.filter(c => c.tagId === filtroTag) : cortesFicheiro).length})`, Icon: Tag },
             // Clipes dos jogos por link (YouTube), feitos em Links.
-            ...(temLinks ? [{ id: 'clipes', label: `Clipes (${(cortesLink || []).length + clipesLinkEditor.length})`, Icon: Scissors }] : []),
-            { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
+            ...(temLinks ? [{ id: 'clipes', label: `Cortes de links (${(cortesLink || []).length + clipesLinkEditor.length})`, Icon: Scissors }] : []),
+            { id: 'atletas', label: `Análise individual (${clipesAtletas.length})`, Icon: User },
           ].map(({ id, label, Icon }) => {
             const on = separadorClipes === id;
             return (
@@ -6395,7 +6395,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             de etiqueta escolhido, não aparecem. */}
         {separadorClipes === 'clipes' && gruposCortesLink.length === 0 && clipesLinkEditor.length === 0 && (
           <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
-            Ainda não há clipes. Em Links, abre um jogo e usa "Criar clipe".
+            Ainda não há cortes de links. Em Links, abre um jogo e marca os cortes em Codificar (ou com Início e Fim).
           </div>
         )}
         {separadorClipes === 'clipes' && gruposCortesLink.length > 0 && (
