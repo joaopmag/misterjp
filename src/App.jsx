@@ -14,7 +14,7 @@ import AnalisadorVideo, {
   validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
-  TAGS_ANALISE, ehNossaEquipa,
+  TAGS_ANALISE, ehNossaEquipa, ehCorteYoutube, formasParaPausas,
 } from './AnalisadorVideo';
 import { QUOTA_JOGOS_GB_OMISSAO, espacoJogosUsado, formatarGB } from './media/retencao';
 import {
@@ -165,9 +165,9 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
   const criar = [];
   const atualizar = new Map();
   const marcar = new Map();
-  const CAMPOS = ['title', 'dataUrl', 'thumbUrl', 'clipInicio', 'clipFim', 'clipOrigemTitulo', 'adversarioId', 'equipa'];
+  const CAMPOS = ['title', 'dataUrl', 'youtubeId', 'thumbUrl', 'clipInicio', 'clipFim', 'clipOrigemTitulo', 'adversarioId', 'equipa'];
   (clipes || []).forEach(c => {
-    if (!c || c.origem === 'atleta' || !c.publicUrl) return;
+    if (!c || c.origem === 'atleta' || (!c.publicUrl && !ehCorteYoutube(c))) return;
     let atual = autoPorClipe.get(c.id);
     const manuais = manuaisPorClipe.get(c.id) || [];
     // Clipe que nunca teve equipa (`equipa` ausente, não null) mas foi
@@ -190,7 +190,14 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
     }
     const tag = (TAGS_ANALISE || []).find(t => t.id === c.tagId);
     const titulo = (c.note || '').trim() || (tag && tag.label) || 'Clipe';
-    const desejado = {
+    const desejado = ehCorteYoutube(c) ? {
+      // Clipe de link (YouTube) feito no editor: o link com os tempos e as paragens dos desenhos.
+      title: titulo, youtubeId: c.youtubeId, thumbUrl: c.thumbUrl || null,
+      clipInicio: c.origemInicio || 0, clipFim: typeof c.origemFim === 'number' ? c.origemFim : (c.origemInicio || 0) + (c.duracao || 0),
+      clipOrigemTitulo: c.originalTitulo || '',
+      anotacoesPausa: formasParaPausas(c.shapes || [], c.origemInicio || 0),
+      adversarioId: ficha.id, equipa: ficha.equipaCompeticao || ficha.nome || equipa, pasta: '',
+    } : {
       title: titulo, kind: 'video', dataUrl: c.publicUrl, thumbUrl: c.thumbUrl || null, fileName: `${titulo}.mp4`,
       clipInicio: typeof c.origemInicio === 'number' ? c.origemInicio : 0,
       clipFim: typeof c.origemFim === 'number' ? c.origemFim : (c.duracao || 0),
@@ -199,7 +206,8 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
     };
     const extra = equipaHerdada ? { equipa: equipaHerdada } : {};
     if (atual) {
-      if (atualizar.has(atual.id) || CAMPOS.some(k => (atual[k] ?? null) !== (desejado[k] ?? null))) atualizar.set(atual.id, { ...atual, ...desejado });
+      if (atualizar.has(atual.id) || CAMPOS.some(k => (atual[k] ?? null) !== (desejado[k] ?? null))
+        || (desejado.anotacoesPausa && JSON.stringify(atual.anotacoesPausa || []) !== JSON.stringify(desejado.anotacoesPausa))) atualizar.set(atual.id, { ...atual, ...desejado });
       if (equipaHerdada || !c.envioFicha || c.envioFicha.adversarioId !== ficha.id) marcar.set(c.id, { envioFicha: { itemId: atual.id, adversarioId: ficha.id }, ...extra });
       return;
     }
@@ -620,6 +628,21 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     (clipes || []).forEach(c => {
       if (!c || !c.criadoPorStaff || !c.corteOrigemId) return;
       const mp4 = porIdClipe.get(c.corteOrigemId);
+      if (mp4 && !mp4.criadoPorStaff && ehCorteYoutube(mp4)) {
+        // Clipe de link feito no editor: desenhos, paragens (para o Portal) e tempos.
+        const sh = mp4.shapes || [];
+        const upd = {};
+        if (JSON.stringify(sh) !== JSON.stringify(c.shapes || [])) {
+          upd.shapes = sh;
+          upd.anotacoesPausa = formasParaPausas(sh, mp4.origemInicio || 0);
+        }
+        if (mp4.origemInicio !== c.clipInicio || mp4.origemFim !== c.clipFim) {
+          Object.assign(upd, { clipInicio: mp4.origemInicio, clipFim: mp4.origemFim, duracao: Math.max(0, (mp4.origemFim || 0) - (mp4.origemInicio || 0)) });
+          if (!upd.anotacoesPausa) upd.anotacoesPausa = formasParaPausas(sh, mp4.origemInicio || 0);
+        }
+        if (Object.keys(upd).length) mudar.set(c.id, upd);
+        return;
+      }
       if (mp4 && !mp4.criadoPorStaff) {
         const sh = mp4.shapes || [];
         if (JSON.stringify(sh) !== JSON.stringify(c.shapes || [])) mudar.set(c.id, { shapes: sh });
@@ -646,7 +669,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     if (!ytId && !social) throw new Error('Não reconheço este link. Usa o link do YouTube (youtu.be/… ou youtube.com/watch?v=…).');
     const jogo = {
       id: uid(), title: String(titulo || '').trim() || 'Jogo', daAnalise: true, criadoEm: new Date().toISOString(),
-      ...(ytId ? { youtubeId: ytId } : { social }),
+      // Jogos do YouTube novos abrem no editor dos ficheiros (os antigos continuam como estavam).
+      ...(ytId ? { youtubeId: ytId, editorAnalise: true } : { social }),
     };
     let marcas = [];
     if (destino === 'jogo' || destino === 'jogoAdversario') {
@@ -1270,6 +1294,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         : clip.youtubeId ? { youtubeId: clip.youtubeId } : { social: clip.social }),
       ...(typeof clip.clipInicio === 'number' ? { clipInicio: clip.clipInicio, clipFim: clip.clipFim, clipOrigemTitulo: clip.clipOrigemTitulo || '' } : {}),
       ...(clip.note ? { note: clip.note } : {}),
+      // Desenhos de um clipe feito no editor (paragens, como as da Sala).
+      ...(Array.isArray(clip.anotacoesPausa) && clip.anotacoesPausa.length ? { anotacoesPausa: clip.anotacoesPausa } : {}),
       origemAnalise: { linkId: clip.id, em: new Date().toISOString() },
     } : null;
     if (!base && (!clip || !clip.publicUrl)) throw new Error('Este clipe não tem vídeo guardado.');

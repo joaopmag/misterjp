@@ -250,6 +250,30 @@ Apagar na Análise: confirmação e depois "Anular" durante `UNDO_SECONDS`
 (`apagarComAnular`); o ficheiro no Storage só se apaga quando o Anular
 expira (+3 s). Mesmo para jogos por link (`apagarLink`).
 
+**LINKS DO YOUTUBE NO EDITOR DOS FICHEIROS (16/11):**
+- Só os jogos por link NOVOS (`editorAnalise: true`, posto em `criarJogoLink`)
+  abrem no editor do Estúdio; os antigos e os clipes antigos (cortesLink)
+  continuam a abrir no leitor dos links, como antes.
+- `src/media/youtubeComoVideo.jsx`: o iframe do YouTube ganha as
+  propriedades e eventos de um <video> (currentTime, paused, duration,
+  play/pause, playbackRate, 'timeupdate', 'play', 'loadedmetadata'…), por
+  postMessage. Com `inicio`/`fim` é um corte (0 = início, pára no fim).
+  "Preparar": toca sem som até o YouTube dar a duração. O editor e o
+  ClipPlayerModal usam-no em vez do <video> (`ytEditor`, `ehYt`).
+- Diferenças no editor com link: sem Seguir (não dá para ler a imagem do
+  YouTube), com o Tubo à mão; Relvado e Fora de jogo iguais; sem
+  "MP4" no leitor do clipe ("Vídeo c/ desenhos" grava o ecrã e funciona).
+- Os clipes (Codificar, corte à mão) ficam na coleção dos cortes com
+  `fonte: 'youtube'`, `youtubeId`, `origemInicio/Fim` (tempos do jogo) e
+  `shapes` no tempo do clipe (`ehCorteYoutube`). Aparecem no separador
+  Clipes com os mesmos cartões dos Cortes (`blocoCortes`), antes dos
+  clipes antigos. Editar tempos = mudar os números. Desenhar num clipe =
+  editor com o troço do clipe.
+- Para o Canal / fichas / Portal os desenhos vão como paragens da Sala
+  (`formasParaPausas` → `anotacoesPausa`, tempos do jogo).
+- Teste sem YouTube: `window.__MJP_YT_EMBED` aponta o iframe para um
+  leitor falso (o harness usou um que fala o mesmo protocolo).
+
 **JOGOS INTEIROS 90 DIAS, CLIPES SEMPRE (15/11, decidido com a Adelaide):**
 - Jogo inteiro carregado (video_originais, bucket videos-originais) fica 90
   dias desde `criadoEm`; o staff pode prolongar UMA vez +30 dias

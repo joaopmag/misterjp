@@ -4849,7 +4849,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
         <ClipPlayerModal soVer
           clip={{ id: verClipeStaff.id, titulo: verClipeStaff.title, note: verClipeStaff.notaAtleta || '', publicUrl: verClipeStaff.dataUrl,
             shapes: verClipeStaff.shapesStaff, duracao: verClipeStaff.duracaoStaff || Math.max(0, (verClipeStaff.clipFim || 0) - (verClipeStaff.clipInicio || 0)),
-            originalTitulo: verClipeStaff.clipOrigemTitulo || '', ...(verClipeStaff.calibracaoStaff ? { calibracao: verClipeStaff.calibracaoStaff } : {}) }}
+            originalTitulo: verClipeStaff.clipOrigemTitulo || '', ...(verClipeStaff.calibracaoStaff ? { calibracao: verClipeStaff.calibracaoStaff } : {}),
+            // Clipe do treinador sobre um jogo por link (YouTube): o leitor usa o YouTube no troço.
+            ...(verClipeStaff.youtubeId ? { fonte: 'youtube', youtubeId: verClipeStaff.youtubeId, origemInicio: verClipeStaff.clipInicio || 0, origemFim: verClipeStaff.clipFim } : {}) }}
           tag={null} onClose={() => setVerClipeStaff(null)} />
       )}
       {modal && (
