@@ -1900,7 +1900,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <SectionHeader title="Análise de Vídeo" subtitle="Editar, desenhar e visualizar ficheiros ou links do YouTube." />
+            <SectionHeader title="Análise de Vídeo" subtitle="Editar, desenhar e visualizar em ficheiros e links do YouTube." />
             <AnalisadorVideo teamId={teamId} quotaJogosBytes={quotaJogosBytes} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} recuperarOriginal={recuperarOriginal} nomeNossaEquipa={nomeNossaEquipa} garantirFichaAdversario={garantirFichaAdversario} criarFichaAdversario={criarFichaAdversario}
               jogosLink={videosAnalise.filter(v => !ehClipe(v))}
               cortesLink={videosAnalise.filter(v => ehClipe(v))}
