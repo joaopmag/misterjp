@@ -2666,6 +2666,41 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
 
   // Ecrã largo, leitor e lista lado a lado: a lista acaba onde acaba o leitor.
   const listaAoLado = !isNarrow && !soLink;
+  /* A LISTA ACABA NO FUNDO DO LEITOR, SEM CARTÃO CORTADO (17/11).
+     - Altura da coluna da direita = altura da caixa do leitor (cabeçalho,
+       vídeo e barras), medida sempre que muda.
+     - Na lista cabe um número inteiro de cartões: o espaço que sobra é
+       repartido pelos intervalos entre eles (o último acaba rente ao fundo).
+       Os de baixo continuam acessíveis a rolar. */
+  const [alturaLeitorBib, setAlturaLeitorBib] = useState(null);
+  const listaBibRef = useRef(null);
+  const [gapListaBib, setGapListaBib] = useState(8);
+  useEffect(() => {
+    if (!listaAoLado || typeof ResizeObserver === 'undefined') { setAlturaLeitorBib(null); return undefined; }
+    const col = leitorColunaRef.current;
+    const caixa = col && col.firstElementChild;
+    if (!caixa) return undefined;
+    const medir = () => { const h = Math.round(caixa.getBoundingClientRect().height); if (h > 0) setAlturaLeitorBib(h); };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(caixa);
+    return () => ro.disconnect();
+  });
+  useEffect(() => {
+    const el = listaBibRef.current;
+    if (!listaAoLado || !el) return;
+    const H = el.clientHeight;
+    const filhos = [...el.children];
+    if (!H || filhos.length < 2) { if (gapListaBib !== 8) setGapListaBib(8); return; }
+    const alto = (c) => { const cs = getComputedStyle(c); return c.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0); };
+    let soma = alto(filhos[0]); let n = 1;
+    for (let i = 1; i < filhos.length; i++) {
+      const h = alto(filhos[i]);
+      if (soma + 8 + h <= H + 0.5) { soma += 8 + h; n += 1; } else break;
+    }
+    const novo = n >= filhos.length || n < 2 ? 8 : 8 + Math.max(0, H - soma) / (n - 1);
+    if (Math.abs(novo - gapListaBib) > 0.5) setGapListaBib(novo);
+  });
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   temVideoBibRef.current = !!(temLeitorBib(active) && !isBlocked); // para a barra de espaço
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
@@ -4691,20 +4726,31 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 ) : (
                   <AttachmentPreview item={active} />
                 )}
-                {/* Título e linhas por baixo numa altura FIXA: trocar entre um
-                    jogo (só o título) e um corte (título, tempos e jogo de
-                    origem) não mexe na página. */}
-                <div style={{ height: 74, overflow: 'hidden' }}>
-                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{active.title}</div>
-                {/* Por baixo do título, sem partir linhas (também no telemóvel):
-                    a jornada à esquerda e o tempo do corte à direita; depois o
-                    jogo de onde veio, numa linha só. */}
+                {/* Título e UMA linha por baixo, numa altura FIXA (50 px): a
+                    jornada, o jogo de onde veio o corte e, à direita, os
+                    tempos. Trocar entre jogo e corte não mexe na página, e a
+                    caixa acaba logo a seguir ao texto: a lista da direita
+                    alinha pelo fundo do texto (17/11). */}
+                <div style={{ height: 50, overflow: 'hidden' }}>
+                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, lineHeight: '20px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{active.title}</div>
                 {(() => {
                   const eCorte = typeof active.clipInicio === 'number' && typeof active.clipFim === 'number';
+                  const origem = eCorte && active.clipOrigemTitulo ? active.clipOrigemTitulo : '';
                   if (!active.jornada && !eCorte) return null;
+                  const podeIr = origem && items.some(v => v.id === active.clipOrigemId);
                   return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, fontSize: 12.5, color: T.mutedDim }}>
-                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.jornada || ''}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 18, lineHeight: '18px', fontSize: 12.5, color: T.mutedDim }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {active.jornada || ''}
+                        {active.jornada && origem ? ' · ' : ''}
+                        {origem && (podeIr ? (
+                          <button
+                            onClick={() => irPara(items.find(v => v.id === active.clipOrigemId))}
+                            title={origem}
+                            style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, lineHeight: '18px', ...body }}
+                          >{origem}</button>
+                        ) : <span>{origem}</span>)}
+                      </span>
                       {eCorte && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', flexShrink: 0, ...mono, fontSize: 12 }}>
                           <Scissors size={12} /> {fmtMMSS(active.clipInicio)}–{fmtMMSS(active.clipFim)}
@@ -4713,19 +4759,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     </div>
                   );
                 })()}
-                {typeof active.clipInicio === 'number' && typeof active.clipFim === 'number' && active.clipOrigemTitulo && (
-                  <div style={{ marginTop: 3, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {items.some(v => v.id === active.clipOrigemId) ? (
-                      <button
-                        onClick={() => irPara(items.find(v => v.id === active.clipOrigemId))}
-                        title={active.clipOrigemTitulo}
-                        style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, ...body, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}
-                      >{active.clipOrigemTitulo}</button>
-                    ) : (
-                      <span style={{ color: T.mutedDim }}>{active.clipOrigemTitulo}</span>
-                    )}
-                  </div>
-                )}
                 </div>
               </>
             )}
@@ -4733,12 +4766,13 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           {/* A lista tem scroll próprio em vez de esticar a página: com
               muitos ficheiros, a página inteira ficava com metros de altura
               e o visualizador à esquerda saía do ecrã. */}
+          <style>{'.mjp-lista-sem-barra::-webkit-scrollbar{display:none}'}</style>
           {/* LISTA COM A ALTURA DO QUE ESTÁ À ESQUERDA (17/11): em ecrã largo,
               a coluna da direita não conta para a altura da linha (o conteúdo
               fica por cima, absoluto) e a lista estica até ao fundo do leitor
               e do título. As duas colunas acabam na mesma linha. */}
-          <div style={{ minWidth: 0, ...(listaAoLado ? { position: 'relative', minHeight: 360 } : {}) }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...(listaAoLado ? { position: 'absolute', inset: 0 } : {}) }}>
+          <div style={{ minWidth: 0, ...(listaAoLado ? { alignSelf: 'start', height: Math.max(360, alturaLeitorBib || 0), display: 'flex', flexDirection: 'column' } : {}) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...(listaAoLado ? { flex: 1, minHeight: 0 } : {}) }}>
             {!semCatalogo && !modoCanal && (
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
@@ -4783,10 +4817,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
                   >Ver tudo aberto</button>
                 </div>
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: 8,
+                <div ref={listaBibRef} className="mjp-lista-sem-barra" style={{
+                  display: 'flex', flexDirection: 'column', gap: listaAoLado ? gapListaBib : 8,
                   // Análise (soLink): a lista não reserva altura — o leitor manda.
                   ...(soLink ? { maxHeight: 460 } : listaAoLado ? { flex: 1, minHeight: 0 } : { height: '62vh' }), overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
+                  // Sem barra de deslocar à vista (continua a rolar com a roda/dedo).
+                  scrollbarWidth: 'none',
                 }}>
                   {modoCanal && grupoAtual && !termo ? (
                     // Dentro de um cartão: um bloco por secção — "Jogo

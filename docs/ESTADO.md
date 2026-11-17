@@ -400,6 +400,13 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   lista da direita deixa de ter 62vh fixos e acaba na mesma linha que o
   leitor e a caixa do título (coluna da direita absoluta dentro da linha
   da grelha; mínimo 360 px). Telemóvel e Análise (soLink) como antes.
+  A caixa do título por baixo do leitor passou de 74 px para 50 px (título
+  e UMA linha: jornada · jogo de origem, tempos à direita), para a lista
+  acabar no fundo do texto. Lista sem barra de deslocar à vista.
+  Depois (pedido): a coluna da direita tem a altura da CAIXA DO LEITOR
+  (`alturaLeitorBib`, medida com ResizeObserver) e o intervalo entre
+  cartões estica (`gapListaBib`) para caber um número inteiro: o último
+  cartão visível acaba rente ao fundo do leitor, sem cartão cortado.
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.
