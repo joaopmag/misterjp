@@ -396,6 +396,10 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   alarga o cartão ("com YouTube: grava ao descarregar").
 - Portal: "do treinador"/"treinador" passam a "Staff" (selo à direita na
   barra do leitor; na lista, no lugar do lápis e do caixote).
+- Sala de Vídeo / Portal (MediaLibrary, ecrã largo, `listaAoLado`): a
+  lista da direita deixa de ter 62vh fixos e acaba na mesma linha que o
+  leitor e a caixa do título (coluna da direita absoluta dentro da linha
+  da grelha; mínimo 360 px). Telemóvel e Análise (soLink) como antes.
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

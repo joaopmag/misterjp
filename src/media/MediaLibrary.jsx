@@ -2664,6 +2664,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     );
   };
 
+  // Ecrã largo, leitor e lista lado a lado: a lista acaba onde acaba o leitor.
+  const listaAoLado = !isNarrow && !soLink;
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   temVideoBibRef.current = !!(temLeitorBib(active) && !isBlocked); // para a barra de espaço
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
@@ -4731,7 +4733,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           {/* A lista tem scroll próprio em vez de esticar a página: com
               muitos ficheiros, a página inteira ficava com metros de altura
               e o visualizador à esquerda saía do ecrã. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+          {/* LISTA COM A ALTURA DO QUE ESTÁ À ESQUERDA (17/11): em ecrã largo,
+              a coluna da direita não conta para a altura da linha (o conteúdo
+              fica por cima, absoluto) e a lista estica até ao fundo do leitor
+              e do título. As duas colunas acabam na mesma linha. */}
+          <div style={{ minWidth: 0, ...(listaAoLado ? { position: 'relative', minHeight: 360 } : {}) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...(listaAoLado ? { position: 'absolute', inset: 0 } : {}) }}>
             {!semCatalogo && !modoCanal && (
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
@@ -4759,7 +4766,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 página, dando a sensação de "saltar" ao escrever. Com
                 altura sempre igual, só o que está lá dentro muda. */}
             {visibleItems.length === 0 ? (
-              <div style={{ height: '62vh', display: 'flex', alignItems: 'flex-start' }}>
+              <div style={{ ...(listaAoLado ? { flex: 1, minHeight: 0 } : { height: '62vh' }), display: 'flex', alignItems: 'flex-start' }}>
                 <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>
                   Nada encontrado para “{busca}”.
                 </div>
@@ -4779,7 +4786,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 <div style={{
                   display: 'flex', flexDirection: 'column', gap: 8,
                   // Análise (soLink): a lista não reserva altura — o leitor manda.
-                  ...(soLink ? { maxHeight: 460 } : { height: '62vh' }), overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
+                  ...(soLink ? { maxHeight: 460 } : listaAoLado ? { flex: 1, minHeight: 0 } : { height: '62vh' }), overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
                 }}>
                   {modoCanal && grupoAtual && !termo ? (
                     // Dentro de um cartão: um bloco por secção — "Jogo
@@ -4842,6 +4849,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                 </div>
               </>
             )}
+          </div>
           </div>
         </div>
       )}
