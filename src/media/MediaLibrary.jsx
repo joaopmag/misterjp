@@ -2689,7 +2689,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   }, []);
   const rolarListaBib = (d) => { const el = listaBibRef.current; if (el) el.scrollBy({ top: d * el.clientHeight * 0.8, behavior: 'smooth' }); };
   useEffect(() => { atualizarRolarBib(); });
-  useEffect(() => {
+  // useLayoutEffect: medido ANTES de pintar, para a lista não aparecer com
+  // uma altura e saltar logo para outra (piscava ao abrir um jogo).
+  React.useLayoutEffect(() => {
     if (!listaAoLado || typeof ResizeObserver === 'undefined') { setAlturaLeitorBib(null); return undefined; }
     const col = leitorColunaRef.current;
     const caixa = col && col.firstElementChild;
@@ -2700,7 +2702,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     ro.observe(caixa);
     return () => ro.disconnect();
   });
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     const el = listaBibRef.current;
     if (!listaAoLado || !el) return;
     const H = el.clientHeight;
@@ -3872,7 +3874,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       overflow: 'hidden',
                       /* Enquanto o YouTube carrega, a imagem do próprio vídeo por
                          trás (em vez do quadrado preto) (17/11). */
-                      ...(active && active.youtubeId ? { backgroundImage: `url("https://img.youtube.com/vi/${active.youtubeId}/hqdefault.jpg")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
+                      ...(active && active.youtubeId ? { backgroundImage: `url("https://img.youtube.com/vi/${active.youtubeId}/mqdefault.jpg")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
                     }}>
                       {/* ZOOM DO CÍRCULO — só o vídeo e os desenhos se
                           aproximam (ver `zoomBib`); as barras de ferramentas,

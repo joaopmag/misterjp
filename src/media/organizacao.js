@@ -267,11 +267,14 @@ export const SECOES_CANAL = [
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
 
+const memoriaCompilacoes = new Map(); // cópia em memória (ver lerCacheCacifo)
 export function lerCompilacoes(chave) {
+  if (memoriaCompilacoes.has(chave)) return memoriaCompilacoes.get(chave);
   try { const v = JSON.parse(localStorage.getItem(chave) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
 }
 
 export function gravarCompilacoes(chave, lista) {
+  memoriaCompilacoes.set(chave, lista);
   try { localStorage.setItem(chave, JSON.stringify(lista)); } catch (e) { /* sem espaço / modo privado */ }
 }
 

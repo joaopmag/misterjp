@@ -421,6 +421,19 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   MEMÓRIA da Sala do Portal (`memoriaPortalBib`) e de Os meus vídeos
   (`memoriaJuntos`): voltam logo mesmo com o armazenamento do aparelho
   cheio (aí a cópia em localStorage falha em silêncio).
+- 17/11, SESSÃO E ARMAZENAMENTO: o token do staff (`misterjp-auth`) vive no
+  mesmo localStorage que as cópias do Portal. Cheio, o token renovado não
+  se grava e, ao recarregar (ex.: depois de publicar), pedia outra vez a
+  entrada ("Sem sessão válida"). `supabaseClient.js`: armazenamento próprio
+  da sessão que, se a escrita falhar, apaga as cópias da app
+  (`limparCachesDaApp`: portal-bib, cacifo, compilacoes :servidor/:mp4) e
+  tenta outra vez; ao abrir, limpa-as se o armazenamento passar de ~3,5 M
+  carateres. A cópia da Sala do Portal passa a ser leve (sem data:…, máx.
+  400 mil carateres). Cacifo e Os meus vídeos com cópia em memória
+  (`memoriaCacifo`, `memoriaCompilacoes`): sem "…" a piscar ao voltar.
+- Sala: medições da lista (`alturaLeitorBib`, `gapListaBib`) em
+  useLayoutEffect (antes de pintar): a lista já não salta ao abrir um jogo.
+  Fundo do leitor com `mqdefault` (16:9, igual ao do YouTube).
 - Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
   "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
   trocar Competição/Amigáveis não mexer.

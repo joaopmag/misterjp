@@ -207,7 +207,14 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   const [meusClipes, setMeusClipes] = useState(() => (cacheBib && Array.isArray(cacheBib.meus) ? cacheBib.meus : []));
   useEffect(() => {
     if (videos.length || meusClipes.length) memoriaPortalBib.set(chaveCacheBib, { videos, meus: meusClipes });
-    try { localStorage.setItem(chaveCacheBib, JSON.stringify({ videos, meus: meusClipes })); } catch (e) { /* sem espaço */ }
+    /* No aparelho só uma cópia LEVE (17/11): sem ficheiros embutidos
+       (data:…) e nunca mais de ~400 mil carateres. Uma cópia grande enchia
+       o armazenamento e fazia perder a sessão do staff (mesmo endereço). */
+    try {
+      const leve = (v) => (v && typeof v.dataUrl === 'string' && v.dataUrl.startsWith('data:') ? { ...v, dataUrl: '' } : v);
+      const txt = JSON.stringify({ videos: videos.map(leve), meus: meusClipes.map(leve) });
+      if (txt.length < 400000) localStorage.setItem(chaveCacheBib, txt); else localStorage.removeItem(chaveCacheBib);
+    } catch (e) { /* sem espaço: fica a de memória */ }
   }, [videos, meusClipes, chaveCacheBib]);
   // Se a leitura dos clipes do jogador falhar, diz-se no ecrã (antes
   // falhava em silêncio e os clipes simplesmente não apareciam).

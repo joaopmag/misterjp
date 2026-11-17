@@ -97,12 +97,19 @@ if (typeof document !== 'undefined' && !document.getElementById('mjp-fonte-cavea
   ln.onload = () => { try { document.fonts && document.fonts.load('700 16px Caveat'); document.fonts && document.fonts.load('500 16px Caveat'); } catch (e) { /* nada */ } };
 }
 
+/* Cópia em memória primeiro (17/11): com o armazenamento do aparelho
+   cheio, a cópia de lá falhava e os cartões do cacifo abriam com "…" e só
+   depois mostravam o texto (piscava). Assim, enquanto a app estiver
+   aberta, voltar ao cacifo mostra logo o que já se sabia. */
+const memoriaCacifo = new Map();
 export function lerCacheCacifo(chave) {
+  if (memoriaCacifo.has(chave)) return memoriaCacifo.get(chave);
   try { return JSON.parse(localStorage.getItem(chave) || 'null'); } catch (e) { return null; }
 }
 
 export function gravarCacheCacifo(chave, valor) {
-  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) { /* sem espaço: volta a pedir */ }
+  memoriaCacifo.set(chave, valor);
+  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) { /* sem espaço: fica a de memória */ }
 }
 
 export function chaveCacifo(tipo, teamId, code) {
@@ -111,6 +118,7 @@ export function chaveCacifo(tipo, teamId, code) {
 
 // Depois de submeter a autoavaliação, a ficha do cacifo tem de mudar logo.
 export function esquecerCacheCacifo(tipo, teamId, code) {
+  memoriaCacifo.delete(chaveCacifo(tipo, teamId, code));
   try { localStorage.removeItem(chaveCacifo(tipo, teamId, code)); } catch (e) { /* nada */ }
 }
 
