@@ -328,6 +328,29 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   (canvas → JPEG), por isso da segunda vez aparece logo. Tenta com
   `crossOrigin`; se o servidor não deixar, volta a carregar sem isso (não
   guarda, mas também não fica preto).
+- 17/11, Análise:
+  - RETIRAR DA SALA: o ✓ dos cartões (jogos por ficheiro e link, cortes)
+    abre a janela de envio com a lista "Já está na Sala" e um "Retirar" por
+    sítio (confirma na própria linha). `retirarDaSala({ tipo, id, marca })`
+    no App apaga a cópia no Canal (`marca.itemId`; marcas antigas sem
+    itemId: só se houver uma única cópia com a mesma origem) e tira a
+    marca. Cortes na ficha do adversário: tira a `equipa` (a sincronização
+    das fichas remove o vídeo).
+  - Ícones dos cartões de jogo esticados do nome à data (`esticar`).
+  - Links no editor: as paragens dos desenhos passam a CÂMARA LENTA
+    (0,25×, `VELOCIDADE_LENTA_LINK` em `usePausasDesenho`, como na Sala),
+    porque o YouTube parado mostra o botão de pausa e o título. Vale no
+    editor e no leitor dos cortes por link. Sem Relvado, Fora de jogo e
+    Medir nos links.
+  - Seletor "Análise individual" por posição (GR, DC, DE…, `optgroup`,
+    depois pelo número). Corte à mão com seletor de Etiqueta (usa
+    `pendingTag`) ao lado da análise individual.
+  - O editor cabe no ecrã: `useAlturaAteAoFundo` mede do topo do editor
+    ao fundo do <main> (com a página no topo) e, ao abrir um vídeo, a
+    página volta ao topo. Painel Desenhar compacto (Recuar/Avançar/Limpar
+    numa linha, lista de paragens com 3 à vista, nota numa linha); ao
+    aparecer o formulário do corte, o painel desloca-se até ele. Em ecrãs
+    baixos (menos de ~850 px) o painel ainda desloca por dentro.
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

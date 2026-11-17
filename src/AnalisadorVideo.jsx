@@ -1503,17 +1503,31 @@ export function formasParaZoom(lista, congelado) {
    paragem segue em frente (como na Sala de Vídeo); fora do desenho, dar
    play em cima de uma paragem mostra-a. Puxar a barra para trás faz as
    paragens que ficam à frente voltarem TODAS a parar. */
+/* LINKS DO YOUTUBE (17/11): em vez de parar, CÂMARA LENTA (como na Sala
+   de Vídeo). Um YouTube parado mostra o botão de pausa e o título por cima
+   da imagem; a 0,25× continua "a tocar" e os desenhos leem-se na mesma.
+   No fim da paragem volta à velocidade que tinha. `congelado.lento` diz
+   aos ecrãs que é câmara lenta e não vídeo parado. */
+export const VELOCIDADE_LENTA_LINK = 0.25; // o mínimo que o YouTube aceita
 export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPlayRef = null) {
-  const [congelado, setCongelado] = useState(null); // { A, dec, total } enquanto o vídeo está parado num desenho
+  const [congelado, setCongelado] = useState(null); // { A, dec, total, lento } enquanto o vídeo está parado (ou lento) num desenho
   const formasRef = useRef(formas);
   formasRef.current = formas;
   const ativoRef = useRef(ativo);
   ativoRef.current = ativo;
   const st = useRef({ prev: null, congel: null, proprio: false, el: null, ultimaA: null });
+  // Câmara lenta a acabar (ou cortada): a velocidade de antes.
+  const repor = (s) => {
+    if (s.congel && s.congel.lento && s.el) { try { s.el.playbackRate = s.congel.taxa || 1; } catch (e) { /* nada */ } }
+  };
   // Larga a paragem em curso e deixa o vídeo parado onde está (para editar).
   const cancelar = React.useCallback(() => {
     const s = st.current;
-    if (s.congel) { s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); }
+    if (s.congel) {
+      const lento = s.congel.lento;
+      repor(s); s.ultimaA = s.congel.A; s.congel = null; setCongelado(null);
+      if (lento && s.el && !s.el.paused) s.el.pause();
+    }
   }, []);
   useEffect(() => { if (!ativo) cancelar(); }, [ativo, cancelar]);
   useEffect(() => {
@@ -1524,14 +1538,14 @@ export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPla
       if (!v) return;
       const t = v.currentTime;
       if (s.proprio) { s.proprio = false; s.prev = t; return; }
-      if (s.congel) { s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); s.prev = t; return; } // play a meio de uma paragem = seguir já
+      if (s.congel) { repor(s); s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); s.prev = t; return; } // play a meio de uma paragem = seguir já
       const naUltima = s.ultimaA != null && Math.abs(t - s.ultimaA) < JANELA_PARAGEM;
       const saltar = naUltima || !!(semParagemNoPlayRef && semParagemNoPlayRef.current);
       s.prev = saltar ? t + 0.001 : t - 0.05; // fora do desenho, play em cima de um desenho mostra a paragem
     };
     const aoProcurar = () => {
       const s = st.current;
-      if (s.congel) { s.congel = null; setCongelado(null); }
+      if (s.congel) { repor(s); s.congel = null; setCongelado(null); }
       s.ultimaA = null;
       s.prev = null;
     };
@@ -1539,8 +1553,8 @@ export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPla
       const s = st.current;
       if (s.el === v) return;
       if (s.el) { s.el.removeEventListener('play', aoTocar); s.el.removeEventListener('seeking', aoProcurar); }
+      if (s.congel) { repor(s); s.congel = null; setCongelado(null); }
       s.el = v; s.prev = null; s.ultimaA = null;
-      if (s.congel) { s.congel = null; setCongelado(null); }
       if (v) { v.addEventListener('play', aoTocar); v.addEventListener('seeking', aoProcurar); }
     };
     const passo = () => {
@@ -1549,6 +1563,19 @@ export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPla
       ligar(v || null);
       if (!v) return;
       const s = st.current;
+      if (s.congel && s.congel.lento) {
+        // Câmara lenta: pausa a meio (o utilizador) = acabou a paragem.
+        const dec = (performance.now() - s.congel.t0) / 1000;
+        if (v.paused || dec >= s.congel.total) {
+          repor(s);
+          s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); ultimoDec = -1;
+          s.prev = v.currentTime;
+          return;
+        }
+        const d = Math.floor(dec * 10) / 10;
+        if (d !== ultimoDec) { ultimoDec = d; setCongelado(c => (c ? { ...c, dec } : c)); }
+        return;
+      }
       if (s.congel) {
         const dec = (performance.now() - s.congel.t0) / 1000;
         if (dec >= s.congel.total) {
@@ -1574,6 +1601,14 @@ export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPla
       if (A == null) return;
       const grupo = lista.filter(sh => Math.abs((sh.criadoEmTempo ?? 0) - A) < JANELA_PARAGEM);
       const total = Math.max(...grupo.map(segDe));
+      if (v.ehYoutube) {
+        const taxa = v.playbackRate || 1;
+        v.playbackRate = VELOCIDADE_LENTA_LINK;
+        s.congel = { A, t0: performance.now(), total, lento: true, taxa };
+        ultimoDec = 0;
+        setCongelado({ A, dec: 0, total, lento: true });
+        return;
+      }
       v.pause();
       s.congel = { A, t0: performance.now(), total };
       ultimoDec = 0;
@@ -1892,8 +1927,42 @@ function ColarLinkModal({ destinos, equipas, onGuardar, onClose, ficheiro = null
   );
 }
 
+/* ONDE ESTÁ NA SALA, COM "RETIRAR" (17/11). Uma linha por sítio para onde
+   foi enviado. Retirar pede confirmação na própria linha (a janela não
+   cresce nem mexe). `marcas`: [{ rotulo, ... }]. */
+function NaSalaLista({ marcas, onRetirar }) {
+  const [aConfirmar, setAConfirmar] = useState(-1);
+  const [aTirar, setATirar] = useState(false);
+  if (!marcas || !marcas.length) return null;
+  const botao = (cor) => ({ background: 'transparent', border: 'none', padding: '2px 4px', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: cor, ...body });
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: T.mutedDim }}>Já está na Sala</div>
+      {marcas.map((m, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 26, padding: '2px 8px', borderRadius: 6, background: T.surfaceRaise }}>
+          <Check size={13} color={T.good} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.rotulo}>{m.rotulo || 'Sala de Vídeo'}</span>
+          {onRetirar && (aConfirmar === i ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: T.muted }}>Tirar da Sala?</span>
+              <button type="button" disabled={aTirar} style={botao(T.bad)} onClick={async () => {
+                try { setATirar(true); await onRetirar(m); } finally { setATirar(false); setAConfirmar(-1); }
+              }}>Sim</button>
+              <button type="button" style={botao(T.muted)} onClick={() => setAConfirmar(-1)}>Não</button>
+            </span>
+          ) : (
+            <button type="button" style={{ ...botao(T.muted), flexShrink: 0 }} onClick={() => setAConfirmar(i)} title="Tirar da Sala de Vídeo (o original fica na Análise)">
+              <X size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />Retirar
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ENVIAR UM JOGO INTEIRO PARA A SALA DE VÍDEO (ficheiro do Estúdio ou link). */
-function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
+function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose, onRetirar }) {
   const d = destinos || { jogos: [] };
   const [titulo, setTitulo] = useState(jogo.titulo || '');
   const dj = useDestinoJogo('jogo');
@@ -1912,7 +1981,6 @@ function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
       setFeito(v.dados.rotulo);
     } catch (e) { setErro(e.message || String(e)); } finally { setAEnviar(false); }
   };
-  const ja = (jogo.enviadoSala || []).map(e => e.rotulo).filter(Boolean);
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '12vh 16px 16px' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
@@ -1925,8 +1993,9 @@ function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
           <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
         </label>
         <CamposDestinoJogo dj={dj} jogos={d.jogos} equipas={equipas} />
+        <NaSalaLista marcas={jogo.enviadoSala || []} onRetirar={onRetirar} />
         <div style={{ fontSize: 12, minHeight: 18, color: erro ? T.bad : T.good }}>
-          {erro || (feito ? `✓ Enviado: ${feito}` : (ja.length ? `Já está em: ${ja.join('; ')}` : ''))}
+          {erro || (feito ? `✓ Enviado: ${feito}` : '')}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>{feito ? 'Fechar' : 'Cancelar'}</Btn>
@@ -1937,7 +2006,7 @@ function EnviarJogoModal({ jogo, destinos, equipas, onEnviar, onClose }) {
   );
 }
 
-function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicial }) {
+function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicial, onRetirar }) {
   const d = destinos || { pastas: [], jogos: [], fichas: [] };
   const [titulo, setTitulo] = useState(() => (clip.note || '').trim() || [tag && tag.label, clip.originalTitulo].filter(Boolean).join(' · ') || 'Clipe');
   // Por omissão, Adversários (é para lá que vai a maior parte dos cortes).
@@ -2073,9 +2142,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
                 )}
               </label>
             )}
-            {clipeNaSala(clip) && textoNaSala(clip) && (
-              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Já enviado para: {textoNaSala(clip)}</div>
-            )}
+            <NaSalaLista marcas={marcasNaSala(clip)} onRetirar={onRetirar} />
             {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -2090,6 +2157,48 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose, destinoInicia
 
 /* O Estúdio está fora da vista? Só aí se rola a página até ele (abrir um
    clipe ou desenhar com o Estúdio à vista NÃO mexe a página). */
+/* O EDITOR CABE NO ECRÃ (17/11). A altura do editor é o espaço que sobra
+   do sítio onde ele começa até ao fundo do ecrã, com a página no topo:
+   título, barra e editor inteiros à vista, sem deslocar. Quem desloca é o
+   <main> (computador) ou a janela (telemóvel). Ao abrir um vídeo, a página
+   volta ao topo uma vez. */
+function paiQueDesloca(el) {
+  let p = el && el.parentElement;
+  while (p && p !== document.body && p !== document.documentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if (o === 'auto' || o === 'scroll') return p;
+    p = p.parentElement;
+  }
+  return null;
+}
+const MARGEM_FUNDO_EDITOR = 16;
+const ALTURA_MIN_EDITOR = 420;
+function useAlturaAteAoFundo(ref, ativo, chave) {
+  const [altura, setAltura] = useState(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!ativo || !el) { setAltura(null); return undefined; }
+    const pai = paiQueDesloca(el);
+    // Ao abrir: página no topo (o editor fica todo à vista).
+    try { if (pai) pai.scrollTop = 0; else window.scrollTo(0, 0); } catch (e) { /* nada */ }
+    const medir = () => {
+      const r = el.getBoundingClientRect();
+      const topoPai = pai ? pai.getBoundingClientRect().top : 0;
+      const desl = pai ? pai.scrollTop : window.scrollY;
+      const visivel = pai ? pai.clientHeight : window.innerHeight;
+      const inicio = r.top - topoPai + desl; // onde começa o editor, com a página no topo
+      setAltura(Math.max(ALTURA_MIN_EDITOR, Math.floor(visivel - inicio - MARGEM_FUNDO_EDITOR)));
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    const ro = typeof ResizeObserver !== 'undefined' && pai ? new ResizeObserver(medir) : null;
+    if (ro) ro.observe(pai);
+    return () => { window.removeEventListener('resize', medir); if (ro) ro.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ativo, chave]);
+  return altura;
+}
+
 function estudioForaDaVista(el) {
   const r = el.getBoundingClientRect();
   return r.bottom < 80 || r.top > window.innerHeight - 80;
@@ -2541,7 +2650,29 @@ const ehClipeAtleta = (c) => !!c && c.origem === 'atleta';
    ter uma equipa, que o põe na ficha desse adversário (e no Canal ›
    Adversários). */
 const clipeNaSala = (c) => !!c && (((c.enviadoSala || []).length > 0) || !!c.equipa);
+/* Os sítios da Sala onde está um corte: a ficha do adversário (`equipa`,
+   sincronizada sozinha) e os envios (`enviadoSala`). */
+const marcasNaSala = (c) => [
+  ...(c && c.equipa ? [{ destino: 'fichaEquipa', rotulo: `Adversários › ${c.equipa}` }] : []),
+  ...((c && c.enviadoSala) || []).filter(e => e && e.destino !== 'adversario'),
+];
 const textoNaSala = (c) => [c && c.equipa ? `Adversários › ${c.equipa}` : null, ...((c && c.enviadoSala) || []).filter(e => e && e.destino !== 'adversario').map(e => e.rotulo)].filter(Boolean).join('; ');
+
+/* JOGADORES POR POSIÇÃO (17/11): a mesma ordem do Plantel (GR, DC, DE…,
+   e dentro de cada posição pelo número). Cópia de `POSITIONS` de
+   dominio/jogadores.jsx, para a Análise não puxar esse módulo. */
+const ORDEM_POSICOES = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
+function gruposPorPosicao(jogadores) {
+  const i = (j) => { const k = ORDEM_POSICOES.indexOf(String((j && j.position) || '').toUpperCase()); return k === -1 ? ORDEM_POSICOES.length : k; };
+  const ord = [...(jogadores || [])].sort((a, b) => (i(a) - i(b)) || ((Number(a.number) || 99) - (Number(b.number) || 99)) || String(a.name || '').localeCompare(String(b.name || ''), 'pt'));
+  const grupos = [];
+  ord.forEach(j => {
+    const pos = ORDEM_POSICOES[i(j)] || 'Sem posição';
+    const g = grupos[grupos.length - 1];
+    if (g && g[0] === pos) g[1].push(j); else grupos.push([pos, [j]]);
+  });
+  return grupos;
+}
 
 /* JOGO DE UM CLIPE DE ATLETA — para catalogar os clipes por jogo. O
    clipe guarda o título do vídeo onde foi feito (`originalTitulo`, ex.:
@@ -3278,7 +3409,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null, equipasCompeticao = [], quotaJogosBytes = 30e9 }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala, recuperarOriginal, nomeNossaEquipa = '', garantirFichaAdversario, criarFichaAdversario, jogosLink = [], cortesLink = [], jogadores = [], criarJogoLink = null, enviarLinkParaCanal = null, abrirLink = null, apagarLink = null, renomearLink = null, renderPainelLinks = null, enviarJogoFicheiroParaCanal = null, equipasCompeticao = [], quotaJogosBytes = 30e9, retirarDaSala = null }) {
   EQUIPA_DO_ANALISADOR = teamId || '';
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -3439,6 +3570,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setClipes(prev => prev.map(c => (c.id === clip.id ? juntar(c) : c)));
     setClipeAReproduzir(prev => (prev && prev.id === clip.id ? juntar(prev) : prev));
     setClipeParaSala(prev => (prev && prev.id === clip.id ? juntar(prev) : prev));
+  };
+  /* Tirar um corte da Sala: da ficha do adversário (sai sozinho quando o
+     corte deixa de ter equipa) ou de um envio (a cópia no Canal). */
+  const retirarCorteDaSala = (clip, marca) => {
+    const atualizar = (fn) => {
+      setClipes(prev => prev.map(c => (c.id === clip.id ? fn(c) : c)));
+      setClipeAReproduzir(prev => (prev && prev.id === clip.id ? fn(prev) : prev));
+      setClipeParaSala(prev => (prev && prev.id === clip.id ? fn(prev) : prev));
+    };
+    if (marca.destino === 'fichaEquipa') { atualizar(c => ({ ...c, equipa: null, envioFicha: null })); return; }
+    if (retirarDaSala) retirarDaSala({ tipo: 'clipe', id: clip.id, marca });
+    const igual = (e) => (marca.itemId ? e.itemId === marca.itemId : (e.rotulo === marca.rotulo && e.em === marca.em));
+    atualizar(c => ({ ...c, enviadoSala: (c.enviadoSala || []).filter(e => !igual(e)) }));
   };
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
   const [editarClipeAoAbrir, setEditarClipeAoAbrir] = useState(false); // lápis no cartão: abre o clipe já em edição
@@ -3679,6 +3823,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const originalLink = React.useMemo(() => linkParaEditor(linkNoEditor), [linkNoEditor]);
   const originalAtivo = originalFicheiro || originalLink;
   const ehLinkNoEditor = !!(originalAtivo && originalAtivo.fonte === 'youtube');
+  // Ao abrir um link, larga as ferramentas que só existem nos ficheiros.
+  useEffect(() => {
+    if (!ehLinkNoEditor) return;
+    if (['foraDeJogo', 'medida', 'seguir'].includes(tool)) setTool('seta');
+    setPainelRelvado(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ehLinkNoEditor]);
   // Apagado (90 dias) enquanto estava aberto: fecha o editor.
   useEffect(() => {
     if (originalAtivo && originalAtivo.ficheiroApagado) setOriginalAtivoId(null);
@@ -3927,10 +4078,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      margem direita que o texto deixa livre (LARGURA_ICONES_*).
      `topo` (px desde o topo do cartão) ou, sem ele, presos ao fundo.
      `colunas`: 1 = pilha vertical; 2 = grelha 2×2. */
-  const iconesNoCorpo = (acoes, { topo = null, colunas = 1 } = {}) => (
+  /* `esticar` (cartões de jogo): a coluna vai do título à última linha,
+     com o primeiro ícone ao nível do nome e o último ao nível da data. */
+  const iconesNoCorpo = (acoes, { topo = null, colunas = 1, esticar = false } = {}) => (
     <span style={{
-      position: 'absolute', right: colunas > 1 ? 3 : 5, ...(topo != null ? { top: topo } : { bottom: 4 }),
-      display: 'grid', gridTemplateColumns: `repeat(${colunas}, ${colunas > 1 ? 20 : 22}px)`, gap: colunas > 1 ? 1 : 2,
+      position: 'absolute', right: colunas > 1 ? 3 : 5,
+      ...(esticar ? { top: topo, bottom: 6, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }
+        : { ...(topo != null ? { top: topo } : { bottom: 4 }), display: 'grid', gridTemplateColumns: `repeat(${colunas}, ${colunas > 1 ? 20 : 22}px)`, gap: colunas > 1 ? 1 : 2 }),
     }}>
       {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, false, colunas > 1 ? 20 : 22))}
     </span>
@@ -3970,9 +4124,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     {/* Ações diretas, em coluna à direita do texto. */}
     {iconesNoCorpo([
       renomearLink && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.title || ''); setEditandoNomeId(v.id); }],
-      enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+      enviarLinkParaCanal && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar ou retirar)' : 'Enviar para a Sala de Vídeo', () => setLinkParaCanal(v), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
       apagarLink && [X, 'Apagar', () => apagarLink(v), '#ff8a8a'],
-    ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
+    ], { topo: ALTURA_MINIATURA_JOGO + 5, esticar: true })}
     </div>
   );
 
@@ -4286,15 +4440,32 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [atletaParaClipe, setAtletaParaClipe] = useState('');
   const seletorAnaliseInd = (compacto) => (
     <label title="Cada corte gravado vai também para a análise individual deste jogador (e para o Portal dele)."
-      style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: TV.mutedDim, letterSpacing: 0.3, ...body, ...(compacto ? { flexBasis: '100%' } : {}) }}>
+      style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: TV.mutedDim, letterSpacing: 0.3, minWidth: 0, ...body, ...(compacto ? { flexBasis: '100%' } : {}) }}>
       <span style={{ textTransform: 'uppercase' }}>Análise individual</span>
       <select value={atletaParaClipe} onChange={e => setAtletaParaClipe(e.target.value)}
         style={{ width: '100%', background: TV.surface, border: `1px solid ${atletaParaClipe ? TV.gold : TV.line}`, borderRadius: 7, color: atletaParaClipe ? TV.gold : TV.cream, padding: '6px 8px', fontSize: 12, height: 32, ...body }}>
         <option value="">Não (só corte)</option>
-        {(jogadores || []).map(j => <option key={j.id} value={String(j.id)}>{j.name}</option>)}
+        {gruposPorPosicao(jogadores).map(([pos, lista]) => (
+          <optgroup key={pos} label={pos}>
+            {lista.map(j => <option key={j.id} value={String(j.id)}>{j.number ? `${j.number}. ` : ''}{j.name}</option>)}
+          </optgroup>
+        ))}
       </select>
     </label>
   );
+  const seletorEtiquetaCorte = () => {
+    const tg = TAGS.find(t => t.id === pendingTag);
+    return (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10.5, color: TV.mutedDim, letterSpacing: 0.3, minWidth: 0, ...body }}>
+        <span style={{ textTransform: 'uppercase' }}>Etiqueta</span>
+        <select value={pendingTag || ''} onChange={e => setPendingTag(e.target.value || null)}
+          style={{ width: '100%', minWidth: 0, background: TV.surface, border: `1px solid ${tg ? tg.color : TV.line}`, borderRadius: 7, color: tg ? tg.color : TV.cream, padding: '6px 8px', fontSize: 12, height: 32, ...body }}>
+          <option value="">Sem etiqueta</option>
+          {TAGS_ATIVAS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
+      </label>
+    );
+  };
   const [avisoCodif, setAvisoCodif] = useState(null); // { texto, cor } — "Clipe gravado", some sozinho
   const avisoCodifTimer = useRef(null);
   const gravarIntervalo = async (ini, fim, tagId, nota) => {
@@ -4821,7 +4992,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {iconesNoCorpo([
           [copiedId === clip.id ? Check : Share2, copiedId === clip.id ? 'Copiado' : 'Partilhar', async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }],
           [Pencil, 'Editar', () => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }],
-          enviarParaSala && [naSala ? Check : Tv, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar outra vez)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
+          enviarParaSala && [naSala ? Check : Tv, naSala ? `Na Sala de Vídeo: ${textoNaSala(clip)} (enviar ou retirar)` : 'Enviar para a Sala de Vídeo', () => setClipeParaSala(clip), naSala ? '#7fe0a0' : undefined],
           [X, 'Apagar', () => removerClipe(clip), '#ff8a8a'],
         ], { colunas: 2 })}
       </div>
@@ -5433,6 +5604,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      etiquetas ficam nas faixas pretas ao lado do vídeo (que fica com a
      altura toda); abaixo de ~900 px vão para baixo da barra. */
   const [estreitoBancada, setEstreitoBancada] = useState(false);
+  const alturaEditor = useAlturaAteAoFundo(containerRef, !!originalAtivo && !fullscreen && !estreitoBancada, originalAtivoId);
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
@@ -5564,6 +5736,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return out;
   })();
   // Corte à mão: Início / Fim, nota e guardar (também a desenhar).
+  // Ao aparecer o formulário, o painel desloca-se até ele (a página não mexe).
+  const formCorteRef = useRef(null);
+  useEffect(() => {
+    if (!marcadoClipe || !formCorteRef.current) return;
+    const el = formCorteRef.current;
+    const pai = el.closest('.mjp-sem-scroll');
+    if (!pai) return;
+    const r = el.getBoundingClientRect(); const rp = pai.getBoundingClientRect();
+    if (r.bottom > rp.bottom) pai.scrollTop += r.bottom - rp.bottom + 8;
+  }, [marcadoClipe]);
   const corteAMao = () => (
     <div style={{ marginTop: 14 }}>
       {tituloSecao('Corte à mão')}
@@ -5578,23 +5760,31 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           <button type="button" onClick={markOut} title="Marcar o fim no instante atual" style={botaoBarra}><Flag size={13} color={TV.bad} /> Fim</button>
           <CampoTempo rotulo="Fim do corte" valor={outPoint} max={duration} onEscolher={escreverOut} />
         </div>
-        {(inPoint != null || outPoint != null) && !clipeEmDesenho && (
+        {(inPoint != null || outPoint != null) && !clipeEmDesenho && !marcadoClipe && (
           <button type="button" onClick={limparMarcas} style={botaoBarra}><X size={13} /> Limpar</button>
         )}
       </div>
       {marcadoClipe && !clipeEmDesenho && (
-        <div style={{ background: TV.surfaceRaise, borderRadius: 8, padding: 10, marginTop: 8 }}>
-          <div style={{ fontSize: 11.5, color: TV.muted, marginBottom: 6, ...mono }}>
-            {fmt(inPoint)}–{fmt(outPoint)} · {Math.round(outPoint - inPoint)}s{nDesenhosClipe > 0 ? ` · ${nDesenhosClipe} desenho(s)` : ''}
+        <div ref={formCorteRef} style={{ background: TV.surfaceRaise, borderRadius: 8, padding: 10, marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: TV.muted, whiteSpace: 'nowrap', ...mono }}>
+              {fmt(inPoint)}–{fmt(outPoint)} · {Math.round(outPoint - inPoint)}s{nDesenhosClipe > 0 ? ` · ${nDesenhosClipe} desenho${nDesenhosClipe === 1 ? '' : 's'}` : ''}
+            </span>
+            <button type="button" onClick={limparMarcas} title="Limpar o início e o fim" aria-label="Limpar o início e o fim" style={{ ...botaoBarra, padding: '4px 6px' }}><X size={13} /></button>
           </div>
-          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opcional)…" rows={2}
-            style={{ width: '100%', background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
-          {(jogadores || []).length > 0 && <div style={{ marginTop: 6 }}>{seletorAnaliseInd(false)}</div>}
-          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Btn variant="solid" onClick={() => guardarClipe(null)} disabled={aGuardarClipe} style={{ padding: '6px 10px', fontSize: 12 }}>
-              {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Check size={13} />} {aGuardarClipe ? 'A gravar…' : 'Guardar sem etiqueta'}
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opcional)…" rows={1}
+            style={{ width: '100%', height: 34, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: '7px 8px', fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
+          {/* Etiqueta escolhida aqui (17/11): ir a Codificar a meio do corte
+              gravava outros tempos. Lado a lado com a análise individual,
+              para o painel não crescer. */}
+          <div style={{ display: 'grid', gridTemplateColumns: (jogadores || []).length > 0 ? 'minmax(0,1fr) minmax(0,1fr)' : '1fr', gap: 6, marginTop: 6 }}>
+            {seletorEtiquetaCorte()}
+            {(jogadores || []).length > 0 && seletorAnaliseInd(false)}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn variant="solid" onClick={() => guardarClipe(pendingTag)} disabled={aGuardarClipe} style={{ padding: '6px 10px', fontSize: 12 }}>
+              {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Check size={13} />} {aGuardarClipe ? 'A gravar…' : (pendingTag ? 'Guardar corte' : 'Guardar sem etiqueta')}
             </Btn>
-            <span style={{ fontSize: 11, color: TV.mutedDim, ...body }}>ou toca numa etiqueta em Codificar</span>
           </div>
         </div>
       )}
@@ -5848,9 +6038,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {/* Ações diretas, em coluna à direita do texto. */}
             {iconesNoCorpo([
               !v.ficheiroApagado && [Pencil, 'Mudar o nome', () => { setNomeEditado(v.titulo); setEditandoNomeId(v.id); }],
-              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar outra vez)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
+              enviarJogoFicheiroParaCanal && v.pronto !== false && !v.ficheiroApagado && [(v.enviadoSala || []).length ? Check : Tv, (v.enviadoSala || []).length ? 'Na Sala de Vídeo (enviar ou retirar)' : 'Enviar para a Sala de Vídeo (e Portal)', () => setJogoParaCanal({ tipo: 'ficheiro', v }), (v.enviadoSala || []).length ? '#7fe0a0' : undefined],
               [X, v.ficheiroApagado ? 'Tirar o registo' : 'Apagar', () => apagarOriginal(v), '#ff8a8a'],
-            ], { topo: ALTURA_MINIATURA_JOGO + 7 })}
+            ], { topo: ALTURA_MINIATURA_JOGO + 5, esticar: true })}
             </div>
           )))}
           {/* CARTÃO DE ADICIONAR, conforme a forma de trabalhar: no Estúdio
@@ -5938,8 +6128,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           position: 'relative',
           background: TV.surface, borderRadius: fullscreen ? 0 : 12, border: `1px solid ${TV.line}`, overflow: 'hidden',
           display: 'flex', flexDirection: estreitoBancada ? 'column' : 'row',
-          height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : 'calc(100vh - 120px)'),
-          minHeight: estreitoBancada || fullscreen ? undefined : 480,
+          height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : (alturaEditor ? alturaEditor : 'calc(100vh - 120px)')),
+          minHeight: estreitoBancada || fullscreen ? undefined : ALTURA_MIN_EDITOR,
         }}>
           <style>{'.mjp-sem-scroll::-webkit-scrollbar{display:none}'}</style>
 
@@ -6212,7 +6402,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               <div style={{ position: 'absolute', left: 10, top: 10, display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'none', zIndex: 7, maxWidth: '70%' }}>
                 {congeladoEditor && (
                   <span style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.18)', color: '#fff', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, ...body }}>
-                    Vídeo parado · {Math.max(0, Math.ceil(congeladoEditor.total - congeladoEditor.dec))}s
+                    {congeladoEditor.lento ? 'Câmara lenta' : 'Vídeo parado'} · {Math.max(0, Math.ceil(congeladoEditor.total - congeladoEditor.dec))}s
                   </span>
                 )}
                 {gravacoesCodif.map(g => (
@@ -6440,9 +6630,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     ))}
                     <ToolBtn compacto icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
                     {!ehLinkNoEditor && <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />}
-                    <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
-                    <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
-                    {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
+                    {/* Relvado, Fora de jogo e Medir: só nos ficheiros (precisam da imagem parada e medida). */}
+                    {!ehLinkNoEditor && <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />}
+                    {!ehLinkNoEditor && <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />}
+                    {!ehLinkNoEditor && calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
                     <ToolBtn compacto icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
                   </div>
                   {tituloSecao('Cor', 12)}
@@ -6454,18 +6645,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       }} />
                     ))}
                   </div>
-                  {tituloSecao('Vídeo parado nos novos itens', 12)}
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {tituloSecao(ehLinkNoEditor ? 'Câmara lenta nos novos itens' : 'Vídeo parado nos novos itens', 12)}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }} title="Para mudar um item já feito, toca nele no vídeo.">
                     {[1, 2, 3, 5, 8, 10].map(sg => (
                       <button key={sg} type="button" onClick={() => setSegNovos(sg)} style={{ ...botaoBarra, ...(segNovos === sg ? { background: TV.gold, borderColor: TV.gold, color: '#111' } : {}) }}>{sg}s</button>
                     ))}
                   </div>
-                  <div style={{ fontSize: 11, color: TV.mutedDim, marginTop: 5, ...body }}>Para mudar um item já feito, toca nele no vídeo.</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-                    <button type="button" onClick={retroceder} disabled={!(historico.length > 0 || !!pontosEmCurso)} style={{ ...botaoBarra, opacity: historico.length > 0 || pontosEmCurso ? 1 : 0.5 }}><Undo2 size={14} /> Recuar</button>
-                    <button type="button" onClick={avancar} disabled={!(futuro.length > 0 || pontosDesfeitos.current.length > 0)} style={{ ...botaoBarra, opacity: futuro.length > 0 || pontosDesfeitos.current.length > 0 ? 1 : 0.5 }}><Redo2 size={14} /> Avançar</button>
+                  {/* Painel compacto (17/11): Recuar, Avançar e Limpar numa só linha,
+                      para o painel caber na altura do editor sem deslocar. */}
+                  <div style={{ display: 'flex', gap: 5, marginTop: 10 }}>
+                    <button type="button" onClick={retroceder} disabled={!(historico.length > 0 || !!pontosEmCurso)} style={{ ...botaoBarra, padding: '6px 8px', opacity: historico.length > 0 || pontosEmCurso ? 1 : 0.5 }}><Undo2 size={14} /> Recuar</button>
+                    <button type="button" onClick={avancar} disabled={!(futuro.length > 0 || pontosDesfeitos.current.length > 0)} style={{ ...botaoBarra, padding: '6px 8px', opacity: futuro.length > 0 || pontosDesfeitos.current.length > 0 ? 1 : 0.5 }}><Redo2 size={14} /> Avançar</button>
                     <span style={{ flex: 1 }} />
-                    <button type="button" onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} disabled={!shapes.length} style={{ ...botaoBarra, opacity: shapes.length ? 1 : 0.5 }}><Trash2 size={14} /> Limpar tudo</button>
+                    <button type="button" title="Apagar todos os desenhos deste vídeo" onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} disabled={!shapes.length} style={{ ...botaoBarra, padding: '6px 8px', opacity: shapes.length ? 1 : 0.5 }}><Trash2 size={14} /> Limpar</button>
                   </div>
                   {trajetoriaFocoPendente && !processandoFoco && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
@@ -6480,24 +6672,27 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </div>
                   )}
                   {tituloSecao(`Paragens neste vídeo · ${paragensDoVideo.length}`, 14)}
-                  {paragensDoVideo.length === 0 && <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>Para o vídeo no momento certo e desenha. Cada momento com desenhos aparece aqui.</div>}
+                  {paragensDoVideo.length === 0 && <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>{ehLinkNoEditor ? 'Para o vídeo no momento certo e desenha. Ao ver, o vídeo passa a câmara lenta nesses momentos.' : 'Para o vídeo no momento certo e desenha. Cada momento com desenhos aparece aqui.'}</div>}
+                  {/* Com muitas paragens, a lista desloca-se sozinha (cabem 3). */}
+                  <div className="mjp-sem-scroll" style={{ maxHeight: 3 * 46, overflowY: 'auto', scrollbarWidth: 'none' }}>
                   {paragensDoVideo.map(g => {
                     const aqui = Math.abs(current - g.t) < 0.4;
                     const nomes = [...new Set(g.formas.map(f => (FERRAMENTAS.find(([id]) => id === f.tool) || [null, null, f.tool === 'texto' ? 'Texto' : f.tool])[2]))].filter(Boolean).join(' + ');
                     const zoomC = g.formas.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
                     return (
                       <button key={g.t} type="button" onClick={() => irParaTempo(g.t)} style={{
-                        display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer', ...body,
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%', height: 40, boxSizing: 'border-box', textAlign: 'left', padding: '0 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer', ...body,
                         background: TV.surfaceRaise, border: `1px solid ${aqui ? TV.gold : 'transparent'}`, color: TV.cream,
                       }}>
                         <span style={{ ...mono, color: TV.gold, fontSize: 12.5, width: 46 }}>{fmt(g.t)}</span>
                         <span style={{ flex: 1, minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nomes || 'Desenho'}{zoomC ? ` · zoom ${String(zoomC.zoom).replace('.', ',')}×` : ''}</span>
-                          <span style={{ display: 'block', fontSize: 11, color: TV.muted }}>{g.formas.some(temParagem) ? `${Math.max(...g.formas.filter(temParagem).map(segDe))}s parado` : 'sem parar'}</span>
+                          <span style={{ display: 'block', fontSize: 11, color: TV.muted }}>{g.formas.some(temParagem) ? `${Math.max(...g.formas.filter(temParagem).map(segDe))}s ${ehLinkNoEditor ? 'em câmara lenta' : 'parado'}` : 'sem parar'}</span>
                         </span>
                       </button>
                     );
                   })}
+                  </div>
                   {corteAMao()}
                 </>
               )}
@@ -6727,42 +6922,42 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       {linkParaCanal && enviarLinkParaCanal && typeof linkParaCanal.clipInicio !== 'number' && (
         <EnviarJogoModal
           key={`linkjogo-${linkParaCanal.id}`}
-          jogo={{ titulo: linkParaCanal.title || '', enviadoSala: linkParaCanal.enviadoSala || [] }}
+          jogo={{ titulo: linkParaCanal.title || '', enviadoSala: ((jogosLink || []).find(x => x.id === linkParaCanal.id) || linkParaCanal).enviadoSala || [] }}
           destinos={destinosSala} equipas={equipasCompeticao}
           onEnviar={dados => { enviarLinkParaCanal(linkParaCanal, dados); }}
+          onRetirar={retirarDaSala ? (marca => retirarDaSala({ tipo: 'link', id: linkParaCanal.id, marca })) : null}
           onClose={() => setLinkParaCanal(null)}
         />
       )}
       {linkParaCanal && enviarLinkParaCanal && typeof linkParaCanal.clipInicio === 'number' && (
         <EnviarSalaModal
           key={`link-${linkParaCanal.id}`}
-          clip={{ id: linkParaCanal.id, note: linkParaCanal.title || '', originalTitulo: linkParaCanal.clipOrigemTitulo || '', enviadoSala: linkParaCanal.enviadoSala || [] }}
+          clip={{ id: linkParaCanal.id, note: linkParaCanal.title || '', originalTitulo: linkParaCanal.clipOrigemTitulo || '', enviadoSala: ((cortesLink || []).find(x => x.id === linkParaCanal.id) || linkParaCanal).enviadoSala || [] }}
           tag={null}
           destinos={destinosSala}
-          onEnviar={dados => {
-            enviarLinkParaCanal(linkParaCanal, dados);
-            const marca = { destino: dados.destino, rotulo: dados.rotulo };
-            setLinkParaCanal(prev => (prev ? { ...prev, enviadoSala: [...(prev.enviadoSala || []), marca] } : prev));
-          }}
+          onEnviar={dados => { enviarLinkParaCanal(linkParaCanal, dados); }}
+          onRetirar={retirarDaSala ? (marca => retirarDaSala({ tipo: 'link', id: linkParaCanal.id, marca })) : null}
           onClose={() => setLinkParaCanal(null)}
         />
       )}
       {jogoParaCanal && enviarJogoFicheiroParaCanal && (
         <EnviarJogoModal
           key={`jogo-${jogoParaCanal.v.id}`}
-          jogo={{ titulo: jogoParaCanal.v.titulo || '', enviadoSala: jogoParaCanal.v.enviadoSala || [] }}
+          jogo={{ titulo: jogoParaCanal.v.titulo || '', enviadoSala: ((videosOriginais || []).find(x => x.id === jogoParaCanal.v.id) || jogoParaCanal.v).enviadoSala || [] }}
           destinos={destinosSala} equipas={equipasCompeticao}
           onEnviar={dados => enviarJogoFicheiroParaCanal(jogoParaCanal.v, dados)}
+          onRetirar={retirarDaSala ? (marca => retirarDaSala({ tipo: 'original', id: jogoParaCanal.v.id, marca })) : null}
           onClose={() => setJogoParaCanal(null)}
         />
       )}
       {clipeParaSala && enviarParaSala && (
         <EnviarSalaModal
           key={clipeParaSala.id}
-          clip={clipeParaSala}
+          clip={(clipes || []).find(c => c.id === clipeParaSala.id) || clipeParaSala}
           tag={TAGS.find(t => t.id === clipeParaSala.tagId)}
           destinos={destinosSala}
           onEnviar={dados => enviarClipeSala(clipeParaSala, dados)}
+          onRetirar={marca => retirarCorteDaSala(clipeParaSala, marca)}
           onClose={() => setClipeParaSala(null)}
         />
       )}

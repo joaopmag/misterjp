@@ -711,6 +711,32 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     setVideos(prev => (prev || []).map(x => (x.id === v.id ? { ...x, enviadoSala: [...(x.enviadoSala || []), marca] } : x)));
     return item;
   };
+  /* TIRAR DA SALA, A PARTIR DA ANÁLISE (17/11). Quem envia tem de poder
+     retirar. `tipo`: 'original' (jogo carregado), 'link' (jogo ou corte por
+     link, tabela `videos`) ou 'clipe' (corte MP4). Apaga a cópia no Canal
+     (`marca.itemId`) e tira a marca do registo. Marcas antigas sem itemId:
+     procura a cópia pela origem; só apaga se houver exatamente uma.
+     Devolve quantas cópias saíram do Canal. */
+  const retirarDaSala = ({ tipo, id, marca }) => {
+    if (!marca) return 0;
+    const lista = videos || [];
+    let alvos = [];
+    if (marca.itemId) alvos = lista.filter(v => v && v.id === marca.itemId).map(v => v.id);
+    else {
+      const o = tipo === 'original' ? (videosOriginais || []).find(x => x.id === id) : null;
+      const cand = lista.filter(v => v && v.origemAnalise && !v.origemAnalise.auto && (
+        v.origemAnalise.linkId === id || v.origemAnalise.clipeId === id
+        || (o && o.storagePath && v.ficheiroPrivado && v.ficheiroPrivado.path === o.storagePath)));
+      if (cand.length === 1) alvos = [cand[0].id];
+    }
+    if (alvos.length) setVideos(prev => (prev || []).filter(v => !alvos.includes(v.id)));
+    const igual = (e) => e === marca || (marca.itemId ? e.itemId === marca.itemId : (e.rotulo === marca.rotulo && e.em === marca.em && e.destino === marca.destino));
+    const tirar = (x) => (x.id === id ? { ...x, enviadoSala: (x.enviadoSala || []).filter(e => !igual(e)) } : x);
+    if (tipo === 'original') setVideosOriginais(prev => (prev || []).map(tirar));
+    else if (tipo === 'link') setVideos(prev => (prev || []).map(tirar));
+    else if (tipo === 'clipe') setClipes(prev => (prev || []).map(tirar));
+    return alvos.length;
+  };
   // Referências para o botão partilhado da Biblioteca (na mesma linha dos
   // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
   // duplicar o botão dentro de cada sub-aba.
@@ -1911,6 +1937,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               criarJogoLink={criarJogoLink}
               enviarLinkParaCanal={enviarLinkParaCanal}
               enviarJogoFicheiroParaCanal={enviarJogoFicheiroParaCanal}
+              retirarDaSala={retirarDaSala}
               equipasCompeticao={nomesEquipasCompeticao(standings)}
               abrirLink={(id) => { if (linksAnaliseRef.current) linksAnaliseRef.current.irParaItem(id); }}
               renomearLink={(id, nome) => setVideosAnalise(prev => prev.map(v => (v.id === id ? { ...v, title: nome } : v)))}
