@@ -559,7 +559,8 @@ reduz o peso inicial da app e do Portal.
 
 - 17/11: Portal, cacifo → Sala de Vídeo. O toque mostra logo "A abrir a
   Sala de Vídeo…" (Cacifo.jsx, `abrirComResposta`) e a troca de ecrã faz-se
-  no fotograma seguinte. A causa real da espera era a Sala ir buscar os
+  no fotograma seguinte (o aviso só aparece se demorar mais de 0,25 s, para
+  não piscar quando é rápido). A causa real da espera era a Sala ir buscar os
   vídeos ao servidor só depois de abrir (o aquecimento do cacifo não a
   incluía, e a cópia no aparelho pode ter sido limpa). Agora o cacifo pede
   a Sala ao abrir (`aquecerSalaVideo` em vistas.jsx) e a Sala aproveita esse

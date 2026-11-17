@@ -346,8 +346,11 @@ export function PlayerCacifo({
       touchAction: 'manipulation', ...body,
     }}>
       <style>{`${CACIFO_FONTE}${PKH_CSS}${CACIFO_CSS}`}</style>
+      {/* (17/11, 2.ª) Só se vê se a troca demorar mais de 0,25 s: quando é
+          rápida (o normal, com a Sala aquecida) aparecia um fotograma e
+          parecia um piscar. */}
       {aAbrir && (
-        <div aria-live="polite" style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'grid', placeItems: 'center', background: 'rgba(10,18,14,.45)', animation: 'cfAbrir .12s ease-out' }}>
+        <div aria-live="polite" style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'grid', placeItems: 'center', background: 'rgba(10,18,14,.45)', animation: 'cfAbrir .15s ease-out .25s both' }}>
           <style>{'@keyframes cfAbrir{from{opacity:0}to{opacity:1}}@keyframes cfRoda{to{transform:rotate(360deg)}}'}</style>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 999, background: T.surface, border: `1px solid ${T.gold}`, color: T.cream, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.45)' }}>
             <span style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${T.gold}`, borderTopColor: 'transparent', animation: 'cfRoda .7s linear infinite' }} />
