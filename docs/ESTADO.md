@@ -579,6 +579,12 @@ reduz o peso inicial da app e do Portal.
   desvanecer de 0,12 s; por trás fica o fundo escuro do painel. NÃO pôr a
   miniatura por trás: é outro fotograma e outro enquadramento, e a imagem
   "mexe" quando o vídeo entra (testado e rejeitado).
+  Ao trocar de corte o leitor volta SEMPRE a esconder-se antes de pintar
+  (`useLayoutEffect` sobre `chaveIframeBib`): voltar a um corte já visto
+  mostrava preto, depois a imagem, e só então escondia. Enquanto espera
+  (saltar para o meio de um ficheiro grande pode levar 1 a 2 s) aparece
+  uma roda discreta ao fim de 0,4 s. Testado fotograma a fotograma com
+  dois ficheiros, ida e volta, servidor a demorar 0,4 s: nunca preto.
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem

@@ -2806,6 +2806,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   })();
   // Rede de segurança: se o YouTube não avisar que carregou, mostra-se na mesma.
   const chaveIframeBib = leitorBib ? leitorBib.chave : (active && active.id);
+  /* Ao trocar de vídeo, o leitor novo começa SEMPRE escondido (antes de
+     pintar). Antes, voltar a um corte já visto reaproveitava o "pronto"
+     antigo: via-se um fotograma preto, depois a imagem, e só então se
+     escondia à espera do servidor (17/11, cortes de ficheiro). */
+  React.useLayoutEffect(() => { setIframeVisivelBib(null); }, [chaveIframeBib]);
   useEffect(() => {
     if (!chaveIframeBib) return undefined;
     const t = setTimeout(() => setIframeVisivelBib(chaveIframeBib), 2500);
@@ -3956,6 +3961,16 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                            YouTube). A mesma chave de `leitorBib`: entre cortes
                            do mesmo ficheiro não recarrega. Os eventos do vídeo
                            fazem o papel das mensagens do YouTube. */
+                        <>
+                        {iframeVisivelBib !== chaveIframeBib && (
+                          /* À espera da 1.ª imagem (ficheiros grandes, a saltar
+                             para o meio do jogo): uma roda discreta, só se
+                             demorar mais de 0,4 s. */
+                          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', animation: 'mjpLeitorSurgir .2s ease-out .4s both' }}>
+                            <style>{'@keyframes mjpLeitorSurgir{from{opacity:0}to{opacity:1}}@keyframes mjpLeitorRoda{to{transform:rotate(360deg)}}'}</style>
+                            <span style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${T.gold}`, borderTopColor: 'transparent', animation: 'mjpLeitorRoda .8s linear infinite' }} />
+                          </div>
+                        )}
                         <video
                           key={leitorBib ? leitorBib.chave : active.id}
                           ref={inlineVideoRef}
@@ -3973,7 +3988,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           onTimeUpdate={(e) => infoDoVideoBib(e.currentTarget)}
                           /* Só aparece com a 1.ª imagem pronta (no ponto certo
                              do corte); até lá vê-se a miniatura por trás. */
-                          onLoadStart={() => setIframeVisivelBib(v => (v === chaveIframeBib ? null : v))}
                           onLoadedData={(e) => { if (!ativoEClipe || e.currentTarget.currentTime >= clipIni - 0.3) setIframeVisivelBib(chaveIframeBib); }}
                           onSeeked={(e) => { infoDoVideoBib(e.currentTarget); setIframeVisivelBib(chaveIframeBib); }}
                           onPlay={() => setYtATocar(true)}
@@ -3982,6 +3996,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           onClick={() => { if (ativoEClipe) alternarReproducaoBib(); else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); }}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer', opacity: iframeVisivelBib === chaveIframeBib ? 1 : 0, transition: 'opacity .12s ease-out' }}
                         />
+                        </>
                       ) : (
                         <iframe
                           // Chave e endereço vêm de `leitorBib`: entre cortes do
