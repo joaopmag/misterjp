@@ -557,6 +557,18 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 17/11: Relatório de jogo no Excel (Estatística e Assiduidade), caixas de
+  texto. Cada "Análise do jogo" escolhe a caixa onde entra
+  (`SECCOES_ANALISE` / `seccao` em RelatoriosJogo.jsx): Observações gerais
+  (A44, por omissão e para as notas antigas), Disciplina (A46, mais os
+  cartões do jogo), Fase ofensiva (A51), Fase defensiva (A53), Pontos fortes
+  (A55), Pontos fracos (A57), Bolas paradas (A59), Adversário (A62). O
+  painel mostra as caixas ainda vazias ("Por escrever no relatório").
+  Sistemas: A49 = formação da ficha do jogo; F49/K49 = `sistemas` [2.º, 3.º]
+  escolhidos no modal do relatório. A66 = estrutura habitual do adversário
+  (`quadroTatica` da ficha). Nada é deduzido do texto. Modelo: a folha
+  "Relatório 1ª Jornada" tinha texto de exemplo esquecido na linha 60
+  (altura 3, quase invisível); limpo.
 - 17/11: Portal, cacifo → Sala de Vídeo. O toque mostra logo "A abrir a
   Sala de Vídeo…" (Cacifo.jsx, `abrirComResposta`) e a troca de ecrã faz-se
   no fotograma seguinte (o aviso só aparece se demorar mais de 0,25 s, para

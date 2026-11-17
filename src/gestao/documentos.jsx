@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { parseScore } from '../competicao/dados';
 import { fichaDaEquipa } from '../media/organizacao';
-import { notasDoJogo } from '../competicao/RelatoriosJogo';
+import { notasDoJogo, seccaoDaNota } from '../competicao/RelatoriosJogo';
 import { avaliacaoBaseDoJogador, estatutoDaAvaliacao } from '../plantel/avaliacao';
 import { sortByPosition, POSITIONS, shortPlayerName } from '../dominio/jogadores';
 import { FORMACOES, LAYOUT_FORMACAO } from '../tatico/Simulador';
@@ -1222,11 +1222,36 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
       numero(`P${linha}`, min);
     });
 
-    if (m.formacao) texto('A49', /^1-/.test(m.formacao) ? m.formacao : `1-${m.formacao}`);
-    // Observações gerais: a análise do jogo (Jogos › Relatórios), todas
-    // as entradas, uma por parágrafo.
-    const notas = notasDoJogo(m).map(nt => String(nt.texto || '').trim()).filter(Boolean);
-    crescer(44, textoLongo('A44', notas.join('\n'), 150), 26.25);
+    /* ESTRUTURAS: o sistema da ficha do jogo e, se houve mudança, o 2.º e
+       o 3.º escolhidos no relatório (Jogos › Relatórios › relatório). */
+    const sistema = (f) => (f ? (/^1-/.test(f) ? f : `1-${f}`) : '');
+    const sistemas = Array.isArray(m.sistemas) ? m.sistemas : [];
+    texto('A49', sistema(m.formacao));
+    texto('F49', sistema(sistemas[0]));
+    texto('K49', sistema(sistemas[1]));
+
+    /* CAIXAS DE TEXTO: cada análise do jogo vai para a caixa que quem a
+       escreveu escolheu (ver SECCOES_ANALISE em RelatoriosJogo.jsx). As
+       antigas, sem caixa, vão para Observações Gerais, como antes. */
+    const notas = notasDoJogo(m).filter(nt => String(nt.texto || '').trim());
+    const daSeccao = (id) => notas.filter(nt => seccaoDaNota(nt) === id).map(nt => String(nt.texto).trim()).join('\n');
+    crescer(44, textoLongo('A44', daSeccao('geral'), 150), 26.25);
+    // Disciplina: o que se escreveu e, por baixo, os cartões do jogo.
+    const nomeDe = (pid) => { const p = players.find(j => j.id === pid); return p ? p.name : ''; };
+    const cartoes = convocados.map(pid => {
+      const c = (report[pid] || {}).card;
+      const tipo = c === 'yellow' ? 'Amarelo' : c === 'yellow2' ? 'Duplo amarelo (expulsão)' : c === 'red' ? 'Vermelho' : '';
+      return tipo && nomeDe(pid) ? `${tipo}: ${nomeDe(pid)}` : '';
+    }).filter(Boolean);
+    crescer(46, textoLongo('A46', [daSeccao('disciplina'), cartoes.length ? `Cartões: ${cartoes.join('; ')}` : ''].filter(Boolean).join('\n'), 150), 26.25);
+    crescer(51, textoLongo('A51', daSeccao('ofensiva'), 150), 144.75);
+    crescer(53, textoLongo('A53', daSeccao('defensiva'), 150), 98.25);
+    crescer(55, textoLongo('A55', daSeccao('fortes'), 150), 54);
+    crescer(57, textoLongo('A57', daSeccao('fracos'), 150), 52.5);
+    crescer(59, textoLongo('A59', daSeccao('bolasParadas'), 150), 42);
+    crescer(62, textoLongo('A62', daSeccao('adversario'), 150), 69.75);
+    // Estrutura habitual do adversário (ficha de Adversários).
+    if (ficha && ficha.quadroTatica) texto('A66', sistema(String(ficha.quadroTatica)));
     if (ficha) {
       const nF = textoLongo('A64', ficha.pontosFortes, 78);
       const nP = textoLongo('I64', ficha.pontosFracos, 66);

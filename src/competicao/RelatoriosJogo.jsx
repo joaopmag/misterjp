@@ -14,6 +14,42 @@ import { LINHAS } from '../dominio/plantel';
 import { CARD_OPTIONS, COR_RESULTADO, NOME_RESULTADO, marcadorDoJogo, normalizeStandings, parseScore } from './dados';
 import { ListaMultipla, irParaSeparador } from '../base/ui-extra';
 import { comQuemLaEsteve, withConvocadosInAttendance } from './Escalacao';
+import { FORMACOES, tamanhoDaFormacao } from '../tatico/Simulador';
+
+/* ONDE ENTRA CADA ANÁLISE NO RELATÓRIO EM EXCEL (17/11).
+   O modelo do relatório de jogo tem uma caixa para cada assunto. Antes, a
+   análise ia toda para "Observações Gerais" e as outras caixas ficavam
+   vazias. Agora quem escreve escolhe a caixa (por omissão, Observações
+   gerais), e o painel mostra as caixas que ainda estão vazias. Nada se
+   adivinha pelo texto: o que não se escolhe não se perde, fica nas
+   Observações gerais. As notas antigas (sem `seccao`) contam como gerais. */
+export const SECCOES_ANALISE = [
+  { id: 'geral', rotulo: 'Observações gerais' },
+  { id: 'disciplina', rotulo: 'Disciplina' },
+  { id: 'ofensiva', rotulo: 'Fase ofensiva / Transição A-D' },
+  { id: 'defensiva', rotulo: 'Fase defensiva / Transição D-A' },
+  { id: 'fortes', rotulo: 'Pontos fortes' },
+  { id: 'fracos', rotulo: 'Pontos fracos' },
+  { id: 'bolasParadas', rotulo: 'Bolas paradas' },
+  { id: 'adversario', rotulo: 'Adversário (forma de jogar)' },
+];
+export const seccaoDaNota = (n) => (n && SECCOES_ANALISE.some(x => x.id === n.seccao) ? n.seccao : 'geral');
+const rotuloSeccao = (id) => (SECCOES_ANALISE.find(x => x.id === id) || SECCOES_ANALISE[0]).rotulo;
+function EscolherSeccao({ valor, onEscolher }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+      {SECCOES_ANALISE.map(x => {
+        const on = valor === x.id;
+        return (
+          <button key={x.id} type="button" onClick={() => onEscolher(x.id)} style={{
+            padding: '4px 10px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
+            background: on ? `${T.gold}26` : 'transparent', border: `1px solid ${on ? T.gold : T.line}`, color: on ? T.gold : T.muted,
+          }}>{x.rotulo}</button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* A TABELA DO RELATÓRIO DE JOGO — a mesma nos dois sítios (Relatórios de
    jogo e o editor completo do jogo), para se preencher sempre da mesma
@@ -298,9 +334,9 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
   /* Cartão de cada jogo: tocar abre/fecha para baixo as notas da equipa
      técnica; o "+ Análise do jogo" abre a caixa para escrever; o relatório
      abre-se no estado à direita ("Por preencher", "Feito"…). */
-  const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever' }
+  const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever', seccao? }
   const alternarLer = (id) => setPainel(p => (p && p.id === id && p.modo === 'ler' ? null : { id, modo: 'ler' }));
-  const abrirEscrita = (id) => setPainel({ id, modo: 'escrever' });
+  const abrirEscrita = (id, seccao) => setPainel({ id, modo: 'escrever', seccao: seccao || 'geral' });
   // Chegou pela missão "Escrever a análise do jogo" (antes de pintar).
   React.useLayoutEffect(() => {
     if (!abrirAnaliseId) return;
@@ -441,8 +477,8 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                   </div>
                 )}
                 {meu && (meu.modo === 'escrever' || abrivel) && (
-                  <PainelNotasJogo key={meu.modo} m={m} modo={meu.modo} userEmail={userEmail} setMatches={setMatches}
-                    onEscrever={() => abrirEscrita(m.id)} onFechar={() => setPainel(null)} />
+                  <PainelNotasJogo key={`${meu.modo}:${meu.seccao || ''}`} m={m} modo={meu.modo} seccaoInicial={meu.seccao} userEmail={userEmail} setMatches={setMatches}
+                    onEscrever={(sec) => abrirEscrita(m.id, sec)} onFechar={() => setPainel(null)} />
                 )}
               </div>
             );
@@ -489,9 +525,10 @@ export function notasDoJogo(m) {
   return [];
 }
 
-export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar }) {
+export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches, onEscrever, onFechar }) {
   const notas = notasDoJogo(m);
   const [texto, setTexto] = useState('');
+  const [seccao, setSeccao] = useState(seccaoInicial || 'geral');
   const [aEditar, setAEditar] = useState(null);
   const gravarNotas = (mudar) => setMatches(prev => prev.map(x => (
     x.id === m.id ? { ...x, notasEquipaTecnica: mudar(notasDoJogo(x)) } : x
@@ -499,7 +536,7 @@ export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, on
   const adicionar = () => {
     const t = texto.trim();
     if (!t) return;
-    gravarNotas(lista => [...lista, { id: uid(), texto: t, autor: userEmail || '', em: new Date().toISOString() }]);
+    gravarNotas(lista => [...lista, { id: uid(), texto: t, seccao, autor: userEmail || '', em: new Date().toISOString() }]);
     setTexto('');
     onFechar(); // depois de gravar, fica fechado — abre-se tocando no cartão
   };
@@ -507,7 +544,7 @@ export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, on
     const t = texto.trim();
     const id = aEditar;
     gravarNotas(lista => (t
-      ? lista.map(n => (n.id === id ? { ...n, texto: t, editadoPor: userEmail || '', editadoEm: new Date().toISOString() } : n))
+      ? lista.map(n => (n.id === id ? { ...n, texto: t, seccao, editadoPor: userEmail || '', editadoEm: new Date().toISOString() } : n))
       : lista.filter(n => n.id !== id)));
     setAEditar(null); setTexto('');
   };
@@ -520,7 +557,8 @@ export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, on
   if (modo === 'escrever') {
     return (
       <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
-        <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Análise do jogo</div>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Análise do jogo · entra no relatório em</div>
+        <EscolherSeccao valor={seccao} onEscolher={setSeccao} />
         <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 100 }}
           placeholder="Como correu: o que funcionou, o que falhou, momentos-chave, o que fica para trabalhar..." />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -541,18 +579,20 @@ export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, on
             return (
               <div key={n.id} style={{ background: T.surfaceRaise, borderRadius: 8, padding: '9px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: T.gold, border: `1px solid ${T.gold}55`, borderRadius: 10, padding: '0 7px', lineHeight: '17px', flexShrink: 0, whiteSpace: 'nowrap' }}>{rotuloSeccao(seccaoDaNota(n))}</span>
                   <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}{n.editadoPor && n.editadoPor !== n.autor ? ` · editada por ${n.editadoPor}` : ''}
                   </span>
                   {!editar && (
                     <>
-                      <button type="button" onClick={() => { setAEditar(n.id); setTexto(n.texto || ''); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                      <button type="button" onClick={() => { setAEditar(n.id); setTexto(n.texto || ''); setSeccao(seccaoDaNota(n)); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
                       <button type="button" onClick={() => apagar(n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
                     </>
                   )}
                 </div>
                 {editar ? (
                   <div>
+                    <EscolherSeccao valor={seccao} onEscolher={setSeccao} />
                     <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 90 }} />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                       <Btn onClick={guardarEdicao}><Check size={14} /> Guardar</Btn>
@@ -576,9 +616,27 @@ export function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, on
           })}
         </div>
       )}
-      <button type="button" onClick={onEscrever} style={{
+      <button type="button" onClick={() => onEscrever('geral')} style={{
         marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
       }}><Plus size={14} /> Análise do jogo</button>
+      {(() => {
+        /* As caixas do relatório em Excel ainda vazias: tocar numa abre a
+           escrita já nessa caixa. */
+        const usadas = new Set(notas.filter(n => String(n.texto || '').trim()).map(seccaoDaNota));
+        const vazias = SECCOES_ANALISE.filter(x => !usadas.has(x.id));
+        if (!vazias.length) return <div style={{ marginTop: 8, fontSize: 12, color: T.mutedDim }}>Todas as caixas do relatório em Excel têm texto.</div>;
+        return (
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, color: T.mutedDim, marginRight: 2 }}>Por escrever no relatório:</span>
+            {vazias.map(x => (
+              <button key={x.id} type="button" onClick={() => onEscrever(x.id)} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
+                background: 'transparent', border: `1px dashed ${T.gold}66`, color: T.gold,
+              }}><Plus size={12} /> {x.rotulo}</button>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -651,6 +709,41 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
               {nomeEq(mc.fora, !mc.emCasa)}
               {mc.letra && <span style={{ ...mono, fontSize: 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, padding: '2px 7px', flexShrink: 0 }}>{NOME_RESULTADO[mc.letra]}</span>}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* SISTEMAS USADOS (17/11): vão para "Estruturas utilizadas ao longo do
+          Jogo" no relatório em Excel. O 1.º é o da ficha do jogo (o mesmo
+          campo); o 2.º e o 3.º só se houve mudança durante o jogo. */}
+      {(() => {
+        const tam = tamanhoDaFormacao(f.formacao);
+        const opcoes = Object.keys(FORMACOES).filter(x => !tam || tamanhoDaFormacao(x) === tam);
+        const extra = Array.isArray(f.sistemas) ? f.sistemas : [];
+        const mudarExtra = (i, v) => setF(prev => {
+          const l = [...(Array.isArray(prev.sistemas) ? prev.sistemas : [])];
+          l[i] = v;
+          return { ...prev, sistemas: [l[0] || '', l[1] || ''] };
+        });
+        const campo = (rot, valor, onMudar, vazio) => (
+          <label style={{ flex: '1 1 150px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: T.mutedDim }}>
+            {rot}
+            <Select value={valor || ''} onChange={e => onMudar(e.target.value)}>
+              <option value="">{vazio}</option>
+              {opcoes.map(o => <option key={o} value={o}>{o}</option>)}
+            </Select>
+          </label>
+        );
+        return (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+            {/* O 1.º mostra-se só: mudá-lo aqui baralhava a escalação (os
+                lugares dependem do sistema). Muda-se na ficha do jogo. */}
+            <label style={{ flex: '1 1 150px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: T.mutedDim }}>
+              Sistema 1 (o da ficha do jogo)
+              <Input value={f.formacao || 'Sem sistema na ficha'} readOnly disabled style={{ color: T.muted }} />
+            </label>
+            {campo('Sistema 2', extra[0], v => mudarExtra(0, v), 'Sem mudança')}
+            {campo('Sistema 3', extra[1], v => mudarExtra(1, v), 'Sem mudança')}
           </div>
         );
       })()}
