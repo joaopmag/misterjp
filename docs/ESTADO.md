@@ -434,6 +434,13 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
 - Sala: medições da lista (`alturaLeitorBib`, `gapListaBib`) em
   useLayoutEffect (antes de pintar): a lista já não salta ao abrir um jogo.
   Fundo do leitor com `mqdefault` (16:9, igual ao do YouTube).
+- Sala: sem o fade de entrada (`mjpEntrar`) ao trocar entre a grelha e um
+  jogo (piscava). O iframe do YouTube fica invisível até ter pintado
+  (onLoad + 350 ms, rede de segurança 2,5 s, `iframeVisivelBib`): vê-se a
+  imagem do vídeo em vez do ecrã preto inicial do YouTube.
+- Estatísticas (MatchDashboard): a linha da descrição existe sempre (16 px)
+  e a tabela guarda a maior altura que já teve: trocar Competição/Pré-época
+  não mexe.
 - Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
   "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
   trocar Competição/Amigáveis não mexer.

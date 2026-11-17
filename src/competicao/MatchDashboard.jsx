@@ -2,7 +2,7 @@
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { isFriendlyMatch } from '../dominio/jogos';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { escapeHtmlText } from '../base/utilidades';
 import { T, body, TEXT_ON_ACCENT, mono } from '../base/tema';
 import { Share2, Printer } from 'lucide-react';
@@ -54,6 +54,14 @@ export function filtrarJogosPorVista(matches, vista) {
 
 export function MatchDashboard({ players, matches }) {
   const [vista, setVista] = useState('competicao');
+  /* A tabela guarda a maior altura que já teve: a de Pré-época tem menos
+     jogadores e a página encolhia (o conteúdo subia) ao trocar. */
+  const [alturaMinTabela, setAlturaMinTabela] = useState(0);
+  const caixaTabelaRef = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const el = caixaTabelaRef.current;
+    if (el && el.offsetHeight > alturaMinTabela) setAlturaMinTabela(el.offsetHeight);
+  });
   const [imprimir, setImprimir] = useState(false);
   // null = ordem por omissão (nota média, do melhor para o pior — como
   // já era antes de haver colunas clicáveis). Uma vez escolhida uma
@@ -183,11 +191,10 @@ export function MatchDashboard({ players, matches }) {
           );
         })}
       </div>
-      {/* A descrição só aparece quando acrescenta alguma coisa. Repetir
-          por baixo o que o separador já diz é ruído. */}
-      {vistaAtual.desc && (
-        <div style={{ fontSize: 11.5, color: T.mutedDim }}>{vistaAtual.desc}</div>
-      )}
+      {/* A descrição só aparece quando acrescenta alguma coisa, mas o lugar
+          dela existe sempre (17/11): trocar Competição/Pré-época não sobe nem
+          desce a tabela. */}
+      <div style={{ fontSize: 11.5, color: T.mutedDim, minHeight: 16, lineHeight: '16px' }}>{vistaAtual.desc || ''}</div>
     </div>
   );
 
@@ -229,7 +236,7 @@ export function MatchDashboard({ players, matches }) {
   return (
     <Panel title="Estatísticas" action={acoes}>
       {seletor}
-      <div style={{ overflowX: 'auto' }}>
+      <div ref={caixaTabelaRef} style={{ overflowX: 'auto', minHeight: alturaMinTabela || undefined }}>
         <table>
           <thead>
             <tr style={{ background: T.bg }}>

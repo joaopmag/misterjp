@@ -2666,6 +2666,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
 
   // Ecrã largo, leitor e lista lado a lado: a lista acaba onde acaba o leitor.
   const listaAoLado = !isNarrow && !soLink;
+  const [iframeVisivelBib, setIframeVisivelBib] = useState(null); // chave do iframe do YouTube já pintado
   /* A LISTA ACABA NO FUNDO DO LEITOR, SEM CARTÃO CORTADO (17/11).
      - Altura da coluna da direita = altura da caixa do leitor (cabeçalho,
        vídeo e barras), medida sempre que muda.
@@ -2784,6 +2785,13 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     leitorBibRef.current = novo;
     return novo;
   })();
+  // Rede de segurança: se o YouTube não avisar que carregou, mostra-se na mesma.
+  const chaveIframeBib = leitorBib ? leitorBib.chave : (active && active.id);
+  useEffect(() => {
+    if (!chaveIframeBib) return undefined;
+    const t = setTimeout(() => setIframeVisivelBib(chaveIframeBib), 2500);
+    return () => clearTimeout(t);
+  }, [chaveIframeBib]);
   // Corte novo no mesmo leitor: salta para o início dele. Continua a
   // tocar se já estava a tocar (ou se é a sequência "em seguida").
   useEffect(() => {
@@ -3722,7 +3730,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           encolhia e saltava. A área guarda a altura que tinha durante a
           troca (só cresce até a nova vista assentar) e a vista nova entra
           num fade curto. */}
-      <div key={`${secao}|${grupo || ''}|${termo ? 'p' : ''}`} ref={vistaBibRef} style={{ minHeight: alturaVistaBib || undefined, animation: 'mjpEntrar .18s ease-out' }}>
+      <div key={`${secao}|${grupo || ''}|${termo ? 'p' : ''}`} ref={vistaBibRef} style={{ minHeight: alturaVistaBib || undefined, }}>
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={soLeitura ? null : <Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
       ) : modoCanal && !termo && secao !== 'temas' && secao !== 'meus' && !grupoAtual ? (
@@ -3951,12 +3959,18 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           // troca de corte.
                           key={leitorBib ? leitorBib.chave : active.id}
                           ref={inlineIframeRef}
-                          onLoad={handleIframeLoad(inlineIframeRef)}
+                          onLoad={(e) => {
+                            handleIframeLoad(inlineIframeRef)(e);
+                            // O YouTube pinta primeiro um ecrã preto: espera um instante
+                            // e só então mostra o leitor (por trás está a imagem do vídeo).
+                            const k = leitorBib ? leitorBib.chave : active.id;
+                            setTimeout(() => setIframeVisivelBib(k), 350);
+                          }}
                           // fs=0: sem o ecrã inteiro nativo do YouTube — o
                           // nosso (botão abaixo) mantém o Criar clipe e a
                           // barra do clipe à mão.
                           src={leitorBib ? leitorBib.src : youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
-                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none', opacity: iframeVisivelBib === (leitorBib ? leitorBib.chave : active.id) ? 1 : 0, transition: 'opacity .12s ease-out' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
                           title={active.title}
