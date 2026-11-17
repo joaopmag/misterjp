@@ -546,7 +546,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const estadoMp4 = (v, ids) => {
     if (!mp4Ativo || !noServidor || !ids.length) return null;
     if (mp4Pronto(v, ids)) return { txt: 'MP4 pronto', cor: T.gold };
-    if (!soClipesDeFicheiro(ids, porId)) return { txt: 'tem clipes do YouTube: grava ao descarregar', cor: T.mutedDim };
+    if (!soClipesDeFicheiro(ids, porId)) return { txt: 'com YouTube: grava ao descarregar', cor: T.mutedDim };
     const f = mp4[v.id];
     if (f && f.assinatura === assin(ids) && f.estado === 'muito_longo') return { txt: 'demasiado longo para MP4 (máx. 30 min)', cor: T.warn };
     if (f && f.assinatura === assin(ids) && f.estado === 'erro') return { txt: 'o MP4 falhou', cor: T.warn, titulo: f.erro || '' };
@@ -648,7 +648,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       <div ref={filaRef} className="mjp-sem-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', scrollSnapType: 'x mandatory', height: ALTURA_CARTAO_JUNTO }}>
         {/* 1.º cartão: juntar clipes (como o "Carregar ficheiro" da Análise). */}
         <button type="button" onClick={() => setEditar({ nome: '', ids: [] })} style={{
-          flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start', cursor: 'pointer', ...body,
+          flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, width: LARGURA_CARTAO_JUNTO, minWidth: 0, height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start', cursor: 'pointer', ...body,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, textAlign: 'center', padding: 10,
           background: 'transparent', border: `1px dashed ${T.line}`, borderRadius: 10, color: T.muted,
         }}>
@@ -677,7 +677,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
           };
           return (
             <div key={v.id} style={{
-              flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start',
+              flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, width: LARGURA_CARTAO_JUNTO, minWidth: 0, maxWidth: LARGURA_CARTAO_JUNTO, overflow: 'hidden', height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start',
               display: 'flex', flexDirection: 'column', padding: '9px 10px 8px', borderRadius: 10, ...body,
               background: esteAberto ? `${T.gold}14` : T.bg, border: `1px solid ${esteAberto ? T.gold : T.line}`,
             }}>

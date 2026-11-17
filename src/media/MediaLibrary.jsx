@@ -2631,7 +2631,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             </>
           )}
           {soLeitura && v.deAtleta && v.doStaff && (
-            <span title="Posto pelo treinador: só para ver" style={{ fontSize: 10.5, color: T.gold, flexShrink: 0, width: 48, textAlign: 'left', whiteSpace: 'nowrap', ...body }}>treinador</span>
+            <span title="Posto pelo staff: só para ver" style={{ fontSize: 10.5, fontWeight: 700, color: T.gold, flexShrink: 0, width: 48, textAlign: 'left', whiteSpace: 'nowrap', ...body }}>Staff</span>
           )}
           {soLeitura && v.deAtleta && apagarClipeAtleta && !v.doStaff && (
             confirmarApagarId === v.id ? (
@@ -3782,7 +3782,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                               <>
                                 {emLista && <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>}
                                 {active.title || 'Clipe'} · {fmtMMSS(clipIni)}–{fmtMMSS(clipFimEf)} ({Math.round(clipFimEf - clipIni)}s)
-                                {active.doStaff && <span style={{ color: T.gold }}> · do treinador</span>}
+
                               </>
                             ) : (
                               <>
@@ -3804,6 +3804,10 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             <Btn escuro variant="ghost" onClick={() => irPara(navLista[iNav - 1])} disabled={iNav <= 0} style={btnTopo} title={emLista ? 'Clipe anterior' : 'Anterior'}><SkipBack size={14} /></Btn>
                             <Btn escuro variant="ghost" onClick={() => irPara(navLista[iNav + 1])} disabled={iNav >= navLista.length - 1} style={btnTopo} title={emLista ? 'Clipe seguinte' : 'Seguinte'}><SkipForward size={14} /></Btn>
                           </div>
+                          {/* Clipe posto pelo staff: só a palavra, à direita. */}
+                          {ativoEClipe && active.doStaff && (
+                            <span title="Posto pelo staff: só para ver" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, color: T.gold, border: `1px solid ${T.gold}`, borderRadius: 999, padding: '2px 8px', flexShrink: 0, ...body }}>Staff</span>
+                          )}
                         </div>
                       );
                     })()}

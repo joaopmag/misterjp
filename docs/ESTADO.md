@@ -392,7 +392,10 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   usam `MiniaturaClipeVideo` (exportado do AnalisadorVideo). O estado dos
   MP4 dos vídeos juntos fica guardado no aparelho (`<chave>:mp4`) e os
   cartões já abrem com ele. Cartões de "Os meus vídeos" todos com 236×128,
-  também o "Juntar clipes".
+  também o "Juntar clipes". Largura presa (width/min/max): um texto comprido já não
+  alarga o cartão ("com YouTube: grava ao descarregar").
+- Portal: "do treinador"/"treinador" passam a "Staff" (selo à direita na
+  barra do leitor; na lista, no lugar do lápis e do caixote).
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.
