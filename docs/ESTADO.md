@@ -557,6 +557,15 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 17/11: Portal, cacifo → Sala de Vídeo. O toque mostra logo "A abrir a
+  Sala de Vídeo…" (Cacifo.jsx, `abrirComResposta`) e a troca de ecrã faz-se
+  no fotograma seguinte. A causa real da espera era a Sala ir buscar os
+  vídeos ao servidor só depois de abrir (o aquecimento do cacifo não a
+  incluía, e a cópia no aparelho pode ter sido limpa). Agora o cacifo pede
+  a Sala ao abrir (`aquecerSalaVideo` em vistas.jsx) e a Sala aproveita esse
+  pedido (uma só vez; ao reentrar pede de novo). Medido: montar a Sala com
+  ~200 itens leva ~80 a 130 ms mesmo com o CPU 6× mais lento, por isso o
+  desenho não era o problema.
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem

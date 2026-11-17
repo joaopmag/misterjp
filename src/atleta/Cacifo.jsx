@@ -10,6 +10,7 @@ import { ChevronLeft, Trophy } from 'lucide-react';
 import { aquecerPortal, hashCurto } from './portalRpc';
 import { PKH_CSS, PKH_LARGO, PKH_LARGURA_LARGA, PKH_LARGURA_TABLET, PKH_TABLET_ALTO, PkhFaixasLaterais, usePkhMedia } from './KioskHome';
 import { coresCamisola } from './ecras';
+import { aquecerSalaVideo } from './vistas';
 
 /* O MEU CACIFO — a página de conteúdos do Portal do Atleta, a seguir ao
    balneário. Ao entrar, a fechadura roda, a porta abre sozinha e a luz do
@@ -192,7 +193,7 @@ export function PlayerCacifo({
   }, []);
 
   // As áreas do cacifo ficam já carregadas enquanto a porta abre.
-  useEffect(() => { aquecerPortal(code, teamId); }, [code, teamId]);
+  useEffect(() => { aquecerPortal(code, teamId); aquecerSalaVideo(code, teamId); }, [code, teamId]);
 
   /* ---------- abrir: com animação na entrada, já aberto ao voltar ---------- */
   const [aberto, setAberto] = useState(!animar);
@@ -254,9 +255,21 @@ export function PlayerCacifo({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsVideos]);
   const novosVideos = idsVideos && Array.isArray(vistos) ? idsVideos.filter(id => !vistos.includes(id)).length : 0;
+  /* RESPOSTA IMEDIATA AO TOQUE (17/11). Abrir uma área (sobretudo a Sala
+     de Vídeo) obriga o browser a montar muita coisa de uma vez e o cacifo
+     ficava parado ~1 s sem reagir. Agora o toque mostra logo "A abrir…"
+     por cima e só no fotograma seguinte se troca de ecrã. */
+  const [aAbrir, setAAbrir] = useState(null);
+  // Rede de segurança: se o cacifo continuar à vista, o aviso sai sozinho.
+  useEffect(() => { if (!aAbrir) return undefined; const t = setTimeout(() => setAAbrir(null), 4000); return () => clearTimeout(t); }, [aAbrir]);
+  const abrirComResposta = (...args) => {
+    if (aAbrir) return;
+    setAAbrir(args[0] || true);
+    requestAnimationFrame(() => requestAnimationFrame(() => onAbrir(...args)));
+  };
   const abrirSalaVideo = () => {
     if (idsVideos) gravarCacheCacifo(chaveVistos, idsVideos.slice(-400));
-    onAbrir('biblioteca');
+    abrirComResposta('biblioteca');
   };
 
   /* ---------- o que cada objeto mostra ---------- */
@@ -333,6 +346,15 @@ export function PlayerCacifo({
       touchAction: 'manipulation', ...body,
     }}>
       <style>{`${CACIFO_FONTE}${PKH_CSS}${CACIFO_CSS}`}</style>
+      {aAbrir && (
+        <div aria-live="polite" style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'grid', placeItems: 'center', background: 'rgba(10,18,14,.45)', animation: 'cfAbrir .12s ease-out' }}>
+          <style>{'@keyframes cfAbrir{from{opacity:0}to{opacity:1}}@keyframes cfRoda{to{transform:rotate(360deg)}}'}</style>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 999, background: T.surface, border: `1px solid ${T.gold}`, color: T.cream, fontSize: 13, fontWeight: 600, boxShadow: '0 8px 24px rgba(0,0,0,.45)' }}>
+            <span style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${T.gold}`, borderTopColor: 'transparent', animation: 'cfRoda .7s linear infinite' }} />
+            {aAbrir === 'biblioteca' ? 'A abrir a Sala de Vídeo…' : 'A abrir…'}
+          </div>
+        </div>
+      )}
       {largo && <PkhFaixasLaterais larguraConteudo={PKH_LARGURA_LARGA} />}
       <div style={{
         position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : tablet ? PKH_LARGURA_TABLET : 460, margin: '0 auto',
@@ -380,7 +402,7 @@ export function PlayerCacifo({
                     <rect x="10" y="4" width="120" height="5" rx="2.5" fill="#FFE7A3" opacity=".55" filter="url(#cf-brilho)" />
                   </svg>
 
-                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
+                  <button type="button" className="cf-obj cf-it" onClick={() => abrirComResposta('ideiaJogo')} aria-label="Ideia de Jogo"
                     style={{ left: 2, top: 24, width: 68, height: 94, ...atraso(1.05) }}>
                     {/* Caderno e tablet: desenho com a mesma altura (sem encolher)
                         e legenda na mesma linha. O tablet tem ainda, por baixo,
@@ -429,7 +451,7 @@ export function PlayerCacifo({
                   <div style={{ position: 'absolute', right: 3, top: 141, width: 5, height: 10, borderRadius: 1.5, background: '#3a4a40' }} />
                   <div style={{ position: 'absolute', left: 4, right: 4, top: 144, height: 4, borderRadius: 2, background: 'linear-gradient(180deg, #E6EAEC, #9AA3A8 50%, #5E676C)' }} />
 
-                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
+                  <button type="button" className="cf-obj cf-it" onClick={() => abrirComResposta('jogos')} aria-label="Jogo"
                     style={{ left: 0, top: 144, width: 140, height: 186, ...atraso(1.2) }}>
                     {/* A CAMISOLA PENDURADA: cruzeta de madeira nos ombros (vê-se
                         pela gola), gancho de balneário em "J" com porca giratória
@@ -482,7 +504,7 @@ export function PlayerCacifo({
 
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 336, height: 5, background: '#2c4336' }} />
 
-                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
+                  <button type="button" className="cf-obj cf-it" onClick={() => abrirComResposta('competicao', 'estatisticas')} aria-label="Estatísticas da época"
                     style={{ left: mostraGarrafa ? 2 : 6, top: mostraGarrafa ? 356 : 346, width: mostraGarrafa ? 92 : 128, height: mostraGarrafa ? 96 : 120, ...atraso(1.3) }}>
                     {/* A CHUTEIRA DOURADA DA ÉPOCA: troféu num pedestal escuro com a
                         placa dos números (Jogos · Min. · Golos · Assist.). */}
@@ -604,14 +626,14 @@ export function PlayerCacifo({
 
                   {/* -------- dentro da porta -------- */}
                   <div className="cf-face cf-tras">
-                    <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('treino')} aria-label="Treino de hoje"
+                    <button type="button" className="cf-obj cf-papel" onClick={() => abrirComResposta('treino')} aria-label="Treino de hoje"
                       style={{ left: 14, top: 14, width: 116, height: 58, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
                       <small>Treino de hoje</small>
                       <div className="cf-mao" style={{ fontSize: treinoTxt.length > 20 ? 13.5 : 16, lineHeight: 1.05 }}>{treinoTxt}</div>
                     </button>
 
-                    <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('competicao')} aria-label="Classificação"
+                    <button type="button" className="cf-obj cf-papel" onClick={() => abrirComResposta('competicao')} aria-label="Classificação"
                       style={{ left: 10, top: 117, width: 130, height: 70, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 600, color: '#6b5e45', marginBottom: 2 }}>
@@ -628,7 +650,7 @@ export function PlayerCacifo({
                       )}
                     </button>
 
-                    <button type="button" className="cf-obj" onClick={() => onAbrir('tarefas')} aria-label={`Tarefas${nT ? `: ${nT} por fazer` : ''}`}
+                    <button type="button" className="cf-obj" onClick={() => abrirComResposta('tarefas')} aria-label={`Tarefas${nT ? `: ${nT} por fazer` : ''}`}
                       style={{ left: 16, top: 234, width: 118, height: 78 }}>
                       <div style={{ background: '#6b4a2e', borderRadius: 4, padding: '14px 6px 6px', position: 'relative', height: 60, boxSizing: 'border-box', textAlign: 'left', overflow: 'hidden' }}>
                         <span style={{ position: 'absolute', top: -3, left: 45, width: 28, height: 8, background: '#9aa69e', borderRadius: 2 }} />
@@ -648,7 +670,7 @@ export function PlayerCacifo({
                       <div className="cf-lab" style={{ marginTop: 4 }}>Tarefas</div>
                     </button>
 
-                    <button type="button" className="cf-obj" onClick={() => onAbrir('desenvolvimento')} aria-label="Desenvolvimento"
+                    <button type="button" className="cf-obj" onClick={() => abrirComResposta('desenvolvimento')} aria-label="Desenvolvimento"
                       style={{ left: 12, top: 357, width: 126, height: 104, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
                       <svg width="74" height="64" viewBox="0 0 84 74" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <g fill="none" stroke="#4e6a58"><polygon points="42,4 78,28 64,70 20,70 6,28" /><polygon points="42,20 62,33 54,58 30,58 22,33" /></g>

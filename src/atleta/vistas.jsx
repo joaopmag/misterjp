@@ -181,6 +181,56 @@ export const ERROS_CLIPE_ATLETA = {
 
 // Cópia em memória da Sala do Portal (ver cacheBib): abre logo ao voltar, mesmo sem espaço no aparelho.
 const memoriaPortalBib = new Map();
+/* AQUECER A SALA (17/11). O cacifo pede os vídeos da Sala logo que abre,
+   como já fazia para as outras áreas (aquecerPortal). Ao tocar em "Sala de
+   Vídeo" a lista já cá está (ou o pedido já vai a meio) e a Sala abre sem
+   ficar à espera do servidor. Um pedido por código e equipa de cada vez;
+   ao fim de 20 s volta a valer pedir. */
+const pedidosSala = new Map(); // chave -> { t, p }
+const lerJsonSala = (data) => {
+  let d = data;
+  if (Array.isArray(d)) d = d[0];
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+  return d;
+};
+function pedirSala(code, teamId, daVista) {
+  const k = `${teamId}|${code}`;
+  const ja = pedidosSala.get(k);
+  /* A Sala só aproveita um pedido do aquecimento que ainda ninguém usou:
+     ao voltar a entrar pede de novo (pode haver clipes novos). */
+  if (ja && !ja.usado && Date.now() - ja.t < 20000) { if (daVista) ja.usado = true; return ja.p; }
+  const vids = Promise.resolve(supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId }))
+    .then(({ data, error }) => {
+      if (error) throw error;
+      const d = lerJsonSala(data);
+      // Os jogos só da Análise (`daAnalise`) não são para o Portal.
+      return ((d && d.videos) || []).filter(v => v && (!v.daAnalise || v.publicado));
+    });
+  const meus = Promise.resolve(supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId }))
+    .then(({ data, error }) => {
+      if (error) throw error;
+      const d = lerJsonSala(data);
+      return ((d && d.clipes) || []).filter(c => c && (c.youtubeId || c.dataUrl)).map(clipeAtletaParaCanal);
+    });
+  const p = { vids, meus };
+  vids.catch(() => {}); meus.catch(() => {});
+  // Quando os dois chegam, ficam em memória para a Sala abrir já cheia.
+  Promise.allSettled([vids, meus]).then(([a, b]) => {
+    if (a.status === 'fulfilled') {
+      const chave = `misterjp:portal-bib:${teamId}:${hashCurto(String(code || ''))}`;
+      const antes = memoriaPortalBib.get(chave) || {};
+      memoriaPortalBib.set(chave, { videos: a.value, meus: b.status === 'fulfilled' ? b.value : (antes.meus || []) });
+    }
+    // Um pedido falhado não fica guardado: o próximo tenta outra vez.
+    if ((a.status === 'rejected' || b.status === 'rejected') && pedidosSala.get(k) && pedidosSala.get(k).p === p) pedidosSala.delete(k);
+  });
+  pedidosSala.set(k, { t: Date.now(), p, usado: !!daVista });
+  return p;
+}
+export function aquecerSalaVideo(code, teamId) {
+  if (!code || !teamId) return;
+  try { pedirSala(code, teamId); } catch (e) { /* aquecer nunca pode partir o cacifo */ }
+}
 export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   /* Miniaturas: as que já estavam carregadas (cache do browser) ficam
      logo visíveis; as outras entram a desvanecer (ver mjp-bib). Rede de
@@ -242,39 +292,27 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
 
   useEffect(() => {
     let cancelado = false;
-    // Os dois pedidos AO MESMO TEMPO (antes eram um depois do outro).
-    (async () => {
-      try {
-        const { data, error } = await supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId });
-        if (cancelado) return;
-        if (error) throw error;
-        const d = lerJson(data);
-        // Por ordem de criação, como no Canal — é o próprio visualizador
-        // (`recentesPrimeiro`) que mostra o mais recente primeiro.
-        // Os jogos só da Análise (`daAnalise`) não são para o Portal (a função
-        // da base também os tira; isto é a segunda barreira).
-        setVideosState(((d && d.videos) || []).filter(v => v && (!v.daAnalise || v.publicado)));
-        setEstado('pronto');
-      } catch (e) {
-        if (!cancelado) setEstado(prev => (prev === 'pronto' ? prev : 'erro'));
-      }
-    })();
-    // Os clipes do próprio jogador vêm à parte. Se falharem (por
-    // exemplo, função ainda não criada no Supabase), a Biblioteca
-    // continua a abrir na mesma, só sem eles.
-    (async () => {
-      try {
-        const { data, error } = await supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId });
-        if (cancelado) return;
-        if (error) throw error;
-        const d = lerJson(data);
-        setMeusClipes(((d && d.clipes) || []).filter(c => c && (c.youtubeId || c.dataUrl)).map(clipeAtletaParaCanal));
-        setErroMeusClipes(false);
-      } catch (e) {
-        console.error('checkin_meus_clipes', e);
-        if (!cancelado) setErroMeusClipes(true);
-      }
-    })();
+    // Os dois pedidos AO MESMO TEMPO. Se o cacifo já os fez (aquecerSalaVideo),
+    // aproveita-se o que já vai a meio em vez de começar do zero.
+    const { vids, meus } = pedirSala(code, teamId, true);
+    vids.then((lista) => {
+      if (cancelado) return;
+      // Por ordem de criação, como no Canal (`recentesPrimeiro` inverte).
+      setVideosState(lista);
+      setEstado('pronto');
+    }).catch(() => {
+      if (!cancelado) setEstado(prev => (prev === 'pronto' ? prev : 'erro'));
+    });
+    // Os clipes do próprio jogador vêm à parte. Se falharem, a Sala abre
+    // na mesma, só sem eles (e diz-se no ecrã).
+    meus.then((lista) => {
+      if (cancelado) return;
+      setMeusClipes(lista);
+      setErroMeusClipes(false);
+    }).catch((e) => {
+      console.error('checkin_meus_clipes', e);
+      if (!cancelado) setErroMeusClipes(true);
+    });
     return () => { cancelado = true; };
   }, [code, teamId]);
 
