@@ -591,6 +591,9 @@ reduz o peso inicial da app e do Portal.
   nada à rede, só salta (no mesmo ficheiro fica à vista durante o salto).
   `inlineVideoRef` aponta sempre para o leitor ativo. Testado: zero pedidos
   novos ao voltar, e trocar com um a tocar deixa-o em pausa.
+  Avisos atrasados do YouTube (onLoad + 350/400 ms) só mostram o leitor se
+  ele ainda for o atual (`mostrarLeitorSeAtual`): trocar do YouTube para um
+  corte de ficheiro logo a seguir escondia o corte ~2,5 s (ecrã verde).
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem

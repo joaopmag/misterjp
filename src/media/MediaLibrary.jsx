@@ -2811,6 +2811,14 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      antigo: via-se um fotograma preto, depois a imagem, e só então se
      escondia à espera do servidor (17/11, cortes de ficheiro). */
   React.useLayoutEffect(() => { setIframeVisivelBib(null); }, [chaveIframeBib]);
+  /* Os avisos atrasados do YouTube ("já pintou", 350/400 ms depois do
+     onLoad) só contam se esse leitor ainda for o atual. Antes, trocar do
+     YouTube para um corte de ficheiro logo a seguir deixava chegar o aviso
+     antigo, que escondia o corte novo até à rede de segurança (~2,5 s de
+     ecrã verde com a roda). */
+  const chavesVivasBibRef = useRef([]);
+  chavesVivasBibRef.current = [chaveIframeBib, active && active.id];
+  const mostrarLeitorSeAtual = (k) => { if (chavesVivasBibRef.current.includes(k)) setIframeVisivelBib(k); };
   /* LEITORES GUARDADOS (17/11). Cada vídeo carregado (ficheiro) tem o seu
      <video>, e os últimos 3 ficam montados (escondidos e em pausa). Voltar a
      um corte já visto, ou passar para outro corte do mesmo ficheiro, já não
@@ -4020,7 +4028,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             // O YouTube pinta primeiro um ecrã preto: espera um instante
                             // e só então mostra o leitor (por trás está a imagem do vídeo).
                             const k = leitorBib ? leitorBib.chave : active.id;
-                            setTimeout(() => setIframeVisivelBib(k), 350);
+                            setTimeout(() => mostrarLeitorSeAtual(k), 350);
                           }}
                           // fs=0: sem o ecrã inteiro nativo do YouTube — o
                           // nosso (botão abaixo) mantém o Criar clipe e a
@@ -4751,7 +4759,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                               key={active.id}
                               src={socialEmbedSrc(active.social)}
                               // Escondido até ter pintado (o Instagram/TikTok começam a preto).
-                              onLoad={() => { const k = active.id; setTimeout(() => setIframeVisivelBib(k), 400); }}
+                              onLoad={() => { const k = active.id; setTimeout(() => mostrarLeitorSeAtual(k), 400); }}
                               style={{ width: '100%', height: '100%', border: 'none', display: 'block', opacity: iframeVisivelBib === active.id ? 1 : 0, transition: 'opacity .12s ease-out' }}
                               allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; fullscreen"
                               allowFullScreen
