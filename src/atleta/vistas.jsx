@@ -12,6 +12,7 @@ import { MAX_CLIPE_ATLETA_SEG, comMp4Proprio } from '../media/organizacao';
 import { formasParaPausas } from '../AnalisadorVideo';
 import { supabase } from '../supabaseClient';
 import { MediaLibrary } from '../media/MediaLibrary';
+import { preCarregarJuntos } from '../media/LeitorJunto';
 import { useIsMobile, EmptyState, Btn, Field, TextArea } from '../base/ui';
 import { normalizeStandings, activeCompetitionOf, competitionTable, estiloZona, LegendaZonas } from '../competicao/dados';
 import { diRespondido, DI_INDICADORES, DiQuestionario } from '../plantel/Desenvolvimento';
@@ -349,6 +350,9 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
     } : {}),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [code, teamId]);
+  // Os vídeos juntos pedem-se logo ao abrir a Sala do Portal (ver preCarregarJuntos).
+  const chaveCompilacoesPortal = `misterjp:compilacoes:${teamId}:${hashCurto(String(code || ''))}`;
+  useEffect(() => { if (code && teamId) preCarregarJuntos(chaveCompilacoesPortal, compilacoesApi); }, [chaveCompilacoesPortal, compilacoesApi, code, teamId]);
 
   // Editar um clipe do próprio jogador (tempos, título e texto).
   const editarClipeAtleta = async ({ clipeId, inicio, fim, titulo, nota }) => {
@@ -454,7 +458,7 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
           criarClipeAtleta={criarClipeAtleta}
           apagarClipeAtleta={apagarClipeAtleta}
           editarClipeAtleta={editarClipeAtleta}
-          chaveCompilacoes={`misterjp:compilacoes:${teamId}:${hashCurto(String(code || ''))}`}
+          chaveCompilacoes={chaveCompilacoesPortal}
           compilacoesApi={compilacoesApi}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />

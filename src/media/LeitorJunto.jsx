@@ -404,6 +404,29 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
    abria vazia até o servidor responder. Esta vale enquanto a app estiver
    aberta, por isso voltar a "Os meus clipes" mostra logo os vídeos. */
 const memoriaJuntos = new Map(); // chave -> { lista, mp4 }
+/* PEDIR ANTES (17/11): o Portal pede os vídeos juntos e o estado dos MP4
+   logo ao abrir a Sala, sem esperar que se entre em "Os meus clipes". Quando
+   se entra, os cartões já lá estão (e, se o pedido ainda estiver a meio, a
+   caixa espera por esse em vez de fazer outro). */
+const pedidosJuntos = new Map(); // chave -> { ler: Promise, ficheiros: Promise }
+export function preCarregarJuntos(chave, api) {
+  if (!chave || !api || !api.ler || pedidosJuntos.has(chave)) return;
+  const ler = api.ler().then((l) => {
+    memoriaJuntos.set(chave, { ...(memoriaJuntos.get(chave) || {}), lista: l });
+    try { localStorage.setItem(`${chave}:servidor`, JSON.stringify(l)); } catch (e) { /* fica em memória */ }
+    return l;
+  });
+  const ficheiros = api.ficheiros ? api.ficheiros().then((l) => {
+    const m = {};
+    (l || []).forEach(x => { if (x && x.id) m[x.id] = x; });
+    memoriaJuntos.set(chave, { ...(memoriaJuntos.get(chave) || {}), mp4: { ativo: true, m } });
+    return l;
+  }) : null;
+  ler.catch(() => {}); if (ficheiros) ficheiros.catch(() => {});
+  pedidosJuntos.set(chave, { ler, ficheiros });
+  // Passado um minuto volta a poder pedir-se (dados novos ao reabrir mais tarde).
+  setTimeout(() => pedidosJuntos.delete(chave), 60000);
+}
 export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGravar, aGravar, aberto, onAbrir, onFecharAberto }) {
   /* Guardados NO SERVIDOR (api, ver os_meus_videos.sql), para aparecerem
      em qualquer aparelho. Se o servidor ainda não tiver as funções (ou não
@@ -456,7 +479,9 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       return;
     }
     try {
-      const l = await api.ficheiros();
+      const pre = pedidosJuntos.get(chave);
+      const jaPedido = pre && pre.ficheiros; if (pre) pre.ficheiros = null; // só uma vez (depois, sempre fresco)
+      const l = await (jaPedido || api.ficheiros());
       const m = {};
       l.forEach(x => { if (x && x.id) m[x.id] = x; });
       setMp4(m); setMp4Ativo(true); setFalhaMp4('');
@@ -464,13 +489,16 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       setMp4Ativo(false);
       setFalhaMp4(`MP4 no servidor indisponível: a base não respondeu (${(e && e.message) || 'erro'}). Correu o SQL checkin_video_ficheiros?`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
   useEffect(() => {
     let cancelado = false;
     (async () => {
       if (!api) { setLista(lerCompilacoes(chave)); return; }
       try {
-        let doServidor = await api.ler();
+        const pre = pedidosJuntos.get(chave);
+        const jaPedido = pre && pre.ler; if (pre) pre.ler = null; // só se aproveita uma vez
+        let doServidor = await (jaPedido || api.ler());
         const locais = lerCompilacoes(chave);
         if (locais.length) {
           for (const v of [...locais].reverse()) {

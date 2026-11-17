@@ -3870,7 +3870,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             ) : (
                               <>
                                 <strong style={{ color: T.gold, fontWeight: 700 }}>Jogo completo · </strong>
-                                {active.title || 'Vídeo'}{duracaoJogo ? ` · ${fmtMMSS(duracaoJogo)}` : ''}
+                                {active.title || 'Vídeo'}
                               </>
                             )}
                           </span>

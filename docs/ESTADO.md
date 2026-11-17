@@ -451,6 +451,11 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   `surfaceRaise` em vez de preto.
 - Portal: o item dos clipes do treinador leva `thumbUrl` (clipeAtletaParaCanal)
   e a capa "Os meus clipes" usa-a: imagem logo, sem abrir o vídeo.
+- Portal: os vídeos juntos e o estado dos MP4 pedem-se logo ao abrir a
+  Sala (`preCarregarJuntos` em LeitorJunto, chamado em vistas.jsx); ao
+  entrar em "Os meus clipes" a caixa aproveita esse pedido (uma vez) ou a
+  cópia em memória. Sala: tirada a duração do cabeçalho do leitor
+  ("Jogo completo · título"), fica só na barra.
 - Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
   "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
   trocar Competição/Amigáveis não mexer.
