@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Loader2, Check, FileText } from 'lucide-reac
 import { momentoTexto } from '../dominio/treino';
 import { DiagramThumbAnimado } from '../treino/diagramas';
 import { MAX_CLIPE_ATLETA_SEG, comMp4Proprio } from '../media/organizacao';
+import { formasParaPausas } from '../AnalisadorVideo';
 import { supabase } from '../supabaseClient';
 import { MediaLibrary } from '../media/MediaLibrary';
 import { useIsMobile, EmptyState, Btn, Field, TextArea } from '../base/ui';
@@ -149,8 +150,15 @@ export function clipeAtletaParaCanal(c0) {
     deAtleta: true,
     notaAtleta: c.note || '',
     // Posto pelo treinador (análise individual): só para ver, com os desenhos.
-    ...(c.criadoPorStaff ? { doStaff: true } : {}),
-    ...((c.anotacoesPausa || []).length ? { anotacoesPausa: c.anotacoesPausa } : {}),
+    ...(c.criadoPorStaff ? { doStaff: true, ...(c.corteOrigemId ? { corteOrigemId: c.corteOrigemId } : {}) } : {}),
+    /* Clipe do treinador com desenhos: toca logo com eles, no próprio
+       leitor (as paragens da Sala), sem "Ver com os desenhos" (17/11). Os
+       de link já trazem `anotacoesPausa`; os de ficheiro fazem-se aqui a
+       partir dos desenhos (tempos do ficheiro do clipe). */
+    ...((c.anotacoesPausa || []).length ? { anotacoesPausa: c.anotacoesPausa }
+      : (c.criadoPorStaff && (c.shapes || []).length && !c.youtubeId
+        ? { anotacoesPausa: formasParaPausas(c.shapes, Number(c.clipInicio) || 0).map(pa => (c.calibracao ? { ...pa, calibracao: c.calibracao } : pa)) }
+        : {})),
     ...((c.shapes || []).length ? { shapesStaff: c.shapes, duracaoStaff: Number(c.duracao) || undefined } : {}),
     ...(c.calibracao ? { calibracaoStaff: c.calibracao } : {}),
   };

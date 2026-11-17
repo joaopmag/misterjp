@@ -351,6 +351,33 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
     numa linha, lista de paragens com 3 à vista, nota numa linha); ao
     aparecer o formulário do corte, o painel desloca-se até ele. Em ecrãs
     baixos (menos de ~850 px) o painel ainda desloca por dentro.
+- 17/11 (2):
+  - Paragens: itens do mesmo momento (menos de 0,3 s) fazem UMA paragem
+    com o tempo do mais longo (antes podiam parar duas vezes: 3 s + 3 s =
+    6 s). Um desenho logo no início de um clipe já pára (perdia-se se o
+    vídeo arrancasse sozinho). "Paragens neste vídeo" passa a "Desenhos
+    neste vídeo".
+  - Portal: clipes do treinador com desenhos tocam logo com eles
+    (`clipeAtletaParaCanal` faz `anotacoesPausa` a partir dos desenhos nos
+    clipes de ficheiro). "Ver com os desenhos" só fica para os antigos. A
+    barra por cima do leitor não mexe ao mudar de clipe.
+  - api/video-jogo: retirado da Sala, o link continua a abrir enquanto
+    houver clipes de jogadores (video_clips) a apontar para ele. O serviço
+    de vídeo já lê o link sozinho (ver ESTADO do video-worker).
+  - "o MP4 falhou" nos vídeos juntos: tocar mostra o motivo.
+- 17/11 (3):
+  - Gravar cortes do YouTube: sem Region Capture (app instalada, janela
+    própria, outra superfície escolhida) o `cropTo` falha e gravava-se o
+    ecrã todo. `recortarPorCanvas` recorta a caixa do vídeo num <canvas>
+    (posição calculada a cada imagem, conforme separador/janela/ecrã) e
+    grava esse canvas. Testado: sai do tamanho da caixa.
+  - Partilhar clipes de ficheiro (Portal e Análise individual): nunca o
+    endereço do Storage. Do treinador → ?clipe=<corte de origem> (página
+    do corte, `corteOrigemId` passa para o item do Portal); dos jogadores →
+    ?junto= com um troço (leitor dos vídeos juntos).
+  - `VideoComBarra` (página ?clipe=): ecrã inteiro com prefixo webkit e,
+    se o browser recusar (iPhone, browser do WhatsApp), a caixa cobre o
+    ecrã por CSS.
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

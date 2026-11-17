@@ -658,7 +658,8 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
             <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}{(() => { const e = estadoMp4(v, ids); return e ? <span title={e.titulo || ''} style={{ color: e.cor }}> · {e.txt}</span> : null; })()}</div>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}{(() => { const e = estadoMp4(v, ids); return e ? <span title={e.titulo || ''} style={{ color: e.cor, cursor: e.titulo ? 'pointer' : 'default', textDecoration: e.titulo ? 'underline dotted' : 'none' }}
+              onClick={e.titulo ? () => setAviso(`O MP4 falhou: ${e.titulo}`) : undefined}> · {e.txt}</span> : null; })()}</div>
             {aberto === v.id ? (
               <Btn variant="ghost" onClick={onFecharAberto} style={{ minWidth: 96, justifyContent: 'center' }}><X size={13} /> Fechar</Btn>
             ) : (

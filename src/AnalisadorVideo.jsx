@@ -6,6 +6,7 @@ import { supabase } from './supabaseClient';
 import { offerUndo, UNDO_SECONDS } from './base/ui';
 import { comMp4Proprio } from './media/organizacao';
 import { YoutubeComoVideo } from './media/youtubeComoVideo';
+import { linkDoVideoJunto } from './media/social';
 import { dataApagar, diasParaApagar, DIAS_AVISO, DIAS_PROLONGAR, espacoJogosUsado, formatarGB, dataCurtaPt } from './media/retencao';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
@@ -1592,14 +1593,23 @@ export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPla
       if (!ativoRef.current || v.paused || v.seeking) return;
       const t = v.currentTime;
       let prev = s.prev;
-      if (prev != null && t < prev) prev = Math.max(-0.01, t - 0.05); // voltou ao início (ex.: repetição do clipe)
+      if (prev != null && t < prev) { prev = Math.max(-0.01, t - 0.05); s.ultimaA = null; } // voltou ao início (ex.: repetição do clipe)
+      // 1.ª imagem a tocar: um desenho logo no início do clipe (tempo 0)
+      // também pára (antes perdia-se, se o vídeo arrancasse sozinho).
+      if (prev == null && t < 1) { s.prev = -0.05; return; }
       if (prev == null || t - prev > 1.5) { s.prev = t; return; } // salto grande = não passou "a ver"
-      const lista = (formasRef.current || []).filter(temParagem);
+      /* Itens do MESMO momento (a menos de 0,3 s uns dos outros) fazem UMA
+         paragem, com o tempo do mais longo: 3 s + 3 s = 3 s. Antes, se a
+         imagem em que se parou caía entre os dois, o segundo voltava a
+         parar a seguir (3 s + 3 s = 6 s). Os da paragem que acabou de
+         passar já não contam. */
+      const lista = (formasRef.current || []).filter(temParagem)
+        .filter(sh => s.ultimaA == null || Math.abs((sh.criadoEmTempo ?? 0) - s.ultimaA) >= JANELA_PARAGEM);
       let A = null;
       lista.forEach(sh => { const a = sh.criadoEmTempo ?? 0; if (a > prev && a <= t + 0.001 && (A == null || a < A)) A = a; });
       s.prev = t;
       if (A == null) return;
-      const grupo = lista.filter(sh => Math.abs((sh.criadoEmTempo ?? 0) - A) < JANELA_PARAGEM);
+      const grupo = (formasRef.current || []).filter(temParagem).filter(sh => Math.abs((sh.criadoEmTempo ?? 0) - A) < JANELA_PARAGEM);
       const total = Math.max(...grupo.map(segDe));
       if (v.ehYoutube) {
         const taxa = v.playbackRate || 1;
@@ -2767,9 +2777,14 @@ async function partilharLink({ titulo, texto, url }) {
 // inteiro na app do YouTube do telemóvel. A mensagem é o título do clipe.
 function partilharClipeAtleta(clip) {
   const titulo = clip.titulo || 'Clipe';
-  // Clipe sobre um vídeo carregado: o link do ficheiro, só com o troço.
+  /* Clipe sobre um vídeo carregado (17/11): uma página da app, nunca o
+     endereço do ficheiro. Posto pelo treinador → a página do corte de onde
+     veio (?clipe=); de outra forma → o leitor dos vídeos juntos com este
+     troço (?junto=). */
   if (!clip.youtubeId && clip.dataUrl) {
-    const url = `${clip.dataUrl}#t=${Math.floor(Number(clip.clipInicio) || 0)},${Math.ceil(Number(clip.clipFim) || 0)}`;
+    const url = clip.criadoPorStaff && clip.corteOrigemId
+      ? `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(clip.corteOrigemId)}`
+      : linkDoVideoJunto(titulo, [{ src: clip.dataUrl, inicio: Number(clip.clipInicio) || 0, fim: Number(clip.clipFim) || 0, titulo }]);
     return partilharLink({ titulo, texto: titulo, url });
   }
   const q = new URLSearchParams({
@@ -2806,6 +2821,67 @@ export function podeGravarSeparador() {
     && typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
 }
 
+/* RECORTE SEM REGION CAPTURE (17/11). O `cropTo` só funciona quando se
+   partilha o PRÓPRIO separador. Na app instalada (janela própria, como o
+   Portal do Atleta) ou quando se escolhe outra superfície, o browser
+   recusa e gravava-se o ecrã todo. Aqui recorta-se à mão: a imagem
+   partilhada passa por um <canvas> que copia só o retângulo do vídeo
+   (calculado a cada imagem, a partir da posição da caixa no ecrã) e é
+   esse canvas que se grava. O som segue tal como vem. */
+async function recortarPorCanvas(stream, faixa, elemento) {
+  const st = (faixa.getSettings && faixa.getSettings()) || {};
+  const sup = st.displaySurface || 'browser';
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true;
+  v.srcObject = new MediaStream([faixa]);
+  try { await v.play(); } catch (e) { return null; }
+  if (!v.videoWidth) await new Promise(r => { v.onloadedmetadata = r; setTimeout(r, 1500); });
+  const regiao = () => {
+    const W = v.videoWidth; const H = v.videoHeight;
+    if (!W || !H) return null;
+    const r = elemento.getBoundingClientRect();
+    const bordaX = Math.max(0, (window.outerWidth - window.innerWidth) / 2);
+    let esc; let ox = 0; let oy = 0;
+    if (sup === 'monitor') {
+      esc = W / (window.screen.width || window.outerWidth);
+      ox = (window.screenX + bordaX) * esc;
+      oy = (window.screenY + Math.max(0, window.outerHeight - window.innerHeight - bordaX)) * esc;
+    } else if (sup === 'window') {
+      esc = W / (window.outerWidth || window.innerWidth);
+      ox = bordaX * esc;
+      oy = Math.max(0, H - (window.innerHeight + bordaX) * esc);
+    } else {
+      esc = W / window.innerWidth;
+    }
+    const sx = Math.max(0, ox + r.left * esc); const sy = Math.max(0, oy + r.top * esc);
+    const sw = Math.min(W - sx, r.width * esc); const sh = Math.min(H - sy, r.height * esc);
+    return sw > 8 && sh > 8 ? { sx, sy, sw, sh } : null;
+  };
+  const r0 = regiao();
+  if (!r0) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(2, Math.round(r0.sw / 2) * 2);
+  canvas.height = Math.max(2, Math.round(r0.sh / 2) * 2);
+  const ctx = canvas.getContext('2d');
+  const desenhar = () => {
+    const g = regiao();
+    if (!g) return;
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Mantém a proporção da caixa (ex.: ao entrar em ecrã inteiro).
+    const k = Math.min(canvas.width / g.sw, canvas.height / g.sh);
+    const w = g.sw * k; const h = g.sh * k;
+    ctx.drawImage(v, g.sx, g.sy, g.sw, g.sh, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+  };
+  desenhar();
+  const relogio = setInterval(desenhar, 1000 / 30);
+  const saida = canvas.captureStream(30);
+  stream.getAudioTracks().forEach(t => saida.addTrack(t));
+  return {
+    stream: saida,
+    parar: () => { clearInterval(relogio); saida.getVideoTracks().forEach(t => t.stop()); try { v.pause(); v.srcObject = null; } catch (e) { /* nada */ } },
+  };
+}
+
 // Pede o separador e prepara a gravação (ainda sem gravar: `comecar()`).
 export async function prepararGravacaoSeparador(elemento) {
   const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -2816,28 +2892,39 @@ export async function prepararGravacaoSeparador(elemento) {
     surfaceSwitching: 'exclude',
   });
   const [faixa] = stream.getVideoTracks();
+  let recortado = false;
   try {
     if (elemento && window.CropTarget && faixa && typeof faixa.cropTo === 'function') {
       const alvo = await window.CropTarget.fromElement(elemento);
       await faixa.cropTo(alvo);
+      recortado = true;
     }
-  } catch (e) { /* sem recorte: grava o separador inteiro */ }
+  } catch (e) { /* sem Region Capture: recorta-se no canvas, abaixo */ }
+  let streamGravar = stream;
+  let pararRecorte = () => {};
+  if (!recortado && elemento && faixa && typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype.captureStream) {
+    try {
+      const rc = await recortarPorCanvas(stream, faixa, elemento);
+      if (rc) { streamGravar = rc.stream; pararRecorte = rc.parar; }
+    } catch (e) { /* grava o que veio */ }
+  }
   const tipos = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4',
     'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   const mime = tipos.find(t => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t)) || '';
-  const rec = new window.MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
+  const rec = new window.MediaRecorder(streamGravar, mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
   const partes = [];
   rec.ondataavailable = (e) => { if (e.data && e.data.size) partes.push(e.data); };
   let resolver;
   const acabou = new Promise(res => { resolver = res; });
   rec.onstop = () => {
+    pararRecorte();
     stream.getTracks().forEach(t => t.stop());
     // Com a duração escrita no cabeçalho (ver media/duracaoMp4.js).
     corrigirDuracaoMp4(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] })).then(resolver);
   };
   const terminar = () => {
     if (rec.state !== 'inactive') rec.stop();
-    else { stream.getTracks().forEach(t => t.stop()); resolver(null); }
+    else { pararRecorte(); stream.getTracks().forEach(t => t.stop()); resolver(null); }
   };
   // "Parar partilha" na barra do browser também acaba a gravação.
   if (faixa) faixa.addEventListener('ended', terminar);
@@ -6671,7 +6758,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         onIr={(tp) => { videoRef.current?.pause(); seekTo(tp); }} />
                     </div>
                   )}
-                  {tituloSecao(`Paragens neste vídeo · ${paragensDoVideo.length}`, 14)}
+                  {tituloSecao(`Desenhos neste vídeo · ${paragensDoVideo.length}`, 14)}
                   {paragensDoVideo.length === 0 && <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>{ehLinkNoEditor ? 'Para o vídeo no momento certo e desenha. Ao ver, o vídeo passa a câmara lenta nesses momentos.' : 'Para o vídeo no momento certo e desenha. Cada momento com desenhos aparece aqui.'}</div>}
                   {/* Com muitas paragens, a lista desloca-se sozinha (cabem 3). */}
                   <div className="mjp-sem-scroll" style={{ maxHeight: 3 * 46, overflowY: 'auto', scrollbarWidth: 'none' }}>

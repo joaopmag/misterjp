@@ -8,7 +8,7 @@ import { body, T, TEXT_ON_ACCENT } from '../base/tema';
 import { Field, Select, Input, Modal, FIELD_GRID, Btn } from '../base/ui';
 import { Scissors } from 'lucide-react';
 import { ehClipe, fichaDaEquipa } from './organizacao';
-import { driveOpenSrc, linkDoCorteYoutube, socialEmbedSrc } from './social';
+import { driveOpenSrc, linkDoCorteYoutube, linkDoVideoJunto, socialEmbedSrc, URL_PUBLICA_APP } from './social';
 import { hrefDescarga } from '../base/anexos';
 
 /* ---------------------------------------------------------------
@@ -48,10 +48,14 @@ export async function shareMediaItem(item) {
     : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim, titulo)
       : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
         : item.social ? socialEmbedSrc(item.social)
-          // Clipe de um vídeo carregado: o link do ficheiro só com o troço
-          // (#t=início,fim), em vez de descarregar o vídeo completo.
+          /* Clipe de um vídeo carregado (17/11): uma página da app, nunca o
+             endereço do ficheiro no Storage. Clipe do treinador → a página do
+             corte (?clipe=, a mesma da Análise); os outros → o leitor dos
+             vídeos juntos com um só troço (?junto=, abre em ecrã inteiro). */
           : (item.clipNoFicheiro && item.dataUrl && ehClipe(item)
-            ? `${item.dataUrl}#t=${Math.floor(item.clipInicio)},${Math.ceil(item.clipFim)}` : null);
+            ? (item.corteOrigemId ? `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(item.corteOrigemId)}`
+              : linkDoVideoJunto(titulo, [{ src: item.dataUrl, inicio: Number(item.clipInicio) || 0, fim: Number(item.clipFim) || 0, titulo }]))
+            : null);
   // Num corte, a mensagem é o título que lhe deram; num vídeo completo
   // (ou noutro link), o descritivo todo: título e, por baixo, a
   // jornada/descrição. O link vem a seguir.

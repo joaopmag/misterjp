@@ -3769,7 +3769,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
                           padding: '8px 12px', background: T.surface, borderBottom: `1px solid ${T.line}`, flexShrink: 0,
                         }}>
-                          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ flex: 1, fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {ativoEClipe ? (
                               <>
                                 {emLista && <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {i + 1} de {lista.length} · </strong>}
@@ -3783,8 +3783,10 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                               </>
                             )}
                           </span>
-                          {(active.shapesStaff || []).length > 0 && active.dataUrl && (
-                            <Btn variant="solid" onClick={() => setVerClipeStaff(active)} style={{ padding: '6px 10px', fontSize: 12, flexShrink: 0 }}>
+                          {/* Clipes do treinador: os desenhos já tocam no leitor (paragens).
+                              O botão fica só para os antigos sem paragens. */}
+                          {(active.shapesStaff || []).length > 0 && active.dataUrl && !(active.anotacoesPausa || []).length && (
+                            <Btn variant="solid" onClick={() => setVerClipeStaff(active)} style={{ padding: '6px 10px', fontSize: 12, flexShrink: 0, marginLeft: 'auto' }}>
                               <Pencil size={13} /> Ver com os desenhos
                             </Btn>
                           )}

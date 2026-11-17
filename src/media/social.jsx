@@ -590,14 +590,24 @@ export function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEc
   const [tempo, setTempo] = useState(0);
   const [duracao, setDuracao] = useState(0);
   const [mudo, setMudo] = useState(false);
-  const [emEcraInteiro, setEmEcraInteiro] = useState(false);
+  const [emCheioNativo, setEmCheioNativo] = useState(false);
+  /* ECRÃ INTEIRO QUE FUNCIONA SEMPRE (17/11): onde o browser recusa o
+     ecrã inteiro (iPhone, browser do WhatsApp/Instagram), a caixa cobre o
+     ecrã por CSS, como no leitor dos vídeos juntos. */
+  const [emCheioCss, setEmCheioCss] = useState(false);
+  const emEcraInteiro = emCheioNativo || emCheioCss;
   const areaRef = useRef(null);
   const lupaV = useLupa(areaRef, emEcraInteiro);
+  useKioskVoltar(emCheioCss, () => setEmCheioCss(false));
 
   useEffect(() => {
-    const aoMudar = () => setEmEcraInteiro(!!wrapRef.current && document.fullscreenElement === wrapRef.current);
+    const aoMudar = () => {
+      const el = document.fullscreenElement || document.webkitFullscreenElement;
+      setEmCheioNativo(!!wrapRef.current && el === wrapRef.current);
+    };
     document.addEventListener('fullscreenchange', aoMudar);
-    return () => document.removeEventListener('fullscreenchange', aoMudar);
+    document.addEventListener('webkitfullscreenchange', aoMudar);
+    return () => { document.removeEventListener('fullscreenchange', aoMudar); document.removeEventListener('webkitfullscreenchange', aoMudar); };
   }, []);
 
   const alternar = () => {
@@ -613,12 +623,19 @@ export function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEc
   };
   const lerDuracao = (e) => { const d = e.currentTarget.duration; setDuracao(Number.isFinite(d) ? d : 0); };
   const ecraInteiro = () => {
-    if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); return; }
+    if (emCheioCss) { setEmCheioCss(false); return; }
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      return;
+    }
     const w = wrapRef.current;
-    const v = videoRef.current;
-    if (w && w.requestFullscreen) w.requestFullscreen().catch(() => {});
-    // iPhone: só o próprio vídeo entra em ecrã inteiro (com os controlos do sistema).
-    else if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+    const pedir = w && (w.requestFullscreen || w.webkitRequestFullscreen);
+    if (!pedir) { setEmCheioCss(true); return; }
+    try {
+      const r = pedir.call(w);
+      if (r && typeof r.catch === 'function') r.catch(() => setEmCheioCss(true));
+    } catch (e) { setEmCheioCss(true); }
   };
   const btn = {
     background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
@@ -629,6 +646,7 @@ export function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEc
     <div ref={wrapRef} style={{
       display: 'flex', flexDirection: 'column', background: '#000',
       ...style, ...(emEcraInteiro ? { height: '100%', width: '100%' } : {}),
+      ...(emCheioCss ? { position: 'fixed', inset: 0, zIndex: 3000, height: '100dvh', width: '100vw', borderRadius: 0 } : {}),
     }}>
       <div ref={areaRef} onWheel={emEcraInteiro ? lupaV.aoRodar : undefined} style={{
         position: 'relative', overflow: 'hidden', ...(emEcraInteiro ? { flex: 1, minHeight: 0 } : {}),

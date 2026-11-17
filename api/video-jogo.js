@@ -13,7 +13,8 @@
 //   GET   ?t=<token>
 //         → 302 para um link assinado (6 h) do ficheiro, se ainda houver no
 //           Canal um vídeo com esse ficheiro (`ficheiroPrivado.path`).
-//           Apagado do Canal → o link deixa de funcionar.
+//           Apagado do Canal → o link deixa de funcionar (a não ser que
+//           ainda haja clipes de jogadores a apontar para ele, ver abaixo).
 //
 // O token é o caminho do ficheiro e a equipa, assinados (HMAC) com uma chave
 // tirada da SUPABASE_SERVICE_ROLE_KEY: ninguém consegue inventar um link
@@ -77,7 +78,16 @@ export default async function handler(req, res) {
       const { data: linhas, error } = await supabaseAdmin
         .from('videos').select('id, data').eq('team_id', t.t).eq('data->ficheiroPrivado->>path', t.p).limit(10);
       if (error) throw error;
-      const noCanal = (linhas || []).some(l => l && l.data && l.data.daAnalise !== true);
+      let noCanal = (linhas || []).some(l => l && l.data && l.data.daAnalise !== true);
+      /* Retirado da Sala (17/11): os clipes dos jogadores feitos sobre o
+         jogo continuam a abrir até terem MP4 próprio (o serviço de vídeo
+         fá-lo em poucos minutos e passa o clipe para esse ficheiro). */
+      if (!noCanal) {
+        const token = String(req.query.t);
+        const { data: clipes } = await supabaseAdmin
+          .from('video_clips').select('id').eq('team_id', t.t).like('data->>dataUrl', `%/api/video-jogo?t=${token}`).limit(1);
+        noCanal = !!(clipes && clipes.length);
+      }
       if (!noCanal) return res.status(404).send('Este jogo já não está disponível');
       const { data: s, error: e2 } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(t.p, VALIDADE_S);
       if (e2 || !s) throw e2 || new Error('sem link');
