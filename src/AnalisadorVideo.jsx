@@ -2711,11 +2711,6 @@ function jogoDoClipeAtleta(c) {
    Se o servidor não deixar ler a imagem (CORS), volta a tentar sem isso:
    não se guarda, mas também não fica preto. */
 const cacheMiniaturasClipe = new Map();
-// Para o leitor grande usar a mesma imagem por trás enquanto o vídeo carrega.
-export function miniaturaClipeGuardada(...chaves) {
-  for (const k of chaves) { if (k && cacheMiniaturasClipe.has(k)) return cacheMiniaturasClipe.get(k); }
-  return null;
-}
 export function MiniaturaClipeVideo({ chave, src, t, style }) {
   const [img, setImg] = useState(() => cacheMiniaturasClipe.get(chave) || null);
   const [visivel, setVisivel] = useState(false);

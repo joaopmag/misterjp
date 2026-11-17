@@ -5,7 +5,7 @@ import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
-import { ClipPlayerModal, MiniaturaClipeVideo, miniaturaClipeGuardada, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
+import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { ChevronDown, ChevronUp, FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
@@ -2806,12 +2806,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   })();
   // Rede de segurança: se o YouTube não avisar que carregou, mostra-se na mesma.
   const chaveIframeBib = leitorBib ? leitorBib.chave : (active && active.id);
-  const fundoVideoBib = active && !active.youtubeId && active.dataUrl
-    ? (active.thumbUrl || miniaturaClipeGuardada(
-      `${active.id}:${active.dataUrl}:${active.clipInicio}`,
-      `${active.id}:${active.dataUrl}:${ehClipe(active) ? active.clipInicio : 0}`,
-      `${active.id}:${active.dataUrl}:0`))
-    : null;
   useEffect(() => {
     if (!chaveIframeBib) return undefined;
     const t = setTimeout(() => setIframeVisivelBib(chaveIframeBib), 2500);
@@ -3911,9 +3905,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       /* Enquanto o YouTube carrega, a imagem do próprio vídeo por
                          trás (em vez do quadrado preto) (17/11). */
                       ...(active && active.youtubeId ? { backgroundImage: `url("https://img.youtube.com/vi/${active.youtubeId}/mqdefault.jpg")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
-                      /* O mesmo para vídeos carregados (17/11): a miniatura do
-                         cartão (já guardada) por trás, em vez de preto. */
-                      ...(active && !active.youtubeId && fundoVideoBib ? { backgroundImage: `url("${fundoVideoBib}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#000' } : {}),
+                      /* Vídeos carregados (17/11, 2.ª): enquanto a 1.ª imagem
+                         não chega fica o fundo escuro do painel, sem imagem.
+                         A miniatura por trás era outro fotograma e com outro
+                         enquadramento, e a imagem "mexia" ao entrar o vídeo. */
+                      ...(active && !active.youtubeId ? { background: T.surfaceRaise } : {}),
                     }}>
                       {/* ZOOM DO CÍRCULO — só o vídeo e os desenhos se
                           aproximam (ver `zoomBib`); as barras de ferramentas,

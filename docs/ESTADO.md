@@ -574,9 +574,10 @@ reduz o peso inicial da app e do Portal.
 - 17/11: Leitor da Sala com vídeos carregados (ex.: clipes do staff em
   "Os meus clipes"). Abria preto até chegar a 1.ª imagem. Agora o <video>
   fica invisível até ter a imagem no ponto certo do corte (`onLoadedData` /
-  `onSeeked`, mesma rede de segurança de 2,5 s do YouTube) e por trás vê-se
-  a miniatura do cartão (`thumbUrl` ou `miniaturaClipeGuardada` exportada
-  de AnalisadorVideo.jsx). Testado com o servidor a demorar 0,7 s.
+  `onSeeked`, mesma rede de segurança de 2,5 s do YouTube) e entra num
+  desvanecer de 0,12 s; por trás fica o fundo escuro do painel. NÃO pôr a
+  miniatura por trás: é outro fotograma e outro enquadramento, e a imagem
+  "mexe" quando o vídeo entra (testado e rejeitado).
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem
