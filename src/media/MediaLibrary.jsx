@@ -2811,6 +2811,41 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      antigo: via-se um fotograma preto, depois a imagem, e só então se
      escondia à espera do servidor (17/11, cortes de ficheiro). */
   React.useLayoutEffect(() => { setIframeVisivelBib(null); }, [chaveIframeBib]);
+  /* LEITORES GUARDADOS (17/11). Cada vídeo carregado (ficheiro) tem o seu
+     <video>, e os últimos 3 ficam montados (escondidos e em pausa). Voltar a
+     um corte já visto, ou passar para outro corte do mesmo ficheiro, já não
+     volta a descarregar o início do jogo: usa o que o leitor já tem e só
+     salta para o ponto do corte. Antes, cada troca eram 1 a 2 s de espera. */
+  const srcVideoBib = active && !active.youtubeId && !isBlocked ? (leitorBib ? leitorBib.src : active.dataUrl) : null;
+  const poolBibRef = useRef([]);
+  if (srcVideoBib && poolBibRef.current[poolBibRef.current.length - 1] !== srcVideoBib) {
+    poolBibRef.current = [...poolBibRef.current.filter(x => x !== srcVideoBib), srcVideoBib].slice(-3);
+  }
+  const videosPoolRef = useRef(new Map());
+  // O leitor ativo é o `inlineVideoRef` de sempre (comandos, desenhos, gravação).
+  React.useLayoutEffect(() => {
+    inlineVideoRef.current = srcVideoBib ? (videosPoolRef.current.get(srcVideoBib) || null) : null;
+  });
+  const srcAnteriorBibRef = useRef(null);
+  React.useLayoutEffect(() => {
+    const anterior = srcAnteriorBibRef.current;
+    srcAnteriorBibRef.current = srcVideoBib;
+    videosPoolRef.current.forEach((el, src) => { if (src !== srcVideoBib && el && !el.paused) el.pause(); });
+    const v = srcVideoBib ? videosPoolRef.current.get(srcVideoBib) : null;
+    if (!v || v.readyState < 1) return; // ainda a carregar: trata o onLoadedMetadata
+    // Outro corte no MESMO leitor que já se via: fica à vista e só salta
+    // (esconder e voltar a mostrar parecia um piscar).
+    if (anterior === srcVideoBib && v.readyState >= 2) setIframeVisivelBib(chaveIframeBib);
+    if (v.duration > 0) setDuracaoJogo(v.duration);
+    const alvo = ativoEClipe ? (Number(clipIni) || 0) : 0;
+    if (Math.abs(v.currentTime - alvo) > 0.05) v.currentTime = alvo; // o onSeeked mostra-o
+    else if (v.readyState >= 2) setIframeVisivelBib(chaveIframeBib);
+    if (active && tocarAoCarregarRef.current === active.id) {
+      tocarAoCarregarRef.current = null;
+      const pr = v.play(); if (pr && pr.catch) pr.catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveIframeBib]);
   useEffect(() => {
     if (!chaveIframeBib) return undefined;
     const t = setTimeout(() => setIframeVisivelBib(chaveIframeBib), 2500);
@@ -3971,31 +4006,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             <span style={{ width: 22, height: 22, borderRadius: '50%', border: `2px solid ${T.gold}`, borderTopColor: 'transparent', animation: 'mjpLeitorRoda .8s linear infinite' }} />
                           </div>
                         )}
-                        <video
-                          key={leitorBib ? leitorBib.chave : active.id}
-                          ref={inlineVideoRef}
-                          src={leitorBib ? leitorBib.src : active.dataUrl}
-                          playsInline preload="auto"
-                          onLoadedMetadata={(e) => {
-                            const vid = e.currentTarget;
-                            if (vid.duration > 0) setDuracaoJogo(vid.duration);
-                            if (ativoEClipe && vid.currentTime < clipIni) vid.currentTime = clipIni;
-                            if (tocarAoCarregarRef.current === active.id) {
-                              tocarAoCarregarRef.current = null;
-                              const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {});
-                            }
-                          }}
-                          onTimeUpdate={(e) => infoDoVideoBib(e.currentTarget)}
-                          /* Só aparece com a 1.ª imagem pronta (no ponto certo
-                             do corte); até lá vê-se a miniatura por trás. */
-                          onLoadedData={(e) => { if (!ativoEClipe || e.currentTarget.currentTime >= clipIni - 0.3) setIframeVisivelBib(chaveIframeBib); }}
-                          onSeeked={(e) => { infoDoVideoBib(e.currentTarget); setIframeVisivelBib(chaveIframeBib); }}
-                          onPlay={() => setYtATocar(true)}
-                          onPause={() => setYtATocar(false)}
-                          onEnded={() => setYtATocar(false)}
-                          onClick={() => { if (ativoEClipe) alternarReproducaoBib(); else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); }}
-                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer', opacity: iframeVisivelBib === chaveIframeBib ? 1 : 0, transition: 'opacity .12s ease-out' }}
-                        />
                         </>
                       ) : (
                         <iframe
@@ -4022,6 +4032,37 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                           title={active.title}
                         />
                       )}
+                      {!isBlocked && poolBibRef.current.map((srcPool) => {
+                        const eAtivo = srcPool === srcVideoBib;
+                        return (
+                          <video
+                            key={`pool:${srcPool}`}
+                            ref={(el) => { if (el) videosPoolRef.current.set(srcPool, el); else videosPoolRef.current.delete(srcPool); if (el && eAtivo) inlineVideoRef.current = el; }}
+                            src={srcPool}
+                            playsInline preload={eAtivo ? 'auto' : 'metadata'}
+                            {...(eAtivo ? {
+                              onLoadedMetadata: (e) => {
+                                const vid = e.currentTarget;
+                                if (vid.duration > 0) setDuracaoJogo(vid.duration);
+                                if (ativoEClipe && vid.currentTime < clipIni) vid.currentTime = clipIni;
+                                if (tocarAoCarregarRef.current === active.id) {
+                                  tocarAoCarregarRef.current = null;
+                                  const pr = vid.play(); if (pr && pr.catch) pr.catch(() => {});
+                                }
+                              },
+                              onTimeUpdate: (e) => infoDoVideoBib(e.currentTarget),
+                              // Só aparece com a 1.ª imagem pronta, no ponto certo do corte.
+                              onLoadedData: (e) => { if (!ativoEClipe || e.currentTarget.currentTime >= clipIni - 0.3) setIframeVisivelBib(chaveIframeBib); },
+                              onSeeked: (e) => { infoDoVideoBib(e.currentTarget); setIframeVisivelBib(chaveIframeBib); },
+                              onPlay: () => setYtATocar(true),
+                              onPause: () => setYtATocar(false),
+                              onEnded: () => setYtATocar(false),
+                              onClick: () => { if (ativoEClipe) alternarReproducaoBib(); else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); },
+                            } : {})}
+                            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer', display: eAtivo ? 'block' : 'none', opacity: eAtivo && iframeVisivelBib === chaveIframeBib ? 1 : 0, transition: 'opacity .12s ease-out' }}
+                          />
+                        );
+                      })}
                       {/* Fim do corte: Repetir / Corte seguinte (como na
                           Análise individual em clipes). */}
                       {!isBlocked && ativoEClipe && fimCorte === active.id && (() => {

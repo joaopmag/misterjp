@@ -585,6 +585,12 @@ reduz o peso inicial da app e do Portal.
   (saltar para o meio de um ficheiro grande pode levar 1 a 2 s) aparece
   uma roda discreta ao fim de 0,4 s. Testado fotograma a fotograma com
   dois ficheiros, ida e volta, servidor a demorar 0,4 s: nunca preto.
+  LEITORES GUARDADOS: cada ficheiro tem o seu <video> e os últimos 3 ficam
+  montados (escondidos, em pausa; `poolBibRef` / `videosPoolRef`). Voltar a
+  um corte já visto ou mudar de corte no mesmo ficheiro não volta a pedir
+  nada à rede, só salta (no mesmo ficheiro fica à vista durante o salto).
+  `inlineVideoRef` aponta sempre para o leitor ativo. Testado: zero pedidos
+  novos ao voltar, e trocar com um a tocar deixa-o em pausa.
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem
