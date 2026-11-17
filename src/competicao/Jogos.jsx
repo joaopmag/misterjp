@@ -180,7 +180,7 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
           tabs={[
             { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
             { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-            // A competição (jornadas, classificação) e as estatísticas dos jogos, fora da lista de jogos (17/11).
+            // As estatísticas dos jogos (MatchDashboard), fora da lista de jogos (17/11). A competição fica em Jogos.
             { id: 'competicao', label: 'Estatísticas', icon: BarChart3 },
             // O número é o dos relatórios já inseridos (com dados), como em Jogos e Convocatórias.
             { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosInseridos },
@@ -216,9 +216,6 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
       <div>
         {cabecalhoJogos}
         <div style={{ marginBottom: 20 }}>
-          <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
-        </div>
-        <div style={{ marginBottom: 20 }}>
           <MatchDashboard players={players} matches={matches} />
         </div>
       </div>
@@ -243,6 +240,9 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
     <div>
       {cabecalhoJogos}
 
+      <div style={{ marginBottom: 20 }}>
+        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
+      </div>
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
       ) : sorted.length === 0 ? (

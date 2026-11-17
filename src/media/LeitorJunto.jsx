@@ -399,6 +399,11 @@ export function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   );
 }
 
+/* Cópia EM MEMÓRIA (17/11): se o armazenamento do aparelho estiver cheio
+   (a app guarda lá muita coisa), a cópia de lá falha em silêncio e a caixa
+   abria vazia até o servidor responder. Esta vale enquanto a app estiver
+   aberta, por isso voltar a "Os meus clipes" mostra logo os vídeos. */
+const memoriaJuntos = new Map(); // chave -> { lista, mp4 }
 export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGravar, aGravar, aberto, onAbrir, onFecharAberto }) {
   /* Guardados NO SERVIDOR (api, ver os_meus_videos.sql), para aparecerem
      em qualquer aparelho. Se o servidor ainda não tiver as funções (ou não
@@ -410,13 +415,19 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
      quando chega a do servidor; o texto de "ainda não tens vídeos" só
      aparece depois de se saber de certeza. */
   const chaveCache = `${chave}:servidor`;
-  const [lista, setLista] = useState(() => { const loc = lerCompilacoes(chave); return loc.length ? loc : lerCompilacoes(`${chave}:servidor`); });
+  const [lista, setLista] = useState(() => {
+    const mem = memoriaJuntos.get(chave);
+    if (mem && mem.lista && mem.lista.length) return mem.lista;
+    const loc = lerCompilacoes(chave); return loc.length ? loc : lerCompilacoes(`${chave}:servidor`);
+  });
   const [carregado, setCarregado] = useState(false);
   /* O estado dos MP4 da última vez (neste aparelho): ao voltar a abrir, os
      cartões mostram logo "o MP4 falhou" / "MP4 pronto", em vez de piscar
      (vazio → texto) quando a resposta do servidor chega. */
   const chaveMp4 = `${chave}:mp4`;
   const mp4Guardado = React.useMemo(() => {
+    const mem = memoriaJuntos.get(chave);
+    if (mem && mem.mp4) return mem.mp4;
     try { const o = JSON.parse(localStorage.getItem(chaveMp4) || 'null'); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -432,6 +443,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const [mp4Ativo, setMp4Ativo] = useState(!!(mp4Guardado && mp4Guardado.ativo));
   useEffect(() => {
     if (!mp4Ativo) return;
+    memoriaJuntos.set(chave, { ...(memoriaJuntos.get(chave) || {}), mp4: { ativo: true, m: mp4 } });
     try { localStorage.setItem(chaveMp4, JSON.stringify({ ativo: true, m: mp4 })); } catch (e) { /* sem armazenamento */ }
   }, [mp4, mp4Ativo, chaveMp4]);
   const [esperaMp4, setEsperaMp4] = useState(null); // { nome, ids } — aviso "a preparar"
@@ -480,7 +492,11 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   }, [chave, api]);
   const guardarLocal = (nova) => { setLista(nova); gravarCompilacoes(chave, nova); };
   // Cópia da lista do servidor neste aparelho, para a próxima abertura.
-  useEffect(() => { if (noServidor) gravarCompilacoes(chaveCache, lista); }, [lista, noServidor, chaveCache]);
+  useEffect(() => {
+    if (!noServidor) return;
+    memoriaJuntos.set(chave, { ...(memoriaJuntos.get(chave) || {}), lista });
+    gravarCompilacoes(chaveCache, lista);
+  }, [lista, noServidor, chaveCache, chave]);
   const porId = new Map(clipes.map(c => [c.id, c]));
   const duracao = (ids) => ids.reduce((t, id) => { const c = porId.get(id); return t + (c ? Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)) : 0); }, 0);
   const validos = (ids) => (ids || []).filter(id => porId.has(id));

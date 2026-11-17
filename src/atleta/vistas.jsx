@@ -175,23 +175,30 @@ export const ERROS_CLIPE_ATLETA = {
   clipe_invalido: 'Este clipe já não existe (pode ter sido apagado pelo treinador).',
 };
 
+// Cópia em memória da Sala do Portal (ver cacheBib): abre logo ao voltar, mesmo sem espaço no aparelho.
+const memoriaPortalBib = new Map();
 export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   /* Miniaturas: as que já estavam carregadas (cache do browser) ficam
      logo visíveis; as outras entram a desvanecer (ver mjp-bib). Rede de
      segurança: ao fim de 2 s mostram-se todas, aconteça o que acontecer. */
+  /* (17/11) O vigia fica ligado o tempo todo (antes desligava aos 2 s):
+     ao voltar de um jogo, as miniaturas que já estão em cache aparecem logo,
+     sem o desvanecer a partir do escuro. */
   const marcarMiniaturas = React.useCallback((el) => {
     if (!el) return;
-    const ver = () => el.querySelectorAll('img').forEach(im => { if (im.complete) im.classList.add('mjp-ok'); });
+    const ver = () => el.querySelectorAll('img:not(.mjp-ok)').forEach(im => { if (im.complete) im.classList.add('mjp-ok'); });
     ver();
     const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(ver) : null;
     if (mo) mo.observe(el, { childList: true, subtree: true });
-    setTimeout(() => { el.querySelectorAll('img').forEach(im => im.classList.add('mjp-ok')); if (mo) mo.disconnect(); }, 2000);
+    setTimeout(() => { el.querySelectorAll('img').forEach(im => im.classList.add('mjp-ok')); }, 2000);
   }, []);
   /* Abre logo com o que se viu da última vez (guardado neste aparelho) —
      antes, "Os meus clipes" e a contagem só apareciam uns segundos depois,
      à espera do servidor. Quando o servidor responde, troca-se. */
   const chaveCacheBib = `misterjp:portal-bib:${teamId}:${hashCurto(String(code || ''))}`;
   const cacheBib = React.useMemo(() => {
+    // Primeiro a cópia em memória (vale mesmo com o armazenamento cheio).
+    if (memoriaPortalBib.has(chaveCacheBib)) return memoriaPortalBib.get(chaveCacheBib);
     try { return JSON.parse(localStorage.getItem(chaveCacheBib) || 'null') || null; } catch (e) { return null; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -199,6 +206,7 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   const [videos, setVideosState] = useState(() => (cacheBib && Array.isArray(cacheBib.videos) ? cacheBib.videos : []));
   const [meusClipes, setMeusClipes] = useState(() => (cacheBib && Array.isArray(cacheBib.meus) ? cacheBib.meus : []));
   useEffect(() => {
+    if (videos.length || meusClipes.length) memoriaPortalBib.set(chaveCacheBib, { videos, meus: meusClipes });
     try { localStorage.setItem(chaveCacheBib, JSON.stringify({ videos, meus: meusClipes })); } catch (e) { /* sem espaço */ }
   }, [videos, meusClipes, chaveCacheBib]);
   // Se a leitura dos clipes do jogador falhar, diz-se no ecrã (antes

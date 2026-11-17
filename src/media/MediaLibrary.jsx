@@ -2476,7 +2476,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             {v.youtubeId ? (
               <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
             ) : v.thumbUrl ? (
-              <img src={v.thumbUrl} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000' }} />
+              <img src={v.thumbUrl} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
             ) : eVideoFicheiroBib(v) ? (
               // Vídeo carregado: o fotograma do próprio ficheiro (no início do corte, num clipe).
               // Sem preto ao abrir (17/11): fundo do cartão até chegar a imagem, e a
@@ -3336,7 +3336,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           const alvo = `https://img.youtube.com/vi/${comImagem.youtubeId}/mqdefault.jpg`;
           if (e.currentTarget.src !== alvo) e.currentTarget.src = alvo;
         }}
-        alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }}
+        alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: T.surfaceRaise }}
       />
     ) : (() => {
       /* Sem vídeo do YouTube (ex.: só cortes vindos da Análise de Vídeo,
@@ -3345,8 +3345,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
       // Nem miniatura: o primeiro fotograma do próprio MP4 (só os metadados são lidos).
       const comMp4 = !comThumb && (g.itens.find(x => eVideoFicheiroBib(x) && !ehClipe(x)) || g.itens.find(x => x.kind === 'video' && /^https?:/.test(String(x.dataUrl || '')) && !x.youtubeId && !x.storagePath));
       return comThumb ? (
-        <img src={comThumb.thumbUrl} alt="" loading="lazy"
-          style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
+        <img src={comThumb.thumbUrl} alt=""
+          style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: T.surfaceRaise }} />
       ) : comMp4 ? (
         <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, overflow: 'hidden' }}>
           <MiniaturaClipeVideo chave={`${comMp4.id}:${comMp4.dataUrl}:${comMp4.clipNoFicheiro ? comMp4.clipInicio : 0}`} src={comMp4.dataUrl} t={comMp4.clipNoFicheiro ? (Number(comMp4.clipInicio) || 0) + 0.5 : 0.5} />
@@ -3388,7 +3388,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                   const p = pos[j];
                   const estiloCarta = {
                     position: 'absolute', width: '52%', aspectRatio: '16 / 9', objectFit: 'cover', left: '24%', top: '20%',
-                    borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: '#000',
+                    borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: T.surfaceRaise,
                     transform: `translateX(${p * 34}%) translateY(${Math.abs(p) * 7}%) rotate(${p * 9}deg)`,
                     zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
                   };
@@ -3403,7 +3403,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     <img key={c.id} alt="" src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`}
                       style={{
                         position: 'absolute', width: '52%', aspectRatio: '16 / 9', objectFit: 'cover', left: '24%', top: '20%',
-                        borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: '#000',
+                        borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: T.surfaceRaise,
                         transform: `translateX(${p * 34}%) translateY(${Math.abs(p) * 7}%) rotate(${p * 9}deg)`,
                         zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
                       }} />
@@ -3870,6 +3870,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                         ? { position: 'relative', flex: 1, minHeight: 0 }
                         : { position: 'relative', paddingTop: '56.25%' }),
                       overflow: 'hidden',
+                      /* Enquanto o YouTube carrega, a imagem do próprio vídeo por
+                         trás (em vez do quadrado preto) (17/11). */
+                      ...(active && active.youtubeId ? { backgroundImage: `url("https://img.youtube.com/vi/${active.youtubeId}/hqdefault.jpg")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
                     }}>
                       {/* ZOOM DO CÍRCULO — só o vídeo e os desenhos se
                           aproximam (ver `zoomBib`); as barras de ferramentas,

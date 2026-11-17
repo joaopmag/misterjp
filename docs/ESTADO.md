@@ -412,8 +412,15 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   por cartão, classe `mjp-encaixe`): nunca fica um cartão a meio. (O botão
   "Mais abaixo" por cima do último cartão foi recusado.)
 - Jogos: novo separador "Estatísticas" (id `competicao`) a seguir a
-  Convocatórias, com a competição (jornadas, classificação) e o resumo dos
-  jogos (MatchDashboard). O separador Jogos fica só com a lista.
+  Convocatórias, só com o resumo dos jogos (MatchDashboard). A competição
+  (jornadas, classificação) fica no separador Jogos, por cima da lista.
+- Sala/Portal sem preto: o leitor do YouTube tem a imagem do vídeo por trás
+  enquanto carrega; miniaturas com fundo `surfaceRaise` em vez de preto e
+  sem `loading=lazy`; no Portal o vigia das miniaturas (`marcarMiniaturas`)
+  fica sempre ligado (as que estão em cache aparecem logo). Cópias EM
+  MEMÓRIA da Sala do Portal (`memoriaPortalBib`) e de Os meus vídeos
+  (`memoriaJuntos`): voltam logo mesmo com o armazenamento do aparelho
+  cheio (aí a cópia em localStorage falha em silêncio).
 - Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
   "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
   trocar Competição/Amigáveis não mexer.
