@@ -412,7 +412,15 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
   const chaveCache = `${chave}:servidor`;
   const [lista, setLista] = useState(() => { const loc = lerCompilacoes(chave); return loc.length ? loc : lerCompilacoes(`${chave}:servidor`); });
   const [carregado, setCarregado] = useState(false);
-  const [noServidor, setNoServidor] = useState(false);
+  /* O estado dos MP4 da última vez (neste aparelho): ao voltar a abrir, os
+     cartões mostram logo "o MP4 falhou" / "MP4 pronto", em vez de piscar
+     (vazio → texto) quando a resposta do servidor chega. */
+  const chaveMp4 = `${chave}:mp4`;
+  const mp4Guardado = React.useMemo(() => {
+    try { const o = JSON.parse(localStorage.getItem(chaveMp4) || 'null'); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [noServidor, setNoServidor] = useState(!!(mp4Guardado && mp4Guardado.ativo));
   const [aviso, setAviso] = useState('');
   const [editar, setEditar] = useState(null); // { id?, nome, ids }
   const [aGuardar, setAGuardar] = useState(false);
@@ -420,8 +428,12 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
      url, assinatura, pedidoEm }. Só existe com o serviço de vídeo e a
      função checkin_video_ficheiros na base; sem isso, `mp4Ativo` fica
      false e o Descarregar grava no browser, como antes. */
-  const [mp4, setMp4] = useState({});
-  const [mp4Ativo, setMp4Ativo] = useState(false);
+  const [mp4, setMp4] = useState(() => (mp4Guardado && mp4Guardado.m) || {});
+  const [mp4Ativo, setMp4Ativo] = useState(!!(mp4Guardado && mp4Guardado.ativo));
+  useEffect(() => {
+    if (!mp4Ativo) return;
+    try { localStorage.setItem(chaveMp4, JSON.stringify({ ativo: true, m: mp4 })); } catch (e) { /* sem armazenamento */ }
+  }, [mp4, mp4Ativo, chaveMp4]);
   const [esperaMp4, setEsperaMp4] = useState(null); // { nome, ids } — aviso "a preparar"
   const pedidosMp4 = useRef(new Set());
   // Porque é que não há MP4 (para se ver, em vez de gravar às escondidas).
@@ -613,6 +625,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
      editar abre numa janela por cima. Os avisos aparecem no próprio
      cartão (ou no cabeçalho), sem empurrar nada. */
   const ALTURA_CARTAO_JUNTO = 128;
+  const LARGURA_CARTAO_JUNTO = 236; // todos iguais, também o "Juntar clipes"
   const btnCartao = { ...btnIcone, padding: 3 };
   const rolar = (d) => { const el = filaRef.current; if (el) el.scrollBy({ left: d * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' }); };
   const avisoGeral = aviso || (falhaMp4 && noServidor ? falhaMp4 : '');
@@ -635,7 +648,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
       <div ref={filaRef} className="mjp-sem-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', scrollSnapType: 'x mandatory', height: ALTURA_CARTAO_JUNTO }}>
         {/* 1.º cartão: juntar clipes (como o "Carregar ficheiro" da Análise). */}
         <button type="button" onClick={() => setEditar({ nome: '', ids: [] })} style={{
-          flex: '0 0 170px', height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start', cursor: 'pointer', ...body,
+          flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start', cursor: 'pointer', ...body,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, textAlign: 'center', padding: 10,
           background: 'transparent', border: `1px dashed ${T.line}`, borderRadius: 10, color: T.muted,
         }}>
@@ -664,7 +677,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
           };
           return (
             <div key={v.id} style={{
-              flex: '0 0 236px', height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start',
+              flex: `0 0 ${LARGURA_CARTAO_JUNTO}px`, height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start',
               display: 'flex', flexDirection: 'column', padding: '9px 10px 8px', borderRadius: 10, ...body,
               background: esteAberto ? `${T.gold}14` : T.bg, border: `1px solid ${esteAberto ? T.gold : T.line}`,
             }}>

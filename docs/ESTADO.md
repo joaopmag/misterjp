@@ -387,6 +387,12 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
     no cabeçalho ou no cartão: a caixa nunca muda de altura.
   - Portal, lista: "treinador" no lugar do lápis e do caixote, alinhado à
     esquerda (os ícones de partilhar ficam todos na mesma coluna).
+- 17/11 (5): Portal sem preto ao abrir "Os meus clipes": as miniaturas dos
+  clipes de ficheiro (lista, cartões e pilha do cartão "Os meus clipes")
+  usam `MiniaturaClipeVideo` (exportado do AnalisadorVideo). O estado dos
+  MP4 dos vídeos juntos fica guardado no aparelho (`<chave>:mp4`) e os
+  cartões já abrem com ele. Cartões de "Os meus vídeos" todos com 236×128,
+  também o "Juntar clipes".
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

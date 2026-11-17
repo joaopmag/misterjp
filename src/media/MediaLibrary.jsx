@@ -5,7 +5,7 @@ import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
-import { ClipPlayerModal, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
+import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
@@ -2479,8 +2479,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
               <img src={v.thumbUrl} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000' }} />
             ) : eVideoFicheiroBib(v) ? (
               // Vídeo carregado: o fotograma do próprio ficheiro (no início do corte, num clipe).
-              <video src={`${v.dataUrl}#t=${(ehClipe(v) ? Number(v.clipInicio) || 0 : 0) + 0.5}`} muted playsInline preload="metadata"
-                style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000', pointerEvents: 'none' }} />
+              // Sem preto ao abrir (17/11): fundo do cartão até chegar a imagem, e a
+              // imagem fica guardada na sessão (ver MiniaturaClipeVideo).
+              <span style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, overflow: 'hidden', background: T.surfaceRaise, display: 'block' }}>
+                <MiniaturaClipeVideo chave={`${v.id}:${v.dataUrl}:${ehClipe(v) ? v.clipInicio : 0}`} src={v.dataUrl} t={(ehClipe(v) ? Number(v.clipInicio) || 0 : 0) + 0.5} />
+              </span>
             ) : v.social ? (
               <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}
@@ -3294,8 +3297,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
         <img src={comThumb.thumbUrl} alt="" loading="lazy"
           style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
       ) : comMp4 ? (
-        <video src={`${comMp4.dataUrl}#t=${comMp4.clipNoFicheiro ? (Number(comMp4.clipInicio) || 0) + 0.5 : 0.5}`} muted playsInline preload="metadata"
-          style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000', pointerEvents: 'none' }} />
+        <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, overflow: 'hidden' }}>
+          <MiniaturaClipeVideo chave={`${comMp4.id}:${comMp4.dataUrl}:${comMp4.clipNoFicheiro ? comMp4.clipInicio : 0}`} src={comMp4.dataUrl} t={comMp4.clipNoFicheiro ? (Number(comMp4.clipInicio) || 0) + 0.5 : 0.5} />
+        </div>
       ) : (
         <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Play size={22} color={T.mutedDim} />
@@ -3338,7 +3342,11 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
                   };
                   if (!c.youtubeId && c.dataUrl) {
-                    return <video key={c.id} src={`${c.dataUrl}#t=${(Number(c.clipInicio) || 0) + 0.5}`} muted playsInline preload="metadata" style={{ ...estiloCarta, pointerEvents: 'none' }} />;
+                    return (
+                      <div key={c.id} style={{ ...estiloCarta, overflow: 'hidden', background: T.surfaceRaise, pointerEvents: 'none' }}>
+                        <MiniaturaClipeVideo chave={`${c.id}:${c.dataUrl}:${c.clipInicio}`} src={c.dataUrl} t={(Number(c.clipInicio) || 0) + 0.5} />
+                      </div>
+                    );
                   }
                   return (
                     <img key={c.id} alt="" src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`}
