@@ -378,6 +378,15 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   - `VideoComBarra` (página ?clipe=): ecrã inteiro com prefixo webkit e,
     se o browser recusar (iPhone, browser do WhatsApp), a caixa cobre o
     ecrã por CSS.
+- 17/11 (4):
+  - Página do corte do YouTube (?corte=, `PaginaCorte`): botão de ecrã
+    inteiro (caixa toda; CSS se o browser recusar).
+  - Portal, Os meus vídeos (`LeitorJunto`): fila de cartões com altura fixa
+    (128 px) que desliza para o lado (setas no cabeçalho); 1.º cartão
+    "Juntar clipes" a tracejado. Juntar/editar numa janela por cima. Avisos
+    no cabeçalho ou no cartão: a caixa nunca muda de altura.
+  - Portal, lista: "treinador" no lugar do lápis e do caixote, alinhado à
+    esquerda (os ícones de partilhar ficam todos na mesma coluna).
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

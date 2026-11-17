@@ -4,7 +4,7 @@
 import { escolherPartilha } from '../base/escolherPartilha';
 import React, { useRef, useState, useEffect } from 'react';
 import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
-import { Pause, Play, RotateCcw, X, Minimize2, Maximize2, Film, Plus, Pencil, Share2, Download, Trash2, Loader2, Check } from 'lucide-react';
+import { Pause, Play, RotateCcw, X, Minimize2, Maximize2, Film, Plus, Pencil, Share2, Download, Trash2, Loader2, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { uid } from '../base/utilidades';
 import { Btn, Input } from '../base/ui';
 import { ControlosLupa, URL_PUBLICA_APP, fmtMMSS, linkDoVideoJunto, useLupa } from './social';
@@ -601,87 +601,127 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
     if (!url) url = linkDoVideoJunto(nome, segmentos);
     return url;
   };
+  const filaRef = useRef(null);
   const partilhar = async (nome, ids) => {
     const url = await linkDe(nome, ids);
     await escolherPartilha({ titulo: nome, texto: nome, url });
   };
 
+  /* OS MEUS VÍDEOS (17/11): uma fila de cartões com altura fixa, que
+     desliza para o lado (setas). Por mais vídeos que se juntem, a caixa
+     tem sempre a mesma altura e o leitor por baixo não desce. Juntar ou
+     editar abre numa janela por cima. Os avisos aparecem no próprio
+     cartão (ou no cabeçalho), sem empurrar nada. */
+  const ALTURA_CARTAO_JUNTO = 128;
+  const btnCartao = { ...btnIcone, padding: 3 };
+  const rolar = (d) => { const el = filaRef.current; if (el) el.scrollBy({ left: d * Math.max(240, el.clientWidth * 0.8), behavior: 'smooth' }); };
+  const avisoGeral = aviso || (falhaMp4 && noServidor ? falhaMp4 : '');
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: lista.length || editar ? 10 : 0 }}>
+    <div style={{ position: 'relative', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '12px 14px 14px', marginBottom: 16, ...body }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, minHeight: 34 }}>
         <Film size={16} color={T.gold} />
-        <span style={{ fontSize: 14, color: T.cream, fontWeight: 600, flex: 1, minWidth: 140 }}>Os meus vídeos</span>
-        {!editar && (
-          <Btn variant="ghost" onClick={() => setEditar({ nome: '', ids: [] })}><Plus size={14} /> Juntar clipes num vídeo</Btn>
-        )}
+        <span style={{ fontSize: 14, color: T.cream, fontWeight: 600, whiteSpace: 'nowrap' }}>Os meus vídeos</span>
+        {lista.length > 0 && <span style={{ fontSize: 12, color: T.mutedDim, ...mono }}>{lista.length}</span>}
+        <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={avisoGeral}>
+          {avisoGeral}
+          {avisoGeral && <button type="button" title="Fechar" onClick={() => { setAviso(''); setFalhaMp4(''); }} style={{ ...btnIcone, padding: '0 4px', verticalAlign: '-2px' }}><X size={12} /></button>}
+        </span>
+        <span style={{ display: 'inline-flex', gap: 4, visibility: lista.length > 1 ? 'visible' : 'hidden' }}>
+          <button type="button" title="Anteriores" onClick={() => rolar(-1)} style={{ ...btnIcone, border: `1px solid ${T.line}`, borderRadius: 7, padding: 5 }}><ChevronLeft size={14} /></button>
+          <button type="button" title="Seguintes" onClick={() => rolar(1)} style={{ ...btnIcone, border: `1px solid ${T.line}`, borderRadius: 7, padding: 5 }}><ChevronRight size={14} /></button>
+        </span>
       </div>
-      {!editar && !lista.length && carregado && (
-        <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, com uma barra só, como se fosse um clipe.</div>
-      )}
-      {aviso && <div style={{ fontSize: 12, color: T.warn, margin: '4px 0 8px' }}>{aviso}</div>}
-      {falhaMp4 && noServidor && !editar && <div style={{ fontSize: 11.5, color: T.mutedDim, margin: '4px 0 8px' }}>{falhaMp4}</div>}
+
+      <div ref={filaRef} className="mjp-sem-scroll" style={{ display: 'flex', gap: 10, overflowX: 'auto', scrollbarWidth: 'none', scrollSnapType: 'x mandatory', height: ALTURA_CARTAO_JUNTO }}>
+        {/* 1.º cartão: juntar clipes (como o "Carregar ficheiro" da Análise). */}
+        <button type="button" onClick={() => setEditar({ nome: '', ids: [] })} style={{
+          flex: '0 0 170px', height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start', cursor: 'pointer', ...body,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, textAlign: 'center', padding: 10,
+          background: 'transparent', border: `1px dashed ${T.line}`, borderRadius: 10, color: T.muted,
+        }}>
+          <Plus size={18} />
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream }}>Juntar clipes</span>
+          <span style={{ fontSize: 11, color: T.mutedDim, lineHeight: 1.35 }}>{lista.length ? 'num vídeo novo' : 'num vídeo só, com uma barra'}</span>
+        </button>
+
+        {lista.map(v => {
+          const ids = validos(v.ids);
+          const aDar = aTocarId && aTocarId.id === v.id;
+          const esteAberto = aberto === v.id;
+          const e = estadoMp4(v, ids);
+          const pronto = mp4Pronto(v, ids);
+          const aVir = !pronto && mp4AVir(v, ids);
+          const mostraDescarregar = onGravar || pronto || aVir;
+          const offDesc = !ids.length || (!pronto && aGravar);
+          const ver = () => {
+            if (esteAberto) { onFecharAberto(); return; }
+            if (!ids.length) return;
+            if (aDar) onParar();
+            onAbrir({
+              id: v.id, nome: v.nome,
+              segmentos: ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, src: c.clipNoFicheiro ? c.dataUrl : undefined, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; }),
+            });
+          };
+          return (
+            <div key={v.id} style={{
+              flex: '0 0 236px', height: ALTURA_CARTAO_JUNTO, boxSizing: 'border-box', scrollSnapAlign: 'start',
+              display: 'flex', flexDirection: 'column', padding: '9px 10px 8px', borderRadius: 10, ...body,
+              background: esteAberto ? `${T.gold}14` : T.bg, border: `1px solid ${esteAberto ? T.gold : T.line}`,
+            }}>
+              {/* Nome em até 2 linhas (sem reticências), e o resumo. */}
+              <div role="button" tabIndex={0} onClick={ver} onKeyDown={ev => { if (ev.key === 'Enter') ver(); }} title={esteAberto ? 'Fechar' : 'Ver'} style={{ cursor: ids.length ? 'pointer' : 'default', minHeight: 34 }}>
+                <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 13, fontWeight: 600, color: T.cream, lineHeight: 1.3, ...body }}>{v.nome}</span>
+              </div>
+              <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 3, whiteSpace: 'nowrap', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
+              <div style={{ fontSize: 11, minHeight: 15, marginTop: 1, color: e ? e.cor : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: e && e.titulo ? 'pointer' : 'default' }}
+                title={e && e.titulo ? `${e.txt}: ${e.titulo}` : (e ? e.txt : '')}
+                onClick={e && e.titulo ? () => setAviso(`O MP4 de "${v.nome}" falhou: ${e.titulo}`) : undefined}>
+                {e ? (e.titulo ? <span style={{ textDecoration: 'underline dotted' }}>{e.txt}</span> : e.txt) : ''}
+              </div>
+              <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 2 }}>
+                <button type="button" onClick={ver} disabled={!ids.length} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 12, fontWeight: 600, ...body,
+                  background: esteAberto ? 'transparent' : T.gold, color: esteAberto ? T.cream : TEXT_ON_ACCENT, border: `1px solid ${esteAberto ? T.line : T.gold}`, opacity: ids.length ? 1 : 0.4,
+                }}>{esteAberto ? <><X size={12} /> Fechar</> : <><Play size={12} /> Ver</>}</button>
+                <span style={{ flex: 1 }} />
+                <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnCartao}><Pencil size={14} /></button>
+                <button type="button" title="Partilhar este vídeo (envia um link: abre em qualquer telemóvel, sem login)" disabled={!ids.length}
+                  onClick={() => partilhar(v.nome, ids)} style={{ ...btnCartao, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
+                {mostraDescarregar && (
+                  <button type="button" title={pronto ? 'Descarregar o vídeo (MP4)' : aVir ? 'O MP4 está a ser preparado…' : 'Gravar este vídeo num ficheiro (computador)'}
+                    disabled={offDesc} onClick={() => descarregar(v, ids)} style={{ ...btnCartao, opacity: offDesc ? 0.4 : 1 }}>
+                    {aVir ? <Loader2 size={14} className="spin" /> : <Download size={14} color={pronto ? T.gold : undefined} />}
+                  </button>
+                )}
+                <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnCartao}><Trash2 size={14} /></button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {esperaMp4 && !editar && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, color: T.muted, margin: '4px 0 8px', lineHeight: 1.5 }}>
-          <Loader2 size={13} className="spin" color={T.gold} />
-          <span style={{ flex: 1, minWidth: 180 }}>O MP4 de "{esperaMp4.nome}" está a ser preparado. Fica pronto daqui a pouco — depois é só carregar em Descarregar.</span>
-          {onGravar && <button type="button" onClick={() => { const e = esperaMp4; setEsperaMp4(null); onGravar(e.ids, e.nome, () => linkDe(e.nome, e.ids)); }}
-            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12, padding: 0, ...body }}>Gravar agora neste aparelho</button>}
+        <div style={{ position: 'absolute', left: 14, right: 14, bottom: 8, zIndex: 3, display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: T.cream, padding: '8px 10px', borderRadius: 8, background: T.surfaceRaise, border: `1px solid ${T.line}`, boxShadow: '0 6px 18px rgba(0,0,0,.4)', lineHeight: 1.45 }}>
+          <Loader2 size={13} className="spin" color={T.gold} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>O MP4 de "{esperaMp4.nome}" está a ser preparado. Fica pronto daqui a pouco; depois é só carregar em Descarregar.</span>
+          {onGravar && <button type="button" onClick={() => { const x = esperaMp4; setEsperaMp4(null); onGravar(x.ids, x.nome, () => linkDe(x.nome, x.ids)); }}
+            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12, padding: 0, ...body, flexShrink: 0 }}>Gravar agora</button>}
           <button type="button" title="Fechar" onClick={() => setEsperaMp4(null)} style={btnIcone}><X size={13} /></button>
         </div>
       )}
 
-      {!editar && lista.map(v => {
-        const ids = validos(v.ids);
-        const aDar = aTocarId && aTocarId.id === v.id;
-        return (
-          <React.Fragment key={v.id}>
-          {/* Em cima: o nome e os ícones. Em baixo: "3 clipes · 2:23" numa
-              linha só, à esquerda, e Ver/Fechar à direita. Cabe em
-              qualquer ecrã sem partir linhas nem mexer na página. */}
-          <div style={{ padding: '8px 0', borderTop: `1px solid ${T.line}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.nome}</div>
-            <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
-            <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
-              onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
-            {(onGravar || mp4Pronto(v, ids) || mp4AVir(v, ids)) && (() => {
-              const pronto = mp4Pronto(v, ids);
-              const aVir = !pronto && mp4AVir(v, ids);
-              const titulo = pronto ? 'Descarregar o vídeo (MP4)' : aVir ? 'O MP4 está a ser preparado…' : 'Gravar este vídeo num ficheiro (computador)';
-              const off = !ids.length || (!pronto && aGravar);
-              return (
-                <button type="button" title={titulo} disabled={off} onClick={() => descarregar(v, ids)} style={{ ...btnIcone, opacity: off ? 0.4 : 1 }}>
-                  {aVir ? <Loader2 size={14} className="spin" /> : <Download size={14} color={pronto ? T.gold : undefined} />}
-                </button>
-              );
-            })()}
-            <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}{(() => { const e = estadoMp4(v, ids); return e ? <span title={e.titulo || ''} style={{ color: e.cor, cursor: e.titulo ? 'pointer' : 'default', textDecoration: e.titulo ? 'underline dotted' : 'none' }}
-              onClick={e.titulo ? () => setAviso(`O MP4 falhou: ${e.titulo}`) : undefined}> · {e.txt}</span> : null; })()}</div>
-            {aberto === v.id ? (
-              <Btn variant="ghost" onClick={onFecharAberto} style={{ minWidth: 96, justifyContent: 'center' }}><X size={13} /> Fechar</Btn>
-            ) : (
-              <Btn disabled={!ids.length} style={{ minWidth: 96, justifyContent: 'center' }} onClick={() => {
-                if (aDar) onParar();
-                onAbrir({
-                  id: v.id, nome: v.nome,
-                  segmentos: ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, src: c.clipNoFicheiro ? c.dataUrl : undefined, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; }),
-                });
-              }}><Play size={13} /> Ver</Btn>
-            )}
-          </div>
-          </div>
-          </React.Fragment>
-        );
-      })}
-
+      {/* Juntar / editar: numa janela por cima, a página não mexe. */}
       {editar && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div onClick={() => setEditar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px 16px' }}>
+        <div onClick={ev => ev.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Film size={16} color={T.gold} />
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 600, color: T.cream }}>{editar.id ? 'Editar o vídeo' : 'Juntar clipes num vídeo'}</span>
+            <button type="button" title="Fechar" onClick={() => setEditar(null)} style={btnIcone}><X size={16} /></button>
+          </div>
           <Input value={editar.nome} onChange={e => setEditar({ ...editar, nome: e.target.value })} placeholder="Nome do vídeo (ex.: As minhas jogadas)" />
           <div style={{ fontSize: 12, color: T.muted }}>Toca nos clipes pela ordem em que os queres ver. Para mudar a ordem, toca para tirar e volta a tocar (passa para o fim).</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: '45vh', overflowY: 'auto' }}>
             {clipes.map(c => {
               const pos = editar.ids.indexOf(c.id);
               const on = pos >= 0;
@@ -700,14 +740,12 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
               );
             })}
           </div>
-          {/* Sem lista "Ordem" à parte: o número em cada clipe já é a ordem
-              (tocar para tirar e voltar a tocar põe-no no fim). A lista
-              aparecia/desaparecia e fazia a página saltar. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Btn disabled={!editar.ids.length || aGuardar} onClick={guardar}>{aGuardar ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Guardar vídeo</Btn>
+            <span style={{ flex: 1, fontSize: 12, color: T.mutedDim, ...mono }}>{editar.ids.length ? `${editar.ids.length} ${editar.ids.length === 1 ? 'clipe' : 'clipes'} · ${mmss(duracao(editar.ids))}` : ''}</span>
             <Btn variant="ghost" onClick={() => setEditar(null)}>Cancelar</Btn>
-            {editar.ids.length > 0 && <span style={{ fontSize: 12, color: T.mutedDim, ...mono }}>{editar.ids.length} {editar.ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(editar.ids))}</span>}
+            <Btn disabled={!editar.ids.length || aGuardar} onClick={guardar}>{aGuardar ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Guardar vídeo</Btn>
           </div>
+        </div>
         </div>
       )}
     </div>

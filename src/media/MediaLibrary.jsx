@@ -2628,7 +2628,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             </>
           )}
           {soLeitura && v.deAtleta && v.doStaff && (
-            <span title="Posto pelo treinador: só para ver" style={{ fontSize: 10.5, color: T.gold, flexShrink: 0, ...body }}>treinador</span>
+            <span title="Posto pelo treinador: só para ver" style={{ fontSize: 10.5, color: T.gold, flexShrink: 0, width: 48, textAlign: 'left', whiteSpace: 'nowrap', ...body }}>treinador</span>
           )}
           {soLeitura && v.deAtleta && apagarClipeAtleta && !v.doStaff && (
             confirmarApagarId === v.id ? (

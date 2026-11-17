@@ -5363,6 +5363,29 @@ function PaginaCorte() {
   };
 
   const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4, display: 'flex', flexShrink: 0 };
+  /* ECRÃ INTEIRO (17/11): a caixa toda (vídeo e barra). Se o browser
+     recusar (iPhone, browser do WhatsApp), cobre o ecrã por CSS. */
+  const caixaCorteRef = useRef(null);
+  const [cheioCorte, setCheioCorte] = useState(false);
+  const [cheioCorteCss, setCheioCorteCss] = useState(false);
+  useEffect(() => {
+    const aoMudar = () => { const el = document.fullscreenElement || document.webkitFullscreenElement; setCheioCorte(!!el && el === caixaCorteRef.current); };
+    document.addEventListener('fullscreenchange', aoMudar);
+    document.addEventListener('webkitfullscreenchange', aoMudar);
+    return () => { document.removeEventListener('fullscreenchange', aoMudar); document.removeEventListener('webkitfullscreenchange', aoMudar); };
+  }, []);
+  const alternarCheioCorte = () => {
+    if (cheioCorteCss) { setCheioCorteCss(false); return; }
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      return;
+    }
+    const el = caixaCorteRef.current;
+    const pedir = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+    if (!pedir) { setCheioCorteCss(true); return; }
+    try { const r = pedir.call(el); if (r && typeof r.catch === 'function') r.catch(() => setCheioCorteCss(true)); } catch (e) { setCheioCorteCss(true); }
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: T.bg, color: T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
@@ -5375,8 +5398,12 @@ function PaginaCorte() {
             <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14, ...mono }}>
               {fmtMMSS(inicio)}–{fmtMMSS(fim)} ({Math.round(duracao)}s)
             </div>
-            <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', background: '#000' }}>
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
+            <div ref={caixaCorteRef} style={{
+              border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', background: '#000',
+              ...(cheioCorte ? { display: 'flex', flexDirection: 'column', width: '100%', height: '100%' } : {}),
+              ...(cheioCorteCss ? { position: 'fixed', inset: 0, zIndex: 3000, width: '100vw', height: '100dvh', borderRadius: 0, border: 'none' } : {}),
+            }}>
+              <div style={{ position: 'relative', width: '100%', ...(cheioCorte || cheioCorteCss ? { flex: 1, minHeight: 0 } : { aspectRatio: '16/9' }) }}>
                 <iframe
                   ref={iframeRef} onLoad={aoCarregar} title={titulo || 'Corte'}
                   src={`https://www.youtube.com/embed/${youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`}
@@ -5398,6 +5425,9 @@ function PaginaCorte() {
                 <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
                   {fmtMMSS(tempo - inicio)} / {fmtMMSS(duracao)}
                 </span>
+                <button onClick={alternarCheioCorte} title={cheioCorte || cheioCorteCss ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'} style={btn}>
+                  {cheioCorte || cheioCorteCss ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
               </div>
             </div>
           </>
