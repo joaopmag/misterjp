@@ -571,6 +571,12 @@ reduz o peso inicial da app e do Portal.
   as que estão prontas ao montar, ou nos primeiros 250 ms, aparecem de uma
   vez (classe `mjp-ja` em portalRpc.js); só as que chegam tarde da rede
   desvanecem (0,25 s).
+- 17/11: Leitor da Sala com vídeos carregados (ex.: clipes do staff em
+  "Os meus clipes"). Abria preto até chegar a 1.ª imagem. Agora o <video>
+  fica invisível até ter a imagem no ponto certo do corte (`onLoadedData` /
+  `onSeeked`, mesma rede de segurança de 2,5 s do YouTube) e por trás vê-se
+  a miniatura do cartão (`thumbUrl` ou `miniaturaClipeGuardada` exportada
+  de AnalisadorVideo.jsx). Testado com o servidor a demorar 0,7 s.
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem

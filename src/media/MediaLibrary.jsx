@@ -5,7 +5,7 @@ import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
-import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
+import { ClipPlayerModal, MiniaturaClipeVideo, miniaturaClipeGuardada, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { ChevronDown, ChevronUp, FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
@@ -2806,6 +2806,12 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   })();
   // Rede de segurança: se o YouTube não avisar que carregou, mostra-se na mesma.
   const chaveIframeBib = leitorBib ? leitorBib.chave : (active && active.id);
+  const fundoVideoBib = active && !active.youtubeId && active.dataUrl
+    ? (active.thumbUrl || miniaturaClipeGuardada(
+      `${active.id}:${active.dataUrl}:${active.clipInicio}`,
+      `${active.id}:${active.dataUrl}:${ehClipe(active) ? active.clipInicio : 0}`,
+      `${active.id}:${active.dataUrl}:0`))
+    : null;
   useEffect(() => {
     if (!chaveIframeBib) return undefined;
     const t = setTimeout(() => setIframeVisivelBib(chaveIframeBib), 2500);
@@ -3905,6 +3911,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       /* Enquanto o YouTube carrega, a imagem do próprio vídeo por
                          trás (em vez do quadrado preto) (17/11). */
                       ...(active && active.youtubeId ? { backgroundImage: `url("https://img.youtube.com/vi/${active.youtubeId}/mqdefault.jpg")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
+                      /* O mesmo para vídeos carregados (17/11): a miniatura do
+                         cartão (já guardada) por trás, em vez de preto. */
+                      ...(active && !active.youtubeId && fundoVideoBib ? { backgroundImage: `url("${fundoVideoBib}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#000' } : {}),
                     }}>
                       {/* ZOOM DO CÍRCULO — só o vídeo e os desenhos se
                           aproximam (ver `zoomBib`); as barras de ferramentas,
@@ -3966,12 +3975,16 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             }
                           }}
                           onTimeUpdate={(e) => infoDoVideoBib(e.currentTarget)}
-                          onSeeked={(e) => infoDoVideoBib(e.currentTarget)}
+                          /* Só aparece com a 1.ª imagem pronta (no ponto certo
+                             do corte); até lá vê-se a miniatura por trás. */
+                          onLoadStart={() => setIframeVisivelBib(v => (v === chaveIframeBib ? null : v))}
+                          onLoadedData={(e) => { if (!ativoEClipe || e.currentTarget.currentTime >= clipIni - 0.3) setIframeVisivelBib(chaveIframeBib); }}
+                          onSeeked={(e) => { infoDoVideoBib(e.currentTarget); setIframeVisivelBib(chaveIframeBib); }}
                           onPlay={() => setYtATocar(true)}
                           onPause={() => setYtATocar(false)}
                           onEnded={() => setYtATocar(false)}
                           onClick={() => { if (ativoEClipe) alternarReproducaoBib(); else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); }}
-                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer' }}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: '#000', objectFit: 'contain', cursor: 'pointer', opacity: iframeVisivelBib === chaveIframeBib ? 1 : 0, transition: 'opacity .12s ease-out' }}
                         />
                       ) : (
                         <iframe
