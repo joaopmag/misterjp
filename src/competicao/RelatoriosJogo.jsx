@@ -343,7 +343,10 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
             const parar = (ev) => ev.stopPropagation();
             const letra = mc.letra ? (
               <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: estreito ? 11 : 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: estreito ? 20 : 22, height: estreito ? 20 : 22, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>
-            ) : null;
+            ) : (
+              // Sem resultado (ex.: cancelado): o mesmo espaço, para os nomes não saltarem.
+              <span aria-hidden style={{ width: estreito ? 20 : 22, height: estreito ? 20 : 22, flexShrink: 0 }} />
+            );
             const marcador = (
               <>
                 {forte(mc.casa, mc.emCasa)}
@@ -361,14 +364,16 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                "+ Análise do jogo" para acrescentar outra. */
             const abrivel = nNotas > 0;
             const analise = abrivel ? (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: T.gold }}>
+              /* A MESMA ALTURA nos dois casos (24 px): trocar entre Competição e
+                 Amigáveis, ou um jogo ganhar a 1.ª análise, não mexe nas linhas. */
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: T.gold, height: 24, boxSizing: 'border-box', border: '1px solid transparent', padding: '0 0' }}>
                 <MessageCircle size={13} />
                 {nNotas} análise{nNotas > 1 ? 's' : ''}
                 <ChevronDown size={14} style={{ transform: meu && meu.modo === 'ler' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
               </div>
             ) : (
               <button type="button" onClick={(ev) => { ev.stopPropagation(); abrirEscrita(m.id); }} style={{
-                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
+                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '0 10px', height: 24, boxSizing: 'border-box', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
                 background: meu && meu.modo === 'escrever' ? `${T.gold}26` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : `${T.gold}55`}`, color: T.gold,
               }}><Plus size={13} /> Análise do jogo</button>
             );
@@ -425,11 +430,11 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                     <div style={{ flex: 1, minWidth: 0 }}>
                       {/* Quem ganhou: V/E/D a cores e o marcador com os dois
                           nomes, a equipa da casa primeiro (a nossa a negrito). */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5, minWidth: 0, height: 22 }}>
                         {letra}
                         <span style={{ ...LINHAS(1), minWidth: 0 }}>{marcador}</span>
                       </div>
-                      <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>{prova}</div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: '16px', minHeight: 16, ...LINHAS(1) }}>{prova}</div>
                       {analise}
                     </div>
                     {acoes}

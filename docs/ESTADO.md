@@ -407,6 +407,16 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   (`alturaLeitorBib`, medida com ResizeObserver) e o intervalo entre
   cartões estica (`gapListaBib`) para caber um número inteiro: o último
   cartão visível acaba rente ao fundo do leitor, sem cartão cortado.
+  Setas ▲ ▼ no cabeçalho da lista ("10 ficheiros … Ver tudo aberto ▲ ▼"),
+  só visíveis quando há mais do que cabe, e encaixe ao rolar (scroll-snap
+  por cartão, classe `mjp-encaixe`): nunca fica um cartão a meio. (O botão
+  "Mais abaixo" por cima do último cartão foi recusado.)
+- Jogos: novo separador "Estatísticas" (id `competicao`) a seguir a
+  Convocatórias, com a competição (jornadas, classificação) e o resumo dos
+  jogos (MatchDashboard). O separador Jogos fica só com a lista.
+- Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
+  "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
+  trocar Competição/Amigáveis não mexer.
   Análise individual: escolhido o jogador, os clipes vêm separados por
   jogo (barra dourada, nome, "▶ n" para ver os desse jogo seguidos); a
   fotografia do jogador vira o "ver seguidos" de todos.

@@ -8,7 +8,7 @@ import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, Emp
 import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
-import { FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
 import { T, body, T_ESCURO, mono, TEXT_ON_ACCENT } from '../base/tema';
 import { TATICA_OMISSAO } from '../tatico/prancheta';
 import { ControlosLupa, INSTAGRAM_SANDBOX, MediaFeedItem, SOCIAL_CROP, fmtMMSS, socialClipStyle, socialCropKey, socialEmbedSrc, socialExternalUrl, socialInnerStyle, socialMeta, useLupa, youtubeEmbedSrc } from './social';
@@ -2675,6 +2675,20 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   const [alturaLeitorBib, setAlturaLeitorBib] = useState(null);
   const listaBibRef = useRef(null);
   const [gapListaBib, setGapListaBib] = useState(8);
+  /* HÁ MAIS POR BAIXO? Sem barra e sem cartão cortado, um botão pequeno
+     no fundo da lista diz que há mais (e desce uma página). No fim da
+     lista passa a "Voltar ao início". */
+  const [rolarBib, setRolarBib] = useState({ transborda: false, noFim: false, noInicio: true });
+  const atualizarRolarBib = React.useCallback(() => {
+    const el = listaBibRef.current;
+    if (!el) return;
+    const transborda = el.scrollHeight - el.clientHeight > 2;
+    const noFim = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+    const noInicio = el.scrollTop <= 2;
+    setRolarBib(r => (r.transborda === transborda && r.noFim === noFim && r.noInicio === noInicio ? r : { transborda, noFim, noInicio }));
+  }, []);
+  const rolarListaBib = (d) => { const el = listaBibRef.current; if (el) el.scrollBy({ top: d * el.clientHeight * 0.8, behavior: 'smooth' }); };
+  useEffect(() => { atualizarRolarBib(); });
   useEffect(() => {
     if (!listaAoLado || typeof ResizeObserver === 'undefined') { setAlturaLeitorBib(null); return undefined; }
     const col = leitorColunaRef.current;
@@ -2690,7 +2704,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     const el = listaBibRef.current;
     if (!listaAoLado || !el) return;
     const H = el.clientHeight;
-    const filhos = [...el.children];
+    const filhos = [...el.children].filter(c => !c.dataset.indicador);
     if (!H || filhos.length < 2) { if (gapListaBib !== 8) setGapListaBib(8); return; }
     const alto = (c) => { const cs = getComputedStyle(c); return c.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0); };
     let soma = alto(filhos[0]); let n = 1;
@@ -4766,7 +4780,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
           {/* A lista tem scroll próprio em vez de esticar a página: com
               muitos ficheiros, a página inteira ficava com metros de altura
               e o visualizador à esquerda saía do ecrã. */}
-          <style>{'.mjp-lista-sem-barra::-webkit-scrollbar{display:none}'}</style>
+          <style>{'.mjp-lista-sem-barra::-webkit-scrollbar{display:none}.mjp-lista-sem-barra.mjp-encaixe{scroll-snap-type:y mandatory}.mjp-lista-sem-barra.mjp-encaixe>*{scroll-snap-align:start}.mjp-lista-sem-barra.mjp-encaixe>[data-indicador]{scroll-snap-align:none}'}</style>
           {/* LISTA COM A ALTURA DO QUE ESTÁ À ESQUERDA (17/11): em ecrã largo,
               a coluna da direita não conta para a altura da linha (o conteúdo
               fica por cima, absoluto) e a lista estica até ao fundo do leitor
@@ -4814,10 +4828,23 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                   <button
                     onClick={() => setModoFeed(true)}
                     title="Mostra tudo aberto numa coluna, para rever a rolar"
-                    style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
+                    style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0, marginLeft: 'auto' }}
                   >Ver tudo aberto</button>
+                  {/* Há mais por baixo: setas ▲ ▼ no cabeçalho da lista (como as
+                      setas de "Os meus vídeos"), sem tapar nenhum cartão. Ficam
+                      sempre no sítio (escondidas quando cabe tudo). */}
+                  {listaAoLado && (
+                    <span style={{ display: 'inline-flex', gap: 4, visibility: rolarBib.transborda ? 'visible' : 'hidden' }}>
+                      {[[-1, ChevronUp, 'Anteriores', rolarBib.noInicio], [1, ChevronDown, 'Mais abaixo', rolarBib.noFim]].map(([d, Ic, t, off]) => (
+                        <button key={d} type="button" title={t} aria-label={t} disabled={off} onClick={() => rolarListaBib(d)} style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 22, borderRadius: 6, cursor: off ? 'default' : 'pointer',
+                          background: 'transparent', border: `1px solid ${off ? T.line : T.gold}`, color: off ? T.mutedDim : T.gold, opacity: off ? 0.5 : 1, padding: 0,
+                        }}><Ic size={14} /></button>
+                      ))}
+                    </span>
+                  )}
                 </div>
-                <div ref={listaBibRef} className="mjp-lista-sem-barra" style={{
+                <div ref={listaBibRef} onScroll={atualizarRolarBib} className={`mjp-lista-sem-barra${listaAoLado ? ' mjp-encaixe' : ''}`} style={{
                   display: 'flex', flexDirection: 'column', gap: listaAoLado ? gapListaBib : 8,
                   // Análise (soLink): a lista não reserva altura — o leitor manda.
                   ...(soLink ? { maxHeight: 460 } : listaAoLado ? { flex: 1, minHeight: 0 } : { height: '62vh' }), overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
@@ -4882,7 +4909,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     }
                     return out;
                   })() : visibleItems.map(renderRow)}
-                </div>
+                                </div>
               </>
             )}
           </div>

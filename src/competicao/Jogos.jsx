@@ -5,7 +5,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { todayStr, addDays, uid, fmtDate } from '../base/utilidades';
 import { competitionLabel, isFriendlyMatch, convocadosDoJogo } from '../dominio/jogos';
 import { trocarJanela, removeWithUndo, itemLabel, Btn, SectionHeader, EmptyState } from '../base/ui';
-import { Plus, Trophy, ClipboardList, Pencil, Share2, Printer, Trash2 } from 'lucide-react';
+import { Plus, Trophy, ClipboardList, Pencil, Share2, Printer, Trash2, BarChart3 } from 'lucide-react';
 import { body, TEXT_ON_ACCENT, T } from '../base/tema';
 import { convidadosDe } from '../dominio/jogadores';
 import { createPortal } from 'react-dom';
@@ -35,7 +35,7 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
      coisa. */
-  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : (abaInicial === 'estatisticas' || abaInicial === 'analisejogo') ? 'relatorios' : 'jogos');
+  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : abaInicial === 'competicao' ? 'competicao' : (abaInicial === 'estatisticas' || abaInicial === 'analisejogo') ? 'relatorios' : 'jogos');
   const [modal, setModal] = useState(null);
   const [abrirRelatorio, setAbrirRelatorio] = useState(null);
   /* Chegou pela missão "Introduzir as estatísticas": abre logo o editor do
@@ -180,6 +180,8 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
           tabs={[
             { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
             { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+            // A competição (jornadas, classificação) e as estatísticas dos jogos, fora da lista de jogos (17/11).
+            { id: 'competicao', label: 'Estatísticas', icon: BarChart3 },
             // O número é o dos relatórios já inseridos (com dados), como em Jogos e Convocatórias.
             { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosInseridos },
           ]}
@@ -209,6 +211,20 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
     );
   }
 
+  if (aba === 'competicao') {
+    return (
+      <div>
+        {cabecalhoJogos}
+        <div style={{ marginBottom: 20 }}>
+          <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <MatchDashboard players={players} matches={matches} />
+        </div>
+      </div>
+    );
+  }
+
   if (aba === 'convocatorias') {
     return (
       <div>
@@ -227,12 +243,6 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
     <div>
       {cabecalhoJogos}
 
-      <div style={{ marginBottom: 20 }}>
-        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
-      </div>
-      <div style={{ marginBottom: 20 }}>
-        <MatchDashboard players={players} matches={matches} />
-      </div>
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
       ) : sorted.length === 0 ? (
