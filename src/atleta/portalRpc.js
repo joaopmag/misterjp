@@ -22,7 +22,8 @@ if (typeof document !== 'undefined' && !document.getElementById('mjp-portal-css'
   st.id = 'mjp-portal-css';
   st.textContent = '@keyframes mjp-surgir { from { opacity: 0; } to { opacity: 1; } }'
     + ' .mjp-carregar { animation: mjp-surgir .25s ease-out .4s both; }'
-    + ' .mjp-bib img { opacity: 0; transition: opacity .35s ease-out; } .mjp-bib img.mjp-ok { opacity: 1; }';
+    + ' .mjp-bib img { opacity: 0; transition: opacity .25s ease-out; } .mjp-bib img.mjp-ok { opacity: 1; }'
+    + ' .mjp-bib img.mjp-ja { transition: none; }';
   document.head.appendChild(st);
 }
 

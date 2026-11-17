@@ -238,14 +238,28 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   /* (17/11) O vigia fica ligado o tempo todo (antes desligava aos 2 s):
      ao voltar de um jogo, as miniaturas que já estão em cache aparecem logo,
      sem o desvanecer a partir do escuro. */
+  const vistasMini = React.useMemo(() => new WeakMap(), []);
+  const miniaturaPronta = React.useCallback((im) => {
+    if (!im || im.tagName !== 'IMG' || im.classList.contains('mjp-ok')) return;
+    const desde = vistasMini.get(im);
+    if (desde == null || performance.now() - desde < 250) im.classList.add('mjp-ja');
+    im.classList.add('mjp-ok');
+  }, [vistasMini]);
   const marcarMiniaturas = React.useCallback((el) => {
     if (!el) return;
-    const ver = () => el.querySelectorAll('img:not(.mjp-ok)').forEach(im => { if (im.complete) im.classList.add('mjp-ok'); });
+    /* (17/11, 2.ª) As que já estão prontas, ou que ficam prontas nos
+       primeiros 250 ms, aparecem DE UMA VEZ (classe mjp-ja, sem transição):
+       o desvanecer de 0,35 s fazia a grelha abrir cinzenta mesmo com tudo
+       em cache. Só as que chegam tarde da rede entram a desvanecer. */
+    const ver = () => el.querySelectorAll('img:not(.mjp-ok)').forEach(im => {
+      if (!vistasMini.has(im)) vistasMini.set(im, performance.now());
+      if (im.complete && im.naturalWidth) im.classList.add('mjp-ja', 'mjp-ok');
+    });
     ver();
     const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(ver) : null;
     if (mo) mo.observe(el, { childList: true, subtree: true });
     setTimeout(() => { el.querySelectorAll('img').forEach(im => im.classList.add('mjp-ok')); }, 2000);
-  }, []);
+  }, [vistasMini]);
   /* Abre logo com o que se viu da última vez (guardado neste aparelho) —
      antes, "Os meus clipes" e a contagem só apareciam uns segundos depois,
      à espera do servidor. Quando o servidor responde, troca-se. */
@@ -483,8 +497,8 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
 
       {estado === 'pronto' && (
         <div className="mjp-bib" ref={marcarMiniaturas}
-          onLoadCapture={e => { if (e.target && e.target.tagName === 'IMG') e.target.classList.add('mjp-ok'); }}
-          onErrorCapture={e => { if (e.target && e.target.tagName === 'IMG') e.target.classList.add('mjp-ok'); }}>
+          onLoadCapture={e => miniaturaPronta(e.target)}
+          onErrorCapture={e => miniaturaPronta(e.target)}>
         <MediaLibrary
           ref={canalRef}
           items={itensPortal}

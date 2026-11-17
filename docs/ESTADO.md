@@ -566,6 +566,11 @@ reduz o peso inicial da app e do Portal.
   pedido (uma só vez; ao reentrar pede de novo). Medido: montar a Sala com
   ~200 itens leva ~80 a 130 ms mesmo com o CPU 6× mais lento, por isso o
   desenho não era o problema.
+- 17/11: Sala do Portal, miniaturas. Abriam cinzentas e só depois
+  apareciam, mesmo em cache: o desvanecer de 0,35 s corria em todas. Agora
+  as que estão prontas ao montar, ou nos primeiros 250 ms, aparecem de uma
+  vez (classe `mjp-ja` em portalRpc.js); só as que chegam tarde da rede
+  desvanecem (0,25 s).
 - 12/11: Monitorização → "Plantel — estado atual": a coluna Estado passa a
   mostrar primeiro o boletim clínico (ocorrência aberta hoje: Indisponível,
   Condicionado ou Vigilância, com o resumo ao passar o rato). Sem
