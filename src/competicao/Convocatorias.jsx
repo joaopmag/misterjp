@@ -3,7 +3,7 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import React, { useState, useEffect } from 'react';
 import { uid, fmtDate } from '../base/utilidades';
-import { removeWithUndo, itemLabel, askConfirm, Btn, EmptyState, Modal, FIELD_GRID, Field, Input, Select, FIELD_FULL } from '../base/ui';
+import { removeWithUndo, itemLabel, askConfirm, Btn, EmptyState, Modal, FIELD_GRID, Field, Input, Select, FIELD_FULL, Panel } from '../base/ui';
 import { convidadosDe, sortByPosition } from '../dominio/jogadores';
 import { T, body, mono } from '../base/tema';
 import { Trash2, Eye, EyeOff, Printer, ClipboardList, Pencil, Check } from 'lucide-react';
@@ -151,22 +151,17 @@ export function Convocatorias({ convocatorias, setConvocatorias, autorizarLimpar
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 24, marginBottom: 18, borderBottom: `1px solid ${T.line}` }}>
-        <span style={{
-          padding: '10px 0', fontSize: 14, fontWeight: 600, color: T.cream, ...body,
-          borderBottom: `2px solid ${T.crimsonBright}`,
-        }}>Seleção</span>
-      </div>
-
+      {/* No mesmo cartão de fundo das Estatísticas (17/11). */}
+      <Panel title="Convocatórias">
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores ao plantel antes de criar uma convocatória." />
       ) : list.length === 0 ? (
         <EmptyState text="Sem convocatórias. Nascem com cada jogo oficial; para um amigável, marca &quot;Gerar convocatória&quot; ao registar o jogo em Jogos." />
       ) : (
-        <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
+        <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
-              <tr style={{ background: T.surface }}>
+              <tr style={{ background: T.bg }}>
                 {['Data', 'Adversário', 'Competição', 'Jornada', 'Local', 'Convocados', ''].map(h => <th key={h} style={{ ...th, whiteSpace: 'nowrap' }}>{h}</th>)}
               </tr>
             </thead>
@@ -204,6 +199,7 @@ export function Convocatorias({ convocatorias, setConvocatorias, autorizarLimpar
           </table>
         </div>
       )}
+      </Panel>
 
       {modal && (
         <ConvocatoriaModal

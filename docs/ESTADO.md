@@ -440,7 +440,17 @@ expira (+3 s). Mesmo para jogos por link (`apagarLink`).
   imagem do vídeo em vez do ecrã preto inicial do YouTube.
 - Estatísticas (MatchDashboard): a linha da descrição existe sempre (16 px)
   e a tabela guarda a maior altura que já teve: trocar Competição/Pré-época
-  não mexe.
+  não mexe. Colunas com largura fixa (tableLayout fixed, jogador 22%): os
+  títulos mudam (Conv/Jogos…) e as colunas já não andam para os lados.
+  Legendas: "Jogos oficiais" / "Jogos amigáveis".
+- Convocatórias: a tabela no mesmo cartão (Panel "Convocatórias") das
+  Estatísticas (saiu o separador falso "Seleção").
+- Sala: duração dos vídeos do YouTube guardada (`mjp-duracoes-yt`, memória
+  e aparelho, até 400): da segunda vez o "--:--" já não aparece. Temas:
+  iframes do Instagram/TikTok escondidos até pintarem e fundo da caixa
+  `surfaceRaise` em vez de preto.
+- Portal: o item dos clipes do treinador leva `thumbUrl` (clipeAtletaParaCanal)
+  e a capa "Os meus clipes" usa-a: imagem logo, sem abrir o vídeo.
 - Relatórios de jogo: linhas com altura fixa (marcador 22, competição 16,
   "análise"/"+ Análise do jogo" 24; letra V/E/D com lugar reservado), para
   trocar Competição/Amigáveis não mexer.

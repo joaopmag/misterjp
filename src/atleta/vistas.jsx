@@ -138,6 +138,9 @@ export function clipeAtletaParaCanal(c0) {
     youtubeId: c.youtubeId || undefined,
     // Clipe sobre um vídeo carregado (ficheiro): o mesmo ficheiro, só o troço.
     ...(!c.youtubeId && c.dataUrl ? { kind: 'video', dataUrl: c.dataUrl, clipNoFicheiro: true } : {}),
+    // A miniatura do corte (clipes do treinador): a imagem aparece logo, sem
+    // ter de abrir o vídeo para tirar o fotograma (17/11).
+    ...(!c.youtubeId && /^https?:/.test(String(c.thumbUrl || '')) ? { thumbUrl: c.thumbUrl } : {}),
     clipInicio: Number(c.clipInicio),
     clipFim: Number(c.clipFim),
     ...(c.mp4Proprio ? { clipInicioJogo: c.clipInicioJogo, clipFimJogo: c.clipFimJogo, mp4Proprio: true } : {}),

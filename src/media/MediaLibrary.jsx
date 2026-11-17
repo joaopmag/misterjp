@@ -30,6 +30,22 @@ function temLeitorBib(v) { return !!v && (!!v.youtubeId || eVideoFicheiroBib(v))
 // O vídeo de onde se toca (para reaproveitar o leitor entre cortes do mesmo vídeo).
 function fonteBib(v) { return v.youtubeId ? `yt:${v.youtubeId}` : `f:${v.dataUrl}`; }
 
+/* DURAÇÃO DOS VÍDEOS DO YOUTUBE (17/11). O YouTube só diz a duração uns
+   segundos depois de o leitor arrancar ("--:--" até lá). Guarda-se a que
+   já se soube (memória e, pequena, no aparelho) e da vez seguinte aparece
+   logo. */
+const CHAVE_DURACOES_YT = 'mjp-duracoes-yt';
+const duracoesYt = (() => {
+  try { return new Map(Object.entries(JSON.parse(localStorage.getItem(CHAVE_DURACOES_YT) || '{}'))); } catch (e) { return new Map(); }
+})();
+function duracaoYtGuardada(id) { const d = id && duracoesYt.get(id); return Number(d) > 0 ? Number(d) : 0; }
+function guardarDuracaoYt(id, d) {
+  if (!id || !(d > 0) || Math.abs(duracaoYtGuardada(id) - d) < 1) return;
+  duracoesYt.set(id, Math.round(d * 10) / 10);
+  while (duracoesYt.size > 400) duracoesYt.delete(duracoesYt.keys().next().value);
+  try { localStorage.setItem(CHAVE_DURACOES_YT, JSON.stringify(Object.fromEntries(duracoesYt))); } catch (e) { /* fica em memória */ }
+}
+
 export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi, acaoLinha, soLink, jogadoresAnaliseInd, aoClipeParaAtleta }, ref) {
   // Análise de Vídeo (Links): ao guardar um clipe, pode ir também para a
   // análise individual de um jogador (fica escolhido até se mudar).
@@ -1271,6 +1287,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   const precisaTempoJogoRef = React.useRef(false);
   const [tempoJogo, setTempoJogo] = useState(0);
   const [duracaoJogo, setDuracaoJogo] = useState(0);
+  const activeRefDuracao = useRef(null); // youtubeId do jogo aberto (para guardar a duração)
   const duracaoJogoRefBib = useRef(0);
   duracaoJogoRefBib.current = duracaoJogo;
   const [liveTime, setLiveTime] = useState(0);
@@ -1321,6 +1338,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
         }
         if (typeof data.info.duration === 'number' && data.info.duration > 0) {
           setDuracaoJogo(data.info.duration);
+          if (activeRefDuracao.current) guardarDuracaoYt(activeRefDuracao.current, data.info.duration);
           if (preparoRef.current) {
             // "Preparar" (ver abaixo): já se sabe a duração — pára e volta ao sítio.
             const alvo = preparoRef.current.alvo;
@@ -1887,6 +1905,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   useEffect(() => {
     precisaTempoAoVivoRef.current = ativoEClipe;
     precisaTempoJogoRef.current = !!(temLeitorBib(active) && !ativoEClipe);
+    activeRefDuracao.current = active && active.youtubeId && !ativoEClipe ? active.youtubeId : null;
     setTempoJogo(0); setDuracaoJogo(0);
     preparoRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3402,6 +3421,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                     transform: `translateX(${p * 34}%) translateY(${Math.abs(p) * 7}%) rotate(${p * 9}deg)`,
                     zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
                   };
+                  if (!c.youtubeId && c.thumbUrl) {
+                    return <img key={c.id} alt="" src={c.thumbUrl} style={{ ...estiloCarta, pointerEvents: 'none' }} />;
+                  }
                   if (!c.youtubeId && c.dataUrl) {
                     return (
                       <div key={c.id} style={{ ...estiloCarta, overflow: 'hidden', background: T.surfaceRaise, pointerEvents: 'none' }}>
@@ -4442,7 +4464,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                         sobre o vídeo todo: trocar entre jogo completo e cortes
                         já não mexe na caixa. ±10 s em vez de ±2 s. */}
                     {!isBlocked && !ativoEClipe && (() => {
-                      const dur = duracaoJogo || 0;
+                      // Duração já conhecida deste vídeo (de uma vez anterior): aparece logo.
+                      const dur = duracaoJogo || duracaoYtGuardada(active && active.youtubeId) || 0;
                       const agoraJ = Math.min(Math.max(tempoJogo || 0, 0), dur || 0);
                       const ir = (t) => { const alvo = Math.max(0, dur ? Math.min(t, dur - 0.5) : t); enviarComandoYoutube('seekTo', [alvo, true]); setTempoJogo(alvo); };
                       const btnJ = {
@@ -4641,7 +4664,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                         borderRadius: isSocialFullscreen ? 0 : 10,
                         overflow: 'hidden',
                         border: isSocialFullscreen ? 'none' : `1px solid ${T.line}`,
-                        background: '#000',
+                        background: isSocialFullscreen ? '#000' : T.surfaceRaise,
                         display: 'flex', flexDirection: 'column',
                       }}
                     >
@@ -4662,7 +4685,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                             <iframe
                               key={active.id}
                               src={socialEmbedSrc(active.social)}
-                              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                              // Escondido até ter pintado (o Instagram/TikTok começam a preto).
+                              onLoad={() => { const k = active.id; setTimeout(() => setIframeVisivelBib(k), 400); }}
+                              style={{ width: '100%', height: '100%', border: 'none', display: 'block', opacity: iframeVisivelBib === active.id ? 1 : 0, transition: 'opacity .12s ease-out' }}
                               allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; fullscreen"
                               allowFullScreen
                               scrolling="no"

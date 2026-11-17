@@ -33,14 +33,14 @@ export const VISTAS_JOGO = [
   {
     id: 'competicao',
     label: 'Competição',
-    desc: 'Jogos oficiais: campeonato, taça e torneios a sério.',
+    desc: 'Jogos oficiais',
     colConv: 'Conv', colNaoConv: 'N conv',
     ajudaConv: 'Convocatórias', ajudaNaoConv: 'Jogos em que não foi convocado',
   },
   {
     id: 'preepoca',
     label: 'Pré-época',
-    desc: '',
+    desc: 'Jogos amigáveis',
     colConv: 'Jogos', colNaoConv: 'NP',
     ajudaConv: 'Jogos em que esteve presente', ajudaNaoConv: 'Jogos em que não esteve presente',
   },
@@ -237,7 +237,10 @@ export function MatchDashboard({ players, matches }) {
     <Panel title="Estatísticas" action={acoes}>
       {seletor}
       <div ref={caixaTabelaRef} style={{ overflowX: 'auto', minHeight: alturaMinTabela || undefined }}>
-        <table>
+        {/* Largura fixa por coluna (17/11): os títulos mudam com o recorte
+            (Conv/Jogos, N conv/NP) e as colunas andavam para os lados. */}
+        <table style={{ width: '100%', tableLayout: 'fixed', minWidth: 720 }}>
+          <colgroup><col style={{ width: '22%' }} />{colunas.map(c => <col key={c.h} />)}</colgroup>
           <thead>
             <tr style={{ background: T.bg }}>
               <th style={thName}>Jogador</th>
@@ -259,7 +262,7 @@ export function MatchDashboard({ players, matches }) {
           <tbody>
             {rows.map(({ player, s }) => (
               <tr key={player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{nomeJogador(player)}</td>
+                <td title={nomeJogador(player)} style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nomeJogador(player)}</td>
                 {colunas.map(c => (
                   <td key={c.h} style={c.destaque ? { ...td, color: T.warn, ...mono } : td}>{c.v(s)}</td>
                 ))}
