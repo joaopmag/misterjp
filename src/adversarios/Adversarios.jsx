@@ -384,6 +384,7 @@ export function AdversarioPage({ adversario: a, scouting, videos, setVideos, onB
         <div>
           {bloco('Pontos fortes', a.pontosFortes)}
           {bloco('Pontos fracos', a.pontosFracos)}
+          {bloco('Melhores jogadores', a.melhoresJogadores)}
 
           {/* JOGADORES-CHAVE */}
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
@@ -630,6 +631,14 @@ export function AdversarioForm({ adversario, scouting, adversarios, onBack, onSa
       <div style={{ marginBottom: 14 }}>
         <Field label="Pontos fracos" bloco solto>
           <TextArea value={f.pontosFracos} onChange={e => setF({ ...f, pontosFracos: e.target.value })} style={{ minHeight: 64 }} />
+        </Field>
+      </div>
+      {/* Também se escreve no relatório de jogo; vai para o Excel. Se ficar
+          vazio, o relatório usa os jogadores-chave. */}
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Melhores jogadores" bloco solto>
+          <TextArea value={f.melhoresJogadores || ''} onChange={e => setF({ ...f, melhoresJogadores: e.target.value })} style={{ minHeight: 52 }}
+            placeholder="Um por linha. Vazio: usam-se os jogadores-chave." />
         </Field>
       </div>
 

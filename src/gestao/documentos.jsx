@@ -1262,7 +1262,9 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
         .map(id => (scouting || []).find(j => j && j.id === id))
         .filter(j => j && String(j.name || '').trim())
         .map(j => [j.camisola ? String(j.camisola).trim() : '', String(j.name).trim(), j.position ? `(${j.position})` : ''].filter(Boolean).join(' '));
-      crescer(66, textoLongo('I66', chave.join('\n'), 66), 39.75);
+      // Escrito no relatório de jogo (fica na ficha): tem precedência.
+      const melhores = String(ficha.melhoresJogadores || '').trim() || chave.join('\n');
+      crescer(66, textoLongo('I66', melhores, 66), 39.75);
     }
     zip.file(caminho, x);
   }

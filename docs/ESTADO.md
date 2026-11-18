@@ -557,6 +557,17 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 18/11 (3.ª): Cor da equipa. Sem cor escolhida passa a ser cinzento
+  (`COR_SEM_EQUIPA` em tema.jsx), em tudo o que usa `T.corEquipa` (quadros,
+  documentos Word/Excel, barras do relatório de jogo); o mesmo valor por
+  omissão ao criar equipa e em Gerir equipa. Relatório de jogo: barras na
+  cor da equipa; a Disciplina mostra os cartões vindos de Jogadores; nova
+  caixa "Equipa adversária" (Excel A64, I64, A66, I66) com pontos fortes,
+  pontos fracos, estrutura (`quadroTatica`) e melhores jogadores, lidos da
+  ficha em Adversários e gravados de volta nela (cria a ficha se não
+  houver). Melhores jogadores: texto próprio `melhoresJogadores` na ficha
+  (também no formulário de Adversários); vazio = jogadores-chave.
+  "Relatório incompleto" passa a contar também a equipa adversária.
 - 18/11 (2.ª): A janela do relatório deixou os separadores e segue o
   ficheiro de Excel de cima para baixo: resultado e jogadores, depois as
   caixas com a barra vermelha (Observações gerais, Disciplina, Estruturas

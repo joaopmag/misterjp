@@ -15,6 +15,8 @@ import { CARD_OPTIONS, COR_RESULTADO, NOME_RESULTADO, marcadorDoJogo, normalizeS
 import { ListaMultipla, irParaSeparador } from '../base/ui-extra';
 import { comQuemLaEsteve, withConvocadosInAttendance } from './Escalacao';
 import { FORMACOES, tamanhoDaFormacao } from '../tatico/Simulador';
+import { fichaDaEquipa } from '../media/organizacao';
+import { coresCamisola } from '../atleta/ecras';
 
 /* ONDE ENTRA CADA ANÁLISE NO RELATÓRIO EM EXCEL (17/11).
    O modelo do relatório de jogo tem uma caixa para cada assunto. Antes, a
@@ -31,23 +33,43 @@ export const SECCOES_ANALISE = [
   { id: 'fortes', rotulo: 'Pontos fortes', curto: 'Pontos fortes', ajuda: 'Pontos fortes da equipa neste jogo.' },
   { id: 'fracos', rotulo: 'Pontos fracos', curto: 'Pontos fracos', ajuda: 'Pontos fracos da equipa neste jogo.' },
   { id: 'bolasParadas', rotulo: 'Bolas paradas', curto: 'Bolas paradas', ajuda: 'Prestação nas bolas paradas ofensivas e defensivas.' },
-  { id: 'adversario', rotulo: 'Adversário (forma de jogar)', curto: 'Adversário', ajuda: 'Aspetos fundamentais da forma de jogar do adversário. Pontos fortes e fracos, estrutura e melhores jogadores vêm da ficha dele em Adversários.' },
+  { id: 'adversario', rotulo: 'Adversário (forma de jogar)', curto: 'Adversário', ajuda: 'Aspetos fundamentais da forma de jogar do adversário.' },
 ];
 /* O que falta no relatório (para o aviso "Relatório incompleto"): as
    estatísticas dos jogadores por acabar e as caixas de texto sem nada
    escrito por ninguém. A Disciplina conta como feita se houve cartões. */
-export function faltaNoRelatorio(m, notas) {
+/* A EQUIPA ADVERSÁRIA no relatório (linhas 63 a 66 do Excel): vem da
+   ficha do adversário e o que se escrever no relatório volta para lá. Os
+   melhores jogadores, se a ficha não tiver texto próprio, são os
+   jogadores-chave dela. */
+export function camposAdversario(ficha, scouting) {
+  const f = ficha || {};
+  const chave = (f.jogadoresChaveIds || []).map(id => (scouting || []).find(j => j && j.id === id))
+    .filter(j => j && String(j.name || '').trim())
+    .map(j => [j.camisola ? String(j.camisola).trim() : '', String(j.name).trim(), j.position ? `(${j.position})` : ''].filter(Boolean).join(' '))
+    .join('\n');
+  return {
+    pontosFortes: f.pontosFortes || '', pontosFracos: f.pontosFracos || '',
+    quadroTatica: f.quadroTatica || '', melhoresJogadores: String(f.melhoresJogadores || '').trim() || chave,
+  };
+}
+export function faltaNoRelatorio(m, notas, adv) {
   const usadas = new Set((notas || []).filter(n => String((n && n.texto) || '').trim()).map(n => seccaoDaNota(n)));
-  const temCartoes = Object.values((m && m.report) || {}).some(r => r && r.card);
+  const temCartoes = Object.values((m && m.report) || {}).some(r => r && r.card && r.card !== 'none');
   const falta = [];
   if (estadoRelatorio(m).id !== 'feito') falta.push({ id: 'jogadores', curto: 'Jogadores' });
   SECCOES_ANALISE.forEach(x => { if (!usadas.has(x.id) && !(x.id === 'disciplina' && temCartoes)) falta.push(x); });
+  if (adv && ['pontosFortes', 'pontosFracos', 'quadroTatica', 'melhoresJogadores'].some(k => !String(adv[k] || '').trim())) {
+    falta.push({ id: 'equipaAdversaria', curto: 'Equipa adversária' });
+  }
   return falta;
 }
 // A barra vermelha de cada caixa, como no ficheiro de Excel.
 function BarraRelatorio({ titulo, ajuda }) {
+  // A cor da equipa (cinzento se não houver), como as faixas do Excel.
+  const cor = coresCamisola(T.corEquipa);
   return (
-    <div style={{ background: '#B5383F', color: '#fff', borderRadius: '8px 8px 0 0', padding: '7px 12px', textAlign: 'center' }}>
+    <div style={{ background: cor.base, color: cor.texto, borderRadius: '8px 8px 0 0', padding: '7px 12px', textAlign: 'center' }}>
       <div style={{ fontSize: 13, fontWeight: 700 }}>{titulo}</div>
       {ajuda && <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 1 }}>{ajuda}</div>}
     </div>
@@ -325,7 +347,7 @@ export function AlertaRelatorios({ emFalta, onCriar }) {
   );
 }
 
-export function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches, abrirAnaliseId, onAnaliseAberta, onImprimirFicha, onPartilharFicha }) {
+export function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches, adversarios, setAdversarios, scouting, abrirAnaliseId, onAnaliseAberta, onImprimirFicha, onPartilharFicha }) {
   const hoje = todayStr();
   const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -429,7 +451,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                há, e tocar no cartão abre-o para baixo — lá dentro está o
                "+ Análise do jogo" para acrescentar outra. */
             const abrivel = nNotas > 0;
-            const incompleto = faltaNoRelatorio(m, notasDoJogo(m)).length > 0;
+            const incompleto = faltaNoRelatorio(m, notasDoJogo(m), adversarios ? camposAdversario(fichaDaEquipa(m.opponent, adversarios), scouting) : null).length > 0;
             const analiseBotao = abrivel ? (
               /* A MESMA ALTURA nos dois casos (24 px): trocar entre Competição e
                  Amigáveis, ou um jogo ganhar a 1.ª análise, não mexe nas linhas. */
@@ -531,6 +553,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
           match={aberto} players={players} season={season}
           separadorInicial={separadorAberto} userEmail={userEmail} setMatches={setMatches}
           notasAtuais={notasDoJogo((matches || []).find(x => x.id === aberto.id) || aberto)}
+          adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting}
           onClose={() => setAberto(null)}
           onSave={(dados) => { onSave(dados); setAberto(null); }}
         />
@@ -693,18 +716,22 @@ function rascunhosIniciais(notas, userEmail) {
   });
   return r;
 }
-export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season, onClose, onSave, separadorInicial, userEmail, setMatches, notasAtuais }) {
+export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season, onClose, onSave, separadorInicial, userEmail, setMatches, notasAtuais, adversarios, setAdversarios, scouting }) {
   const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const estreito = useIsMobile(760);
   const notasIniciaisRef = React.useRef(null);
   if (!notasIniciaisRef.current) notasIniciaisRef.current = rascunhosIniciais(notasAtuais || notasDoJogo(match), userEmail);
+  const fichaAdv = adversarios ? fichaDaEquipa(match.opponent, adversarios) : null;
+  const advInicialRef = React.useRef(null);
+  if (!advInicialRef.current) advInicialRef.current = camposAdversario(fichaAdv, scouting);
   const [f, setF] = useState(() => ({
     ...match,
     convocados: convocadosDoJogo(match), starters: match.starters || [], report: match.report || {}, result: match.result || '',
     __notas: { ...notasIniciaisRef.current },
+    __adv: { ...advInicialRef.current },
   }));
   // Para saber, ao gravar, se as estatísticas mudaram (sem contar o texto).
-  const semNotas = (o) => { const { __notas, ...resto } = o; return resto; };
+  const semNotas = (o) => { const { __notas, __adv, ...resto } = o; return resto; };
   const estatisticasIniciaisRef = React.useRef(null);
   if (estatisticasIniciaisRef.current == null) estatisticasIniciaisRef.current = JSON.stringify(semNotas(f));
   // Abrir já na caixa pedida ("+ Análise do jogo" abre nas Observações gerais).
@@ -719,7 +746,16 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
   const rascunhoNotas = f.__notas || {};
   const escreverNota = (id, v) => setF(prev => ({ ...prev, __notas: { ...(prev.__notas || {}), [id]: v } }));
   const outrasNotas = (notasAtuais || []).filter(n => !eMinhaNota(n, userEmail) && String(n.texto || '').trim());
-  const faltam = faltaNoRelatorio(f, [...outrasNotas, ...SECCOES_ANALISE.map(x => ({ seccao: x.id, texto: rascunhoNotas[x.id] || '' }))]);
+  const adv = f.__adv || advInicialRef.current;
+  const mudarAdv = (k, v) => setF(prev => ({ ...prev, __adv: { ...(prev.__adv || advInicialRef.current), [k]: v } }));
+  const faltam = faltaNoRelatorio(f, [...outrasNotas, ...SECCOES_ANALISE.map(x => ({ seccao: x.id, texto: rascunhoNotas[x.id] || '' }))], setAdversarios ? adv : null);
+  // Os cartões já marcados em Jogadores (entram sozinhos na Disciplina).
+  const cartoesDoJogo = (f.convocados || []).map(pid => {
+    const c = ((f.report || {})[pid] || {}).card;
+    const p = (players || []).find(j => j.id === pid);
+    const op = CARD_OPTIONS.find(o => o.value === c);
+    return c && c !== 'none' && p ? `${(op && op.label) || c}: ${shortPlayerName(p, players)}` : '';
+  }).filter(Boolean);
   const guardar = () => {
     limpar();
     const dados = semNotas(f);
@@ -744,6 +780,19 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
         });
         return { ...x, notasEquipaTecnica: lista };
       }));
+    }
+    // A equipa adversária volta para a ficha dela (cria-a se não houver).
+    const mudouAdv = setAdversarios && ['pontosFortes', 'pontosFracos', 'quadroTatica', 'melhoresJogadores']
+      .some(k => String(adv[k] || '') !== String(advInicialRef.current[k] || ''));
+    if (mudouAdv) {
+      const chaveTexto = camposAdversario({ ...(fichaAdv || {}), melhoresJogadores: '' }, scouting).melhoresJogadores;
+      const novos = {
+        pontosFortes: adv.pontosFortes, pontosFracos: adv.pontosFracos, quadroTatica: adv.quadroTatica,
+        // Se ficou igual aos jogadores-chave, não se guarda texto à parte.
+        melhoresJogadores: String(adv.melhoresJogadores || '').trim() === chaveTexto ? '' : adv.melhoresJogadores,
+      };
+      if (fichaAdv) setAdversarios(prev => prev.map(a => (a.id === fichaAdv.id ? { ...a, ...novos } : a)));
+      else setAdversarios(prev => [...prev, { id: uid(), nome: match.opponent || 'Adversário', escalao: '', prova: competitionLabel(match.competition) || '', notas: '', jogadoresChaveIds: [], ...novos }]);
     }
     if (mudouEstatisticas) onSave(withConvocadosInAttendance(dados));
     else onClose();
@@ -876,6 +925,35 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
                 </div>
               )}
             </div>
+            {sec.id === 'disciplina' && (
+              <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 6 }}>
+                {cartoesDoJogo.length ? <>Entram também no relatório, vindos de Jogadores: <span style={{ color: T.cream }}>{cartoesDoJogo.join(' · ')}</span></> : 'Sem cartões marcados em Jogadores.'}
+              </div>
+            )}
+            {sec.id === 'adversario' && setAdversarios && (
+              <div ref={el => { blocosRef.current.equipaAdversaria = el; }} style={{ marginTop: 18, scrollMarginTop: 12 }}>
+                <BarraRelatorio titulo="Equipa adversária" ajuda={fichaAdv ? `Da ficha de ${fichaAdv.nome} em Adversários; o que mudares aqui fica lá.` : 'Ainda não há ficha deste adversário: o que escreveres aqui cria-a em Adversários.'} />
+                <div style={{ display: 'grid', gridTemplateColumns: estreito ? '1fr' : '1fr 1fr', gap: 10, paddingTop: 10 }}>
+                  {[['pontosFortes', 'Pontos fortes'], ['pontosFracos', 'Pontos fracos']].map(([k, rot]) => (
+                    <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: T.mutedDim }}>
+                      {rot}
+                      <TextArea value={adv[k] || ''} onChange={e => mudarAdv(k, e.target.value)} style={{ minHeight: 80 }} placeholder="Escreve aqui…" />
+                    </label>
+                  ))}
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: T.mutedDim }}>
+                    Estrutura de jogo adotada
+                    <Select value={adv.quadroTatica || ''} onChange={e => mudarAdv('quadroTatica', e.target.value)}>
+                      <option value="">Escolher…</option>
+                      {Object.keys(FORMACOES).filter(x => !tamanhoDaFormacao(f.formacao) || tamanhoDaFormacao(x) === tamanhoDaFormacao(f.formacao) || x === adv.quadroTatica).map(o => <option key={o} value={o}>{o}</option>)}
+                    </Select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: T.mutedDim }}>
+                    Melhores jogadores
+                    <TextArea value={adv.melhoresJogadores || ''} onChange={e => mudarAdv('melhoresJogadores', e.target.value)} style={{ minHeight: 64 }} placeholder="Um por linha (nº, nome, posição)." />
+                  </label>
+                </div>
+              </div>
+            )}
             {/* Estruturas utilizadas ao longo do jogo: logo a seguir à
                 Disciplina, como no Excel. */}
             {sec.id === 'disciplina' && (

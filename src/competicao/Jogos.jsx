@@ -22,7 +22,7 @@ import { comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao } from './Escal
 import { integrarConvidado } from '../dominio/convidados';
 import { MatchModal } from './MatchModal';
 
-export function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono, userEmail, voltarOrigem }) {
+export function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, adversarios, setAdversarios, scouting, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono, userEmail, voltarOrigem }) {
   // A janela do jogo foi aberta por uma missão: ao fechar, volta-se de onde se veio.
   const modalDaMissao = useRef(false);
   const fecharModal = () => {
@@ -200,6 +200,7 @@ export function Jogos({ matches, setMatches, players, setPlayers, standings, set
           matches={matches} players={players} season={season} standings={standings}
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
           userEmail={userEmail} setMatches={setMatches}
+          adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting}
           abrirAnaliseId={abrirAnalise} onAnaliseAberta={() => setAbrirAnalise(null)}
           onImprimirFicha={doPrintMatch} onPartilharFicha={doShareMatch}
         />

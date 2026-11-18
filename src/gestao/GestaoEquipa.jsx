@@ -11,7 +11,7 @@ import { URL_PUBLICA_APP, fmtMMSS } from '../media/social';
 import { staffBioEstado, staffBioDisponivel, staffBioAtivar, staffBioDesativar, staffReporPalavraPasse, FUNCOES_STAFF, BIO_TXT } from '../AuthScreen.jsx';
 import JSZip from 'jszip';
 import { CHECKIN_CODE_LEN, genPlayerCode } from '../dominio/plantel';
-import { T, mono, body } from '../base/tema';
+import { T, mono, body, COR_SEM_EQUIPA } from '../base/tema';
 import { Check, Copy, RefreshCw, Fingerprint, MessageCircle, Pencil, Lock, Star, Trash2, LogOut, Play, X, EyeOff, Eye, AlertTriangle, Download } from 'lucide-react';
 import { CHAVE_EQUIPA, GENEROS, gravarFuncaoMembro, gravarGeneroMembro, gravarTelefoneMembro, selecionarMembros } from './membros';
 
@@ -121,7 +121,7 @@ export function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlay
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
   const [logo, setLogo] = useState(equipa.logo || '');
-  const [cor, setCor] = useState(equipa.cor || '#B5393F');
+  const [cor, setCor] = useState(equipa.cor || COR_SEM_EQUIPA);
   const [aGuardarCor, setAGuardarCor] = useState(false);
   const [meuNome, setMeuNome] = useState('');
   const [meuTelefone, setMeuTelefone] = useState('');
@@ -729,9 +729,9 @@ export function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlay
           </div>
         </div>
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
-          A cor das bolas dos jogadores no Simulador, na Ficha de Jogo e na Estrutura habitual
-          de um adversário. Uma equipa que jogue de azul, por exemplo, pode trocar aqui o
-          vermelho de origem.
+          A cor da equipa na app e nos documentos: bolas dos jogadores no Simulador, na Ficha
+          de Jogo e na Estrutura habitual de um adversário, barras do relatório de jogo, cores
+          dos modelos Word e Excel. Sem cor escolhida, fica cinzento.
         </div>
         <div style={barraAcoes}>
           <Btn variant="ghost" onClick={guardarCor} disabled={aGuardarCor} style={botaoAcao}>

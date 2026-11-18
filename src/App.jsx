@@ -31,7 +31,7 @@ import {
   Target, Pin,
 } from 'lucide-react';
 // Base movida para src/base/ (divisão do App.jsx, passo 1).
-import { FONTS, IconeTema, ROTULO_TROCA_TEMA, T, TEMA_ATUAL, TEXT_ON_ACCENT, T_ESCURO, body, display, mono, trocarTema } from './base/tema';
+import { COR_SEM_EQUIPA, FONTS, IconeTema, ROTULO_TROCA_TEMA, T, TEMA_ATUAL, TEXT_ON_ACCENT, T_ESCURO, body, display, mono, trocarTema } from './base/tema';
 import { ACTIVITY_LABELS, addDays, escapeHtmlText, fmtDate, fmtShort, formatShortDatePt, semAcentos, timeAgo, toLocalISODate, todayStr, uid } from './base/utilidades';
 import { BotaoTopo, Btn, ConfirmDialog, EmptyState, FIELD_FULL, FIELD_GRID, Field, Input, Modal, Panel, SectionHeader, Select, TextArea, UNDO_SECONDS, UndoBar, askConfirm, definirModalHandoff, herdarOuEmpurrarMarca, inputStyle, itemLabel, modalHandoffAtivo, offerUndo, removeWithUndo, trocarJanela, undoHandler, useIsMobile, useModalHistory } from './base/ui';
 import { BannerRascunho, SyncErrorBanner, ensureSession, jsonEstavel, loadSingleton, saveSingleton, useCollectionSync, useRascunho, useSingletonSync } from './base/sincronizacao';
@@ -233,7 +233,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // valor — sem isto, os quadros de posições ficavam sempre com o
   // vermelho de origem, mesmo com outra cor escolhida em "Gerir
   // equipa".
-  T.corEquipa = (equipaAtiva && equipaAtiva.cor) || '#B5393F';
+  T.corEquipa = (equipaAtiva && equipaAtiva.cor) || COR_SEM_EQUIPA;
   // Pasta da equipa no Storage, para os anexos (ver `enviarAnexoParaStorage`).
   T.equipaId = teamId || '';
   // Logótipo e nome do clube para os documentos Word (cabeçalho/rodapé
@@ -1075,7 +1075,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         souDono: eu.papel === 'owner',
         clube: String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim(),
         epoca: mEp ? `${mEp[1]}/${mEp[3]}` : ep,
-        cor: (equipaAtiva && equipaAtiva.cor) || '#B5393F',
+        cor: (equipaAtiva && equipaAtiva.cor) || COR_SEM_EQUIPA,
         logo: (equipaAtiva && equipaAtiva.logo) || '',
         formacao: ultimo ? ultimo.formacao : '',
         numeros,
@@ -1923,7 +1923,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={playersAtivos} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={playersAtivos} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : tabPedida === 'ideiasjogo' ? 'ideiasjogo' : 'jogos'} voltarOrigem={origemMissao && origemMissao !== 'jogos' ? () => goTab(origemMissao) : null}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={playersAtivos} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : tabPedida === 'ideiasjogo' ? 'ideiasjogo' : 'jogos'} voltarOrigem={origemMissao && origemMissao !== 'jogos' ? () => goTab(origemMissao) : null}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -3226,7 +3226,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const [clube, setClube] = useState('');
   const [escalao, setEscalao] = useState('');
   const [logo, setLogo] = useState('');
-  const [cor, setCor] = useState('#B5393F');
+  const [cor, setCor] = useState(COR_SEM_EQUIPA);
   const [codigo, setCodigo] = useState('');
   /* O NOME PEDE-SE À ENTRADA.
 

@@ -8,6 +8,7 @@ import { Moon, Sun } from 'lucide-react';
    Salgueiros crimson as primary accent and blue/gold/purple
    accents borrowed from the alternative jersey graffiti print.
 ---------------------------------------------------------------- */
+export const COR_SEM_EQUIPA = '#7A807C';
 export const T = {
   bg: '#182619',
   surface: '#202F22',
@@ -32,7 +33,9 @@ export const T = {
   // omissão, mas cada equipa pode escolher a sua em "Gerir equipa".
   // `App` atualiza isto assim que sabe qual é a equipa ativa (ver mais
   // abaixo); os quadros só leem `T.corEquipa`, nunca um vermelho fixo.
-  corEquipa: '#B5393F',
+  // (18/11) Sem cor escolhida na equipa: cinzento (COR_SEM_EQUIPA), em
+  // tudo o que usa a cor da equipa (quadros, documentos, relatório).
+  corEquipa: '#7A807C',
   // Dourado de FUNDO (botões e etiquetas com texto escuro por cima): fica
   // igual nos dois temas, ao contrário de `gold`, que no modo claro
   // escurece para se ler como texto.
