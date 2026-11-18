@@ -557,6 +557,15 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 18/11: Janela do relatório de jogo (RelatorioJogoModal). Uma só janela
+  com tudo o que vai para o Excel, separadores numa linha: Jogadores
+  (resultado, sistemas, quem jogou, tabela) + uma caixa de texto por cada
+  SECCOES_ANALISE. Muda-se de separador e escreve-se logo; os textos ficam
+  em `f.__notas` (entra no rascunho) e gravam-se todos em "Guardar
+  relatório": uma nota por pessoa e caixa em `notasEquipaTecnica` (só as
+  caixas que mudaram). As estatísticas só se gravam se mudaram. "+ Análise
+  do jogo" e "Por escrever no relatório" abrem esta janela no separador
+  certo; o estado do relatório ("15 jogadores >") abre em Jogadores.
 - 17/11: Relatório de jogo no Excel (Estatística e Assiduidade), caixas de
   texto. Cada "Análise do jogo" escolhe a caixa onde entra
   (`SECCOES_ANALISE` / `seccao` em RelatoriosJogo.jsx): Observações gerais

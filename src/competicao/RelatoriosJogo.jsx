@@ -24,14 +24,14 @@ import { FORMACOES, tamanhoDaFormacao } from '../tatico/Simulador';
    adivinha pelo texto: o que não se escolhe não se perde, fica nas
    Observações gerais. As notas antigas (sem `seccao`) contam como gerais. */
 export const SECCOES_ANALISE = [
-  { id: 'geral', rotulo: 'Observações gerais' },
-  { id: 'disciplina', rotulo: 'Disciplina' },
-  { id: 'ofensiva', rotulo: 'Fase ofensiva / Transição A-D' },
-  { id: 'defensiva', rotulo: 'Fase defensiva / Transição D-A' },
-  { id: 'fortes', rotulo: 'Pontos fortes' },
-  { id: 'fracos', rotulo: 'Pontos fracos' },
-  { id: 'bolasParadas', rotulo: 'Bolas paradas' },
-  { id: 'adversario', rotulo: 'Adversário (forma de jogar)' },
+  { id: 'geral', rotulo: 'Observações gerais', curto: 'Geral', ajuda: 'Semana de treinos, convocados, não utilizados, ocorrências.' },
+  { id: 'disciplina', rotulo: 'Disciplina', curto: 'Disciplina', ajuda: 'Comportamento disciplinar da equipa com os vários agentes no jogo. Os cartões entram sozinhos no relatório.' },
+  { id: 'ofensiva', rotulo: 'Fase ofensiva / Transição A-D', curto: 'Ofensiva A-D', ajuda: 'Resumo do ocorrido no jogo, cumprimento dos aspetos pedidos, jogadores em destaque.' },
+  { id: 'defensiva', rotulo: 'Fase defensiva / Transição D-A', curto: 'Defensiva D-A', ajuda: 'Resumo do ocorrido no jogo, cumprimento dos aspetos pedidos, jogadores em destaque.' },
+  { id: 'fortes', rotulo: 'Pontos fortes', curto: 'Pontos fortes', ajuda: 'Pontos fortes da equipa neste jogo.' },
+  { id: 'fracos', rotulo: 'Pontos fracos', curto: 'Pontos fracos', ajuda: 'Pontos fracos da equipa neste jogo.' },
+  { id: 'bolasParadas', rotulo: 'Bolas paradas', curto: 'Bolas paradas', ajuda: 'Prestação nas bolas paradas ofensivas e defensivas.' },
+  { id: 'adversario', rotulo: 'Adversário (forma de jogar)', curto: 'Adversário', ajuda: 'Aspetos fundamentais da forma de jogar do adversário. Os pontos fortes e fracos e os melhores jogadores dele vêm da ficha em Adversários.' },
 ];
 export const seccaoDaNota = (n) => (n && SECCOES_ANALISE.some(x => x.id === n.seccao) ? n.seccao : 'geral');
 const rotuloSeccao = (id) => (SECCOES_ANALISE.find(x => x.id === id) || SECCOES_ANALISE[0]).rotulo;
@@ -318,7 +318,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
     if (!abrirId) return;
     const m0 = (matches || []).find(x => x.id === abrirId);
     const m = m0 ? comResultado(m0, standings) : null;
-    if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); setAberto(m); }
+    if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); setSeparadorAberto('jogadores'); setAberto(m); }
     if (onAberto) onAberto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirId]);
@@ -336,7 +336,15 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
      abre-se no estado à direita ("Por preencher", "Feito"…). */
   const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever', seccao? }
   const alternarLer = (id) => setPainel(p => (p && p.id === id && p.modo === 'ler' ? null : { id, modo: 'ler' }));
-  const abrirEscrita = (id, seccao) => setPainel({ id, modo: 'escrever', seccao: seccao || 'geral' });
+  /* (18/11) "+ Análise do jogo" abre a MESMA janela do relatório, já no
+     separador da caixa pedida (Geral por omissão). Escreve-se tudo lá. */
+  const [separadorAberto, setSeparadorAberto] = useState('jogadores');
+  const abrirEscrita = (id, seccao) => {
+    const m0 = (matches || []).find(x => x.id === id);
+    if (!m0) return;
+    setSeparadorAberto(seccao || 'geral');
+    setAberto(comResultado(m0, standings));
+  };
   // Chegou pela missão "Escrever a análise do jogo" (antes de pintar).
   React.useLayoutEffect(() => {
     if (!abrirAnaliseId) return;
@@ -430,7 +438,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                     <Share2 size={16} />
                   </button>
                 )}
-                <button type="button" onClick={() => setAberto(m)} title="Abrir o relatório do jogo" style={{
+                <button type="button" onClick={() => { setSeparadorAberto('jogadores'); setAberto(m); }} title="Abrir o relatório do jogo" style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, ...body,
                   fontSize: estreito ? 12 : 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', maxWidth: estreito ? 130 : 220,
                 }}>
@@ -476,7 +484,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                     {acoes}
                   </div>
                 )}
-                {meu && (meu.modo === 'escrever' || abrivel) && (
+                {meu && abrivel && (
                   <PainelNotasJogo key={`${meu.modo}:${meu.seccao || ''}`} m={m} modo={meu.modo} seccaoInicial={meu.seccao} userEmail={userEmail} setMatches={setMatches}
                     onEscrever={(sec) => abrirEscrita(m.id, sec)} onFechar={() => setPainel(null)} />
                 )}
@@ -490,6 +498,8 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
       {aberto && (
         <RelatorioJogoModal
           match={aberto} players={players} season={season}
+          separadorInicial={separadorAberto} userEmail={userEmail} setMatches={setMatches}
+          notasAtuais={notasDoJogo((matches || []).find(x => x.id === aberto.id) || aberto)}
           onClose={() => setAberto(null)}
           onSave={(dados) => { onSave(dados); setAberto(null); }}
         />
@@ -641,13 +651,73 @@ export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches,
   );
 }
 
-export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season, onClose, onSave }) {
+/* A JANELA DO RELATÓRIO DE JOGO (18/11). Tudo o que vai para o ficheiro
+   de Estatística e Assiduidade, numa só janela, com os separadores numa
+   linha: "Jogadores" (resultado, sistemas, quem jogou, minutos, golos,
+   cartões, notas) e uma caixa de texto por cada caixa do relatório em
+   Excel (Geral, Disciplina, Ofensiva…). Muda-se de separador e escreve-se
+   logo; o que se escreveu nos outros fica guardado (também no rascunho) e
+   grava-se tudo de uma vez em "Guardar relatório".
+   Cada pessoa escreve o SEU texto em cada caixa (fica uma nota por pessoa
+   e caixa, em `notasEquipaTecnica`); o das outras pessoas vê-se por baixo.
+   As estatísticas só se gravam se mudaram: escrever só a análise não mexe
+   no relatório dos jogadores. */
+const eMinhaNota = (n, userEmail) => String((n && n.autor) || '') === String(userEmail || '');
+function rascunhosIniciais(notas, userEmail) {
+  const r = {};
+  SECCOES_ANALISE.forEach(x => {
+    r[x.id] = notas.filter(n => seccaoDaNota(n) === x.id && eMinhaNota(n, userEmail))
+      .map(n => String(n.texto || '').trim()).filter(Boolean).join('\n\n');
+  });
+  return r;
+}
+export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season, onClose, onSave, separadorInicial, userEmail, setMatches, notasAtuais }) {
   const players = React.useMemo(() => comQuemLaEsteve(playersAtivosDoJogo, match), [playersAtivosDoJogo, match]);
   const estreito = useIsMobile(760);
+  const notasIniciaisRef = React.useRef(null);
+  if (!notasIniciaisRef.current) notasIniciaisRef.current = rascunhosIniciais(notasAtuais || notasDoJogo(match), userEmail);
   const [f, setF] = useState(() => ({
     ...match,
     convocados: convocadosDoJogo(match), starters: match.starters || [], report: match.report || {}, result: match.result || '',
+    __notas: { ...notasIniciaisRef.current },
   }));
+  // Para saber, ao gravar, se as estatísticas mudaram (sem contar o texto).
+  const semNotas = (o) => { const { __notas, ...resto } = o; return resto; };
+  const estatisticasIniciaisRef = React.useRef(null);
+  if (estatisticasIniciaisRef.current == null) estatisticasIniciaisRef.current = JSON.stringify(semNotas(f));
+  const [separador, setSeparador] = useState(separadorInicial || 'jogadores');
+  const rascunhoNotas = f.__notas || {};
+  const escreverNota = (id, v) => setF(prev => ({ ...prev, __notas: { ...(prev.__notas || {}), [id]: v } }));
+  const outrasNotas = (notasAtuais || []).filter(n => !eMinhaNota(n, userEmail) && String(n.texto || '').trim());
+  const temTexto = (id) => !!String(rascunhoNotas[id] || '').trim() || outrasNotas.some(n => seccaoDaNota(n) === id);
+  const guardar = () => {
+    limpar();
+    const dados = semNotas(f);
+    const mudouEstatisticas = JSON.stringify(dados) !== estatisticasIniciaisRef.current;
+    // As minhas notas, caixa a caixa: só as caixas onde o texto mudou.
+    const mudadas = SECCOES_ANALISE.map(x => x.id).filter(id => String(rascunhoNotas[id] || '').trim() !== String(notasIniciaisRef.current[id] || '').trim());
+    if (mudadas.length && setMatches) {
+      const agora = new Date().toISOString();
+      setMatches(prev => prev.map(x => {
+        if (x.id !== match.id) return x;
+        let lista = notasDoJogo(x);
+        mudadas.forEach(id => {
+          const minhas = lista.filter(n => seccaoDaNota(n) === id && eMinhaNota(n, userEmail));
+          const novo = String(rascunhoNotas[id] || '').trim();
+          const primeira = minhas[0];
+          lista = lista.filter(n => !minhas.includes(n));
+          if (novo) {
+            lista = [...lista, primeira
+              ? { ...primeira, texto: novo, seccao: id, editadoPor: userEmail || '', editadoEm: agora }
+              : { id: uid(), texto: novo, seccao: id, autor: userEmail || '', em: agora }];
+          }
+        });
+        return { ...x, notasEquipaTecnica: lista };
+      }));
+    }
+    if (mudouEstatisticas) onSave(withConvocadosInAttendance(dados));
+    else onClose();
+  };
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_relatorio_${match.id}`, f, setF);
   const ordenados = sortByPosition(players || []);
   const conv = ordenados.filter(p => f.convocados.includes(p.id));
@@ -676,15 +746,58 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
     return { ...prev, report };
   });
   const comMin = conv.filter(p => comMinutos(f.report[p.id])).length;
+  const comMinutosAlgum = comMin > 0;
 
   return (
     <Modal title={`Relatório · vs ${match.opponent || 'Adversário'}`} onClose={onClose} fullPage larguraMax={980}>
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: T.mutedDim, flex: '1 1 200px' }}>
           {fmtDate(match.date)} · {[competitionLabel(match.competition), match.jornada].filter(Boolean).join(' · ')}
         </div>
       </div>
+      {/* Os separadores numa só linha (no telemóvel desliza para o lado). O
+          ponto diz que essa caixa já tem texto. */}
+      <div className="mjp-sem-barra" style={{ display: 'flex', gap: 5, overflowX: 'auto', flexWrap: 'nowrap', marginBottom: 14, paddingBottom: 2 }}>
+        <style>{'.mjp-sem-barra{scrollbar-width:none}.mjp-sem-barra::-webkit-scrollbar{display:none}'}</style>
+        {[{ id: 'jogadores', curto: 'Jogadores' }, ...SECCOES_ANALISE].map(x => {
+          const on = separador === x.id;
+          const cheio = x.id === 'jogadores' ? comMinutosAlgum : temTexto(x.id);
+          return (
+            <button key={x.id} type="button" onClick={() => setSeparador(x.id)} style={{
+              flex: estreito ? '0 0 auto' : '1 0 auto', justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 18, cursor: 'pointer', ...body, fontSize: 12, whiteSpace: 'nowrap',
+              background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted, border: `1px solid ${on ? T.crimson : T.line}`,
+            }}>
+              {x.curto}
+              <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: cheio ? (on ? TEXT_ON_ACCENT : T.gold) : 'transparent', border: `1px solid ${cheio ? 'transparent' : (on ? 'rgba(255,255,255,.5)' : T.line)}` }} />
+            </button>
+          );
+        })}
+      </div>
+      {separador !== 'jogadores' ? (() => {
+        const sec = SECCOES_ANALISE.find(x => x.id === separador) || SECCOES_ANALISE[0];
+        const dosOutros = outrasNotas.filter(n => seccaoDaNota(n) === sec.id);
+        return (
+          <div key={sec.id}>
+            <div style={{ fontSize: 14, color: T.cream, fontWeight: 600 }}>{sec.rotulo}</div>
+            <div style={{ fontSize: 12, color: T.mutedDim, margin: '2px 0 8px', lineHeight: 1.45, minHeight: 17 }}>{sec.ajuda}</div>
+            <TextArea autoFocus={!estreito} value={rascunhoNotas[sec.id] || ''} onChange={e => escreverNota(sec.id, e.target.value)}
+              placeholder="Escreve aqui. Podes mudar de separador e continuar noutra caixa: grava-se tudo junto."
+              style={{ minHeight: 0, height: estreito ? 220 : 'max(240px, calc(100dvh - 430px))', resize: 'none' }} />
+            {dosOutros.length > 0 && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11.5, color: T.mutedDim }}>Também nesta caixa (outros elementos da equipa técnica):</div>
+                {dosOutros.map(n => (
+                  <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 3 }}>{n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}</div>
+                    <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.texto}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })() : (<>
       {/* O RESULTADO num marcador: as duas equipas com o nome, a da casa à
           esquerda, um campo de golos para cada. Grava-se como "casa-fora". */}
       {(() => {
@@ -775,12 +888,14 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
         </>
       )}
 
+      </>)}
+
       <div style={{
         display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`, background: T.bg,
         ...(estreito ? { position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))' } : {}),
       }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => { limpar(); onSave(withConvocadosInAttendance(f)); }}><Check size={15} /> Guardar relatório</Btn>
+        <Btn onClick={guardar}><Check size={15} /> Guardar relatório</Btn>
       </div>
     </Modal>
   );
