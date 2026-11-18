@@ -451,7 +451,8 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                há, e tocar no cartão abre-o para baixo — lá dentro está o
                "+ Análise do jogo" para acrescentar outra. */
             const abrivel = nNotas > 0;
-            const incompleto = faltaNoRelatorio(m, notasDoJogo(m), adversarios ? camposAdversario(fichaDaEquipa(m.opponent, adversarios), scouting) : null).length > 0;
+            const faltaAqui = faltaNoRelatorio(m, notasDoJogo(m), adversarios ? camposAdversario(fichaDaEquipa(m.opponent, adversarios), scouting) : null);
+            const incompleto = faltaAqui.length > 0;
             const analiseBotao = abrivel ? (
               /* A MESMA ALTURA nos dois casos (24 px): trocar entre Competição e
                  Amigáveis, ou um jogo ganhar a 1.ª análise, não mexe nas linhas. */
@@ -471,7 +472,13 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
             const analise = (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, height: 24 }}>
                 {analiseBotao}
-                {incompleto && <span style={{ fontSize: 11.5, color: T.warn, whiteSpace: 'nowrap' }}>Relatório incompleto</span>}
+                {/* Toca e abre a janela: completo, no topo; incompleto, já no
+                    1.º campo por preencher. */}
+                <button type="button" onClick={(ev) => { ev.stopPropagation(); setSeparadorAberto(incompleto ? faltaAqui[0].id : 'jogadores'); setAberto(m); }}
+                  title={incompleto ? `Falta: ${faltaAqui.map(x => x.curto).join(', ')}` : 'Abrir o relatório completo'}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body, fontSize: 11.5, whiteSpace: 'nowrap', color: incompleto ? T.warn : T.good, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  {incompleto ? 'Relatório incompleto' : 'Relatório completo'}<ChevronRight size={13} />
+                </button>
               </div>
             );
             // À direita: o relatório (estatísticas).
@@ -740,7 +747,12 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
   React.useLayoutEffect(() => {
     const id = separadorInicial && separadorInicial !== 'jogadores' ? separadorInicial : null;
     const el = id && blocosRef.current[id];
-    if (el) el.scrollIntoView({ block: 'start' });
+    if (el) {
+      el.scrollIntoView({ block: 'start' });
+      // No computador, o cursor fica logo na caixa (no telemóvel não, para
+      // o teclado não tapar a página ao abrir).
+      if (!estreito) { const campo = el.querySelector('textarea, select'); if (campo) campo.focus({ preventScroll: true }); }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const rascunhoNotas = f.__notas || {};

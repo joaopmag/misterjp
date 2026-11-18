@@ -557,6 +557,10 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 18/11 (4.ª): No cartão do jogo, ao lado de "Análise do jogo", aparece
+  sempre o estado do relatório e é um atalho: "Relatório completo" (verde)
+  abre a janela no topo; "Relatório incompleto" abre-a já no 1.º campo por
+  preencher, com o cursor lá (no computador).
 - 18/11 (3.ª): Cor da equipa. Sem cor escolhida passa a ser cinzento
   (`COR_SEM_EQUIPA` em tema.jsx), em tudo o que usa `T.corEquipa` (quadros,
   documentos Word/Excel, barras do relatório de jogo); o mesmo valor por
