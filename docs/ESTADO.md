@@ -557,6 +557,16 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 18/11 (2.ª): A janela do relatório deixou os separadores e segue o
+  ficheiro de Excel de cima para baixo: resultado e jogadores, depois as
+  caixas com a barra vermelha (Observações gerais, Disciplina, Estruturas
+  com os sistemas 1-3, Ofensiva, Defensiva, Pontos fortes, Pontos fracos,
+  Bolas paradas, Adversário), todas já prontas a escrever. No topo,
+  "Relatório incompleto · falta: …" com salto para a caixa
+  (`faltaNoRelatorio`). No cartão do jogo: só um aviso "Relatório
+  incompleto"; aberto, mostra só as Observações gerais, com "+ Análise do
+  jogo" (abre a janela nas Observações gerais) e "Ver relatório completo"
+  (abre no topo). "Titulares com 90'" com a altura da caixa "Quem jogou".
 - 18/11: Janela do relatório de jogo (RelatorioJogoModal). Uma só janela
   com tudo o que vai para o Excel, separadores numa linha: Jogadores
   (resultado, sistemas, quem jogou, tabela) + uma caixa de texto por cada

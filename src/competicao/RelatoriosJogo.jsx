@@ -31,8 +31,30 @@ export const SECCOES_ANALISE = [
   { id: 'fortes', rotulo: 'Pontos fortes', curto: 'Pontos fortes', ajuda: 'Pontos fortes da equipa neste jogo.' },
   { id: 'fracos', rotulo: 'Pontos fracos', curto: 'Pontos fracos', ajuda: 'Pontos fracos da equipa neste jogo.' },
   { id: 'bolasParadas', rotulo: 'Bolas paradas', curto: 'Bolas paradas', ajuda: 'Prestação nas bolas paradas ofensivas e defensivas.' },
-  { id: 'adversario', rotulo: 'Adversário (forma de jogar)', curto: 'Adversário', ajuda: 'Aspetos fundamentais da forma de jogar do adversário. Os pontos fortes e fracos e os melhores jogadores dele vêm da ficha em Adversários.' },
+  { id: 'adversario', rotulo: 'Adversário (forma de jogar)', curto: 'Adversário', ajuda: 'Aspetos fundamentais da forma de jogar do adversário. Pontos fortes e fracos, estrutura e melhores jogadores vêm da ficha dele em Adversários.' },
 ];
+/* O que falta no relatório (para o aviso "Relatório incompleto"): as
+   estatísticas dos jogadores por acabar e as caixas de texto sem nada
+   escrito por ninguém. A Disciplina conta como feita se houve cartões. */
+export function faltaNoRelatorio(m, notas) {
+  const usadas = new Set((notas || []).filter(n => String((n && n.texto) || '').trim()).map(n => seccaoDaNota(n)));
+  const temCartoes = Object.values((m && m.report) || {}).some(r => r && r.card);
+  const falta = [];
+  if (estadoRelatorio(m).id !== 'feito') falta.push({ id: 'jogadores', curto: 'Jogadores' });
+  SECCOES_ANALISE.forEach(x => { if (!usadas.has(x.id) && !(x.id === 'disciplina' && temCartoes)) falta.push(x); });
+  return falta;
+}
+// A barra vermelha de cada caixa, como no ficheiro de Excel.
+function BarraRelatorio({ titulo, ajuda }) {
+  return (
+    <div style={{ background: '#B5383F', color: '#fff', borderRadius: '8px 8px 0 0', padding: '7px 12px', textAlign: 'center' }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>{titulo}</div>
+      {ajuda && <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 1 }}>{ajuda}</div>}
+    </div>
+  );
+}
+// Altura inicial de cada caixa, mais ou menos na proporção do Excel.
+const ALTURA_CAIXA = { geral: 90, disciplina: 64, ofensiva: 140, defensiva: 120, fortes: 80, fracos: 80, bolasParadas: 70, adversario: 90 };
 export const seccaoDaNota = (n) => (n && SECCOES_ANALISE.some(x => x.id === n.seccao) ? n.seccao : 'geral');
 const rotuloSeccao = (id) => (SECCOES_ANALISE.find(x => x.id === id) || SECCOES_ANALISE[0]).rotulo;
 function EscolherSeccao({ valor, onEscolher }) {
@@ -407,19 +429,28 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                há, e tocar no cartão abre-o para baixo — lá dentro está o
                "+ Análise do jogo" para acrescentar outra. */
             const abrivel = nNotas > 0;
-            const analise = abrivel ? (
+            const incompleto = faltaNoRelatorio(m, notasDoJogo(m)).length > 0;
+            const analiseBotao = abrivel ? (
               /* A MESMA ALTURA nos dois casos (24 px): trocar entre Competição e
                  Amigáveis, ou um jogo ganhar a 1.ª análise, não mexe nas linhas. */
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: T.gold, height: 24, boxSizing: 'border-box', border: '1px solid transparent', padding: '0 0' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.gold, height: 24, boxSizing: 'border-box', border: '1px solid transparent', padding: '0 0' }}>
                 <MessageCircle size={13} />
-                {nNotas} análise{nNotas > 1 ? 's' : ''}
+                Análise do jogo
                 <ChevronDown size={14} style={{ transform: meu && meu.modo === 'ler' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
               </div>
             ) : (
               <button type="button" onClick={(ev) => { ev.stopPropagation(); abrirEscrita(m.id); }} style={{
-                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '0 10px', height: 24, boxSizing: 'border-box', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
+                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '0 10px', height: 24, boxSizing: 'border-box', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
                 background: meu && meu.modo === 'escrever' ? `${T.gold}26` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : `${T.gold}55`}`, color: T.gold,
               }}><Plus size={13} /> Análise do jogo</button>
+            );
+            /* Só um aviso quando falta alguma coisa no relatório (o que falta
+               vê-se dentro da janela, no topo). */
+            const analise = (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, height: 24 }}>
+                {analiseBotao}
+                {incompleto && <span style={{ fontSize: 11.5, color: T.warn, whiteSpace: 'nowrap' }}>Relatório incompleto</span>}
+              </div>
             );
             // À direita: o relatório (estatísticas).
             const acoes = (
@@ -486,7 +517,7 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
                 )}
                 {meu && abrivel && (
                   <PainelNotasJogo key={`${meu.modo}:${meu.seccao || ''}`} m={m} modo={meu.modo} seccaoInicial={meu.seccao} userEmail={userEmail} setMatches={setMatches}
-                    onEscrever={(sec) => abrirEscrita(m.id, sec)} onFechar={() => setPainel(null)} />
+                    onEscrever={(sec) => abrirEscrita(m.id, sec)} onVerCompleto={() => { setSeparadorAberto('jogadores'); setAberto(m); }} onFechar={() => setPainel(null)} />
                 )}
               </div>
             );
@@ -535,8 +566,10 @@ export function notasDoJogo(m) {
   return [];
 }
 
-export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches, onEscrever, onFechar }) {
-  const notas = notasDoJogo(m);
+export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches, onEscrever, onVerCompleto, onFechar }) {
+  /* (18/11) No cartão vê-se só o que vai para as Observações gerais. O
+     resto do relatório está na janela ("Ver relatório completo"). */
+  const notas = notasDoJogo(m).filter(n => seccaoDaNota(n) === 'geral');
   const [texto, setTexto] = useState('');
   const [seccao, setSeccao] = useState(seccaoInicial || 'geral');
   const [aEditar, setAEditar] = useState(null);
@@ -581,7 +614,7 @@ export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches,
   return (
     <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, cursor: 'default' }}>
       {notas.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem análise deste jogo.</div>
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem observações gerais deste jogo.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {notas.map(n => {
@@ -626,27 +659,16 @@ export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches,
           })}
         </div>
       )}
-      <button type="button" onClick={() => onEscrever('geral')} style={{
-        marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
-      }}><Plus size={14} /> Análise do jogo</button>
-      {(() => {
-        /* As caixas do relatório em Excel ainda vazias: tocar numa abre a
-           escrita já nessa caixa. */
-        const usadas = new Set(notas.filter(n => String(n.texto || '').trim()).map(seccaoDaNota));
-        const vazias = SECCOES_ANALISE.filter(x => !usadas.has(x.id));
-        if (!vazias.length) return <div style={{ marginTop: 8, fontSize: 12, color: T.mutedDim }}>Todas as caixas do relatório em Excel têm texto.</div>;
-        return (
-          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, color: T.mutedDim, marginRight: 2 }}>Por escrever no relatório:</span>
-            {vazias.map(x => (
-              <button key={x.id} type="button" onClick={() => onEscrever(x.id)} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
-                background: 'transparent', border: `1px dashed ${T.gold}66`, color: T.gold,
-              }}><Plus size={12} /> {x.rotulo}</button>
-            ))}
-          </div>
-        );
-      })()}
+      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 18px' }}>
+        <button type="button" onClick={() => onEscrever('geral')} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
+        }}><Plus size={14} /> Análise do jogo</button>
+        {onVerCompleto && (
+          <button type="button" onClick={onVerCompleto} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: T.muted, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
+          }}>Ver relatório completo <ChevronRight size={14} /></button>
+        )}
+      </div>
     </div>
   );
 }
@@ -685,11 +707,19 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
   const semNotas = (o) => { const { __notas, ...resto } = o; return resto; };
   const estatisticasIniciaisRef = React.useRef(null);
   if (estatisticasIniciaisRef.current == null) estatisticasIniciaisRef.current = JSON.stringify(semNotas(f));
-  const [separador, setSeparador] = useState(separadorInicial || 'jogadores');
+  // Abrir já na caixa pedida ("+ Análise do jogo" abre nas Observações gerais).
+  const blocosRef = React.useRef({});
+  const irPara = (id) => { const el = blocosRef.current[id]; if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+  React.useLayoutEffect(() => {
+    const id = separadorInicial && separadorInicial !== 'jogadores' ? separadorInicial : null;
+    const el = id && blocosRef.current[id];
+    if (el) el.scrollIntoView({ block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const rascunhoNotas = f.__notas || {};
   const escreverNota = (id, v) => setF(prev => ({ ...prev, __notas: { ...(prev.__notas || {}), [id]: v } }));
   const outrasNotas = (notasAtuais || []).filter(n => !eMinhaNota(n, userEmail) && String(n.texto || '').trim());
-  const temTexto = (id) => !!String(rascunhoNotas[id] || '').trim() || outrasNotas.some(n => seccaoDaNota(n) === id);
+  const faltam = faltaNoRelatorio(f, [...outrasNotas, ...SECCOES_ANALISE.map(x => ({ seccao: x.id, texto: rascunhoNotas[x.id] || '' }))]);
   const guardar = () => {
     limpar();
     const dados = semNotas(f);
@@ -746,7 +776,6 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
     return { ...prev, report };
   });
   const comMin = conv.filter(p => comMinutos(f.report[p.id])).length;
-  const comMinutosAlgum = comMin > 0;
 
   return (
     <Modal title={`Relatório · vs ${match.opponent || 'Adversário'}`} onClose={onClose} fullPage larguraMax={980}>
@@ -756,48 +785,21 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
           {fmtDate(match.date)} · {[competitionLabel(match.competition), match.jornada].filter(Boolean).join(' · ')}
         </div>
       </div>
-      {/* Os separadores numa só linha (no telemóvel desliza para o lado). O
-          ponto diz que essa caixa já tem texto. */}
-      <div className="mjp-sem-barra" style={{ display: 'flex', gap: 5, overflowX: 'auto', flexWrap: 'nowrap', marginBottom: 14, paddingBottom: 2 }}>
-        <style>{'.mjp-sem-barra{scrollbar-width:none}.mjp-sem-barra::-webkit-scrollbar{display:none}'}</style>
-        {[{ id: 'jogadores', curto: 'Jogadores' }, ...SECCOES_ANALISE].map(x => {
-          const on = separador === x.id;
-          const cheio = x.id === 'jogadores' ? comMinutosAlgum : temTexto(x.id);
-          return (
-            <button key={x.id} type="button" onClick={() => setSeparador(x.id)} style={{
-              flex: estreito ? '0 0 auto' : '1 0 auto', justifyContent: 'center', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 18, cursor: 'pointer', ...body, fontSize: 12, whiteSpace: 'nowrap',
-              background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted, border: `1px solid ${on ? T.crimson : T.line}`,
-            }}>
-              {x.curto}
-              <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: cheio ? (on ? TEXT_ON_ACCENT : T.gold) : 'transparent', border: `1px solid ${cheio ? 'transparent' : (on ? 'rgba(255,255,255,.5)' : T.line)}` }} />
-            </button>
-          );
-        })}
-      </div>
-      {separador !== 'jogadores' ? (() => {
-        const sec = SECCOES_ANALISE.find(x => x.id === separador) || SECCOES_ANALISE[0];
-        const dosOutros = outrasNotas.filter(n => seccaoDaNota(n) === sec.id);
-        return (
-          <div key={sec.id}>
-            <div style={{ fontSize: 14, color: T.cream, fontWeight: 600 }}>{sec.rotulo}</div>
-            <div style={{ fontSize: 12, color: T.mutedDim, margin: '2px 0 8px', lineHeight: 1.45, minHeight: 17 }}>{sec.ajuda}</div>
-            <TextArea autoFocus={!estreito} value={rascunhoNotas[sec.id] || ''} onChange={e => escreverNota(sec.id, e.target.value)}
-              placeholder="Escreve aqui. Podes mudar de separador e continuar noutra caixa: grava-se tudo junto."
-              style={{ minHeight: 0, height: estreito ? 220 : 'max(240px, calc(100dvh - 430px))', resize: 'none' }} />
-            {dosOutros.length > 0 && (
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 11.5, color: T.mutedDim }}>Também nesta caixa (outros elementos da equipa técnica):</div>
-                {dosOutros.map(n => (
-                  <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 12px' }}>
-                    <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 3 }}>{n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}</div>
-                    <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.texto}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })() : (<>
+      {/* (18/11, 2.ª) A JANELA SEGUE O FICHEIRO DE ESTATÍSTICAS, de cima
+          para baixo e sem separadores: o jogo e os jogadores, depois as
+          caixas pela mesma ordem do relatório em Excel, cada uma com a
+          sua barra e já pronta a escrever. No topo, o que falta, com
+          salto direto para a caixa. */}
+      {faltam.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px 10px', fontSize: 12.5, color: T.mutedDim, marginBottom: 12 }}>
+          <span style={{ color: T.warn, fontWeight: 600 }}>Relatório incompleto</span>
+          <span>falta:</span>
+          {faltam.map(x => (
+            <button key={x.id} type="button" onClick={() => irPara(x.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body, fontSize: 12.5, color: T.gold, textDecoration: 'underline', textUnderlineOffset: 3 }}>{x.curto}</button>
+          ))}
+        </div>
+      )}
+      <div ref={el => { blocosRef.current.jogadores = el; }}>
       {/* O RESULTADO num marcador: as duas equipas com o nome, a da casa à
           esquerda, um campo de golos para cada. Grava-se como "casa-fora". */}
       {(() => {
@@ -826,6 +828,60 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
         );
       })()}
 
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <ListaMultipla
+            itens={ordenados.map(p => ({ id: p.id, rotulo: shortPlayerName(p, players), prefixo: p.position || '--' }))}
+            escolhidos={f.convocados}
+            onAlternar={alternarConv}
+            comProcura
+            mostrarEtiquetas={false}
+            resumo={f.convocados.length ? `Quem jogou: ${f.convocados.length} convocados` : 'Quem jogou? Escolhe os convocados'}
+          />
+        </div>
+        {/* A mesma altura da caixa "Quem jogou" ao lado. */}
+        <Btn variant="ghost" onClick={titulares90} disabled={!f.starters.length} style={{ height: 41, boxSizing: 'border-box' }}>Titulares com 90'</Btn>
+      </div>
+
+      {conv.length === 0 ? (
+        <EmptyState text="Escolhe primeiro quem foi convocado. Os onze primeiros ficam titulares." />
+      ) : (
+        <>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{comMin}/{conv.length} com minutos. Suplentes que não entraram ficam em branco.</div>
+          <TabelaRelatorio
+            jogadores={conv} players={players} report={f.report} starters={f.starters}
+            capitao={f.capitao} subcapitao={f.subcapitao}
+            onReport={setR} onTitular={alternarTitular} estreito={estreito} alturaMax="calc(100dvh - 400px)"
+          />
+        </>
+      )}
+
+      </div>
+      {SECCOES_ANALISE.map(sec => {
+        const dosOutros = outrasNotas.filter(n => seccaoDaNota(n) === sec.id);
+        return (
+          <React.Fragment key={sec.id}>
+            <div ref={el => { blocosRef.current[sec.id] = el; }} style={{ marginTop: 18, scrollMarginTop: 12 }}>
+              <BarraRelatorio titulo={sec.rotulo} ajuda={sec.ajuda} />
+              <TextArea value={rascunhoNotas[sec.id] || ''} onChange={e => escreverNota(sec.id, e.target.value)}
+                placeholder="Escreve aqui…" style={{ minHeight: ALTURA_CAIXA[sec.id] || 80, borderTopLeftRadius: 0, borderTopRightRadius: 0 }} />
+              {dosOutros.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {dosOutros.map(n => (
+                    <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '7px 11px' }}>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 2 }}>{n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}</div>
+                      <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.texto}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Estruturas utilizadas ao longo do jogo: logo a seguir à
+                Disciplina, como no Excel. */}
+            {sec.id === 'disciplina' && (
+              <div style={{ marginTop: 18 }}>
+                <BarraRelatorio titulo="Estruturas utilizadas ao longo do jogo" />
+                <div style={{ paddingTop: 10 }}>
       {/* SISTEMAS USADOS (17/11): vão para "Estruturas utilizadas ao longo do
           Jogo" no relatório em Excel. O 1.º é o da ficha do jogo (o mesmo
           campo); o 2.º e o 3.º só se houve mudança durante o jogo. */}
@@ -861,34 +917,12 @@ export function RelatorioJogoModal({ match, players: playersAtivosDoJogo, season
         );
       })()}
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ flex: '1 1 260px' }}>
-          <ListaMultipla
-            itens={ordenados.map(p => ({ id: p.id, rotulo: shortPlayerName(p, players), prefixo: p.position || '--' }))}
-            escolhidos={f.convocados}
-            onAlternar={alternarConv}
-            comProcura
-            mostrarEtiquetas={false}
-            resumo={f.convocados.length ? `Quem jogou: ${f.convocados.length} convocados` : 'Quem jogou? Escolhe os convocados'}
-          />
-        </div>
-        <Btn variant="ghost" onClick={titulares90} disabled={!f.starters.length}>Titulares com 90'</Btn>
-      </div>
-
-      {conv.length === 0 ? (
-        <EmptyState text="Escolhe primeiro quem foi convocado. Os onze primeiros ficam titulares." />
-      ) : (
-        <>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{comMin}/{conv.length} com minutos. Suplentes que não entraram ficam em branco.</div>
-          <TabelaRelatorio
-            jogadores={conv} players={players} report={f.report} starters={f.starters}
-            capitao={f.capitao} subcapitao={f.subcapitao}
-            onReport={setR} onTitular={alternarTitular} estreito={estreito} alturaMax="calc(100dvh - 400px)"
-          />
-        </>
-      )}
-
-      </>)}
+                </div>
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
 
       <div style={{
         display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`, background: T.bg,
