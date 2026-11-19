@@ -1157,6 +1157,8 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
   plano.temFolhas = Object.keys(folhas).some(k => k.startsWith('relatorio'));
   const jogadores = players.slice(0, 30);
   const estilos = await estilosComQuebra(zip);
+  const ssFicheiro = zip.file('xl/sharedStrings.xml');
+  const ssTextos = ssFicheiro ? [...(await ssFicheiro.async('string')).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(mm => textoCompletoDoSi(mm[1])) : [];
 
   for (const { m, chave, n } of plano.jogos) {
     const caminho = folhas[chave];
@@ -1226,16 +1228,18 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
        o 3.º escolhidos no relatório (Jogos › Relatórios › relatório). */
     const sistema = (f) => (f ? (/^1-/.test(f) ? f : `1-${f}`) : '');
     const sistemas = Array.isArray(m.sistemas) ? m.sistemas : [];
-    texto('A49', sistema(m.formacao));
-    texto('F49', sistema(sistemas[0]));
-    texto('K49', sistema(sistemas[1]));
+    // Onde fica cada caixa NESTA folha (pelos títulos; ver linhasDoRelatorio).
+    const L = linhasDoRelatorio(x, ssTextos);
+    texto(`A${L.sistemas}`, sistema(m.formacao));
+    texto(`F${L.sistemas}`, sistema(sistemas[0]));
+    texto(`K${L.sistemas}`, sistema(sistemas[1]));
 
     /* CAIXAS DE TEXTO: cada análise do jogo vai para a caixa que quem a
        escreveu escolheu (ver SECCOES_ANALISE em RelatoriosJogo.jsx). As
        antigas, sem caixa, vão para Observações Gerais, como antes. */
     const notas = notasDoJogo(m).filter(nt => String(nt.texto || '').trim());
     const daSeccao = (id) => notas.filter(nt => seccaoDaNota(nt) === id).map(nt => String(nt.texto).trim()).join('\n');
-    crescer(44, textoLongo('A44', daSeccao('geral'), 150), 26.25);
+    crescer(L.geral, textoLongo(`A${L.geral}`, daSeccao('geral'), 150), 26.25);
     // Disciplina: o que se escreveu e, por baixo, os cartões do jogo.
     const nomeDe = (pid) => { const p = players.find(j => j.id === pid); return p ? p.name : ''; };
     const cartoes = convocados.map(pid => {
@@ -1243,19 +1247,19 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
       const tipo = c === 'yellow' ? 'Amarelo' : c === 'yellow2' ? 'Duplo amarelo (expulsão)' : c === 'red' ? 'Vermelho' : '';
       return tipo && nomeDe(pid) ? `${tipo}: ${nomeDe(pid)}` : '';
     }).filter(Boolean);
-    crescer(46, textoLongo('A46', [daSeccao('disciplina'), cartoes.length ? `Cartões: ${cartoes.join('; ')}` : ''].filter(Boolean).join('\n'), 150), 26.25);
-    crescer(51, textoLongo('A51', daSeccao('ofensiva'), 150), 144.75);
-    crescer(53, textoLongo('A53', daSeccao('defensiva'), 150), 98.25);
-    crescer(55, textoLongo('A55', daSeccao('fortes'), 150), 54);
-    crescer(57, textoLongo('A57', daSeccao('fracos'), 150), 52.5);
-    crescer(59, textoLongo('A59', daSeccao('bolasParadas'), 150), 42);
-    crescer(62, textoLongo('A62', daSeccao('adversario'), 150), 69.75);
+    crescer(L.disciplina, textoLongo(`A${L.disciplina}`, [daSeccao('disciplina'), cartoes.length ? `Cartões: ${cartoes.join('; ')}` : ''].filter(Boolean).join('\n'), 150), 26.25);
+    crescer(L.ofensiva, textoLongo(`A${L.ofensiva}`, daSeccao('ofensiva'), 150), 144.75);
+    crescer(L.defensiva, textoLongo(`A${L.defensiva}`, daSeccao('defensiva'), 150), 98.25);
+    crescer(L.fortes, textoLongo(`A${L.fortes}`, daSeccao('fortes'), 150), 54);
+    crescer(L.fracos, textoLongo(`A${L.fracos}`, daSeccao('fracos'), 150), 52.5);
+    crescer(L.bolasParadas, textoLongo(`A${L.bolasParadas}`, daSeccao('bolasParadas'), 150), 42);
+    crescer(L.adversario, textoLongo(`A${L.adversario}`, daSeccao('adversario'), 150), 69.75);
     // Estrutura habitual do adversário (ficha de Adversários).
-    if (ficha && ficha.quadroTatica) texto('A66', sistema(String(ficha.quadroTatica)));
+    if (ficha && ficha.quadroTatica) texto(`A${L.advEstrutura}`, sistema(String(ficha.quadroTatica)));
     if (ficha) {
-      const nF = textoLongo('A64', ficha.pontosFortes, 78);
-      const nP = textoLongo('I64', ficha.pontosFracos, 66);
-      crescer(64, Math.max(nF, nP), 40.5);
+      const nF = textoLongo(`A${L.advFortes}`, ficha.pontosFortes, 78);
+      const nP = textoLongo(`I${L.advFortes}`, ficha.pontosFracos, 66);
+      crescer(L.advFortes, Math.max(nF, nP), 40.5);
       // Melhores jogadores: os jogadores-chave da ficha do adversário
       // (Scouting), um por linha: "nº Nome (posição)".
       const chave = (ficha.jogadoresChaveIds || [])
@@ -1264,13 +1268,46 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
         .map(j => [j.camisola ? String(j.camisola).trim() : '', String(j.name).trim(), j.position ? `(${j.position})` : ''].filter(Boolean).join(' '));
       // Escrito no relatório de jogo (fica na ficha): tem precedência.
       const melhores = String(ficha.melhoresJogadores || '').trim() || chave.join('\n');
-      crescer(66, textoLongo('I66', melhores, 66), 39.75);
+      crescer(L.advEstrutura, textoLongo(`I${L.advEstrutura}`, melhores, 66), 39.75);
     }
     zip.file(caminho, x);
   }
   await limparEspacoAntesDoAdversario(zip, folhas);
   estilos.gravar();
   return plano;
+}
+
+/* ONDE FICA CADA CAIXA (19/11). As caixas de texto do relatório
+   procuram-se pelos TÍTULOS da coluna A (a caixa é a linha logo abaixo do
+   título), não por números de linha fixos. Assim serve ao modelo base (com
+   ou sem a linha de separação antes da Equipa Adversária) e a cópias que
+   uma equipa tenha mexido, desde que os títulos se mantenham. Um título
+   que não se encontre usa a posição do modelo original. */
+export function linhasDoRelatorio(x, ss) {
+  const titulos = {};
+  for (const mm of x.matchAll(/<c r="([AI])(\d+)"[^>]*t="s"[^>]*>\s*<v>(\d+)<\/v>/g)) {
+    const t = String(ss[Number(mm[3])] || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const k = `${mm[1]}:${t}`;
+    if (t && !(k in titulos)) titulos[k] = Number(mm[2]);
+  }
+  const achar = (re, col = 'A') => {
+    for (const [k, r] of Object.entries(titulos)) { const [c, t] = [k.slice(0, 1), k.slice(2)]; if (c === col && re.test(t)) return r; }
+    return null;
+  };
+  const abaixo = (re, padrao, col) => { const r = achar(re, col); return r != null ? r + 1 : padrao; };
+  return {
+    geral: abaixo(/^observações gerais/, 44),
+    disciplina: abaixo(/^ocorrências no comportamento/, 46),
+    sistemas: abaixo(/^sistema 1$/, 49),
+    ofensiva: abaixo(/^fase ofensiva/, 51),
+    defensiva: abaixo(/^fase defensiva/, 53),
+    fortes: abaixo(/^pontos fortes da equipa/, 55),
+    fracos: abaixo(/^pontos fracos da equipa/, 57),
+    bolasParadas: abaixo(/bolas paradas/, 59),
+    adversario: abaixo(/^equipa advers/, 62),
+    advFortes: abaixo(/^pontos fortes$/, 64),
+    advEstrutura: abaixo(/^estruturas de jogo adotad/, 66),
+  };
 }
 
 /* A LINHA 60 (18/11). Entre a caixa das Bolas Paradas e a barra "Equipa
@@ -1306,7 +1343,7 @@ export function apagarLinhaDaFolha(x, r) {
   return x;
 }
 
-async function limparEspacoAntesDoAdversario(zip, folhas) {
+export async function limparEspacoAntesDoAdversario(zip, folhas) {
   const ssFile = zip.file('xl/sharedStrings.xml');
   if (!ssFile) return;
   const ss = [...(await ssFile.async('string')).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));

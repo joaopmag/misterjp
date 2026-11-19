@@ -566,7 +566,12 @@ reduz o peso inicial da app e do Portal.
   19/11: em vez de esconder, a linha é APAGADA (`apagarLinhaDaFolha`: sobe
   linhas, células, células unidas e fórmulas da folha), no fim do
   preenchimento, para as coordenadas A62/A64/I64/A66/I66 continuarem a
-  ser as do modelo. O modelo base mantém a linha de propósito.
+  ser as do modelo.
+  19/11 (2.ª): as caixas do relatório passam a ser encontradas pelos
+  títulos da coluna A (`linhasDoRelatorio`), não por linhas fixas; e o
+  modelo base (public/modelos) já vem SEM a linha 60 nas 45 folhas. Equipas
+  novas: modelo limpo; equipas com a cópia antiga: a linha é apagada ao
+  gerar. Testado com os dois modelos: resultado igual.
 - 19/11: Jogos › classificação: a jornada mais recente passa a ser
   calculada no 1.º desenho (`ronda` em Classificacao.jsx); antes aparecia a
   Jornada 1 e saltava para a atual ao entrar no separador.
