@@ -1268,8 +1268,51 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
     }
     zip.file(caminho, x);
   }
+  await limparEspacoAntesDoAdversario(zip, folhas);
   estilos.gravar();
   return plano;
+}
+
+/* A LINHA 60 (18/11). Entre a caixa das Bolas Paradas e a barra "Equipa
+   Adversária" o modelo tem uma linha de separação fininha (3 pt). Na folha
+   da 1.ª jornada ficou lá esquecido um texto de exemplo, e as cópias do
+   modelo que cada equipa guardou em Documentos ainda o têm (corrigir o
+   ficheiro base não chega a essas cópias). Ao gerar, em TODAS as folhas de
+   relatório: a linha que fica entre a caixa das bolas paradas e a barra do
+   adversário é esvaziada e escondida. Procura-se pelos títulos, não
+   pelo número da linha, para servir a modelos com outra disposição. */
+async function limparEspacoAntesDoAdversario(zip, folhas) {
+  const ssFile = zip.file('xl/sharedStrings.xml');
+  if (!ssFile) return;
+  const ss = [...(await ssFile.async('string')).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));
+  const idx = (re) => new Set(ss.map((t, i) => (re.test(t) ? String(i) : null)).filter(v => v != null));
+  const bolas = idx(/bolas paradas/i);
+  const adv = idx(/^\s*equipa advers/i);
+  if (!bolas.size || !adv.size) return;
+  for (const [chave, caminho] of Object.entries(folhas)) {
+    if (!chave.startsWith('relatorio')) continue;
+    const f = zip.file(caminho);
+    if (!f) continue;
+    let x = await f.async('string');
+    const linhaCom = (conj) => {
+      for (const m of x.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*>\s*<v>(\d+)<\/v>/g)) if (conj.has(m[2])) return Number(m[1]);
+      return null;
+    };
+    const rB = linhaCom(bolas);
+    const rA = linhaCom(adv);
+    // Título das bolas, caixa de texto, separação, título do adversário.
+    if (rB == null || rA == null || rA - rB !== 3) continue;
+    const r = rB + 2;
+    const re = new RegExp(`<row r="${r}"([^>]*?)>([\\s\\S]*?)</row>`);
+    const m = x.match(re);
+    if (!m) continue;
+    const celulas = m[2].replace(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g, (all, ref, at) => `<c r="${ref}"${at.replace(/\st="[^"]*"/, '')}/>`);
+    x = x.replace(re, `<row r="${r}"${m[1]}>${celulas}</row>`);
+    x = definirAlturaDaLinha(x, r, 3);
+    // E fica escondida: no papel não sobra linha nenhuma entre as duas.
+    x = x.replace(new RegExp(`<row r="${r}"([^>]*?)>`), (all, at) => `<row r="${r}"${at.replace(/\shidden="[^"]*"/, '')} hidden="1">`);
+    zip.file(caminho, x);
+  }
 }
 
 /* GRÁFICOS DA FOLHA "graficos": OS NOMES SAÍAM FORA DO SÍTIO.

@@ -557,6 +557,12 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 18/11 (5.ª): A linha 60 continuava nos documentos porque cada equipa
+  gera a partir da SUA cópia do modelo (Storage `documentos`), não do
+  ficheiro base. Ao gerar, `limparEspacoAntesDoAdversario` esvazia e
+  esconde, em todas as folhas de relatório, a linha entre a caixa das
+  Bolas Paradas e a barra "Equipa Adversária" (encontrada pelos títulos).
+  Testado com a cópia enviada pela utilizadora (ainda com o texto).
 - 18/11 (4.ª): No cartão do jogo, ao lado de "Análise do jogo", aparece
   sempre o estado do relatório e é um atalho: "Relatório completo" (verde)
   abre a janela no topo; "Relatório incompleto" abre-a já no 1.º campo por
