@@ -1278,9 +1278,34 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
    da 1.ª jornada ficou lá esquecido um texto de exemplo, e as cópias do
    modelo que cada equipa guardou em Documentos ainda o têm (corrigir o
    ficheiro base não chega a essas cópias). Ao gerar, em TODAS as folhas de
-   relatório: a linha que fica entre a caixa das bolas paradas e a barra do
-   adversário é esvaziada e escondida. Procura-se pelos títulos, não
+   relatório, a linha que fica entre a caixa das bolas paradas e a barra do
+   adversário é APAGADA (as de baixo sobem uma). Faz-se no fim, depois de
+   escrever tudo, para as posições usadas acima (A62, A64…) continuarem a
+   ser as do modelo. Procura-se pelos títulos, não
    pelo número da linha, para servir a modelos com outra disposição. */
+/* Apaga uma linha de uma folha e sobe as de baixo: linhas, células,
+   células unidas e fórmulas desta folha que apontem para baixo dela. Serve
+   para as folhas de relatório, que não têm nada ancorado abaixo do topo
+   (o desenho do cabeçalho fica na linha 1). */
+export function apagarLinhaDaFolha(x, r) {
+  const sobe = (n) => (n > r ? n - 1 : n);
+  // 1. A própria linha.
+  x = x.replace(new RegExp(`<row r="${r}"(?:[^>]*/>|[^>]*>[\\s\\S]*?</row>)`), '');
+  // 2. Linhas e células abaixo.
+  x = x.replace(/<row r="(\d+)"/g, (a, n) => `<row r="${sobe(Number(n))}"`);
+  x = x.replace(/<c r="([A-Z]+)(\d+)"/g, (a, c, n) => `<c r="${c}${sobe(Number(n))}"`);
+  // 3. Células unidas (uma que atravesse a linha encolhe uma).
+  x = x.replace(/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/g, (a, c1, n1, c2, n2) => {
+    const a1 = Number(n1), a2 = Number(n2);
+    if (a1 === r && a2 === r) return '';
+    return `<mergeCell ref="${c1}${a1 > r ? a1 - 1 : a1}:${c2}${a2 >= r && a2 > a1 ? a2 - 1 : sobe(a2)}"/>`;
+  });
+  x = x.replace(/<mergeCells count="\d+">([\s\S]*?)<\/mergeCells>/, (a, dentro) => `<mergeCells count="${(dentro.match(/<mergeCell /g) || []).length}">${dentro}</mergeCells>`);
+  // 4. Fórmulas desta folha (sem nome de folha antes) para linhas abaixo.
+  x = x.replace(/<f([^>]*)>([^<]*)<\/f>/g, (a, at, f) => `<f${at}>${f.replace(/(^|[^!A-Za-z'$])(\$?[A-Z]{1,3}\$?)(\d+)(?![\d(])/g, (m, pre, col, n) => `${pre}${col}${sobe(Number(n))}`)}</f>`);
+  return x;
+}
+
 async function limparEspacoAntesDoAdversario(zip, folhas) {
   const ssFile = zip.file('xl/sharedStrings.xml');
   if (!ssFile) return;
@@ -1302,15 +1327,7 @@ async function limparEspacoAntesDoAdversario(zip, folhas) {
     const rA = linhaCom(adv);
     // Título das bolas, caixa de texto, separação, título do adversário.
     if (rB == null || rA == null || rA - rB !== 3) continue;
-    const r = rB + 2;
-    const re = new RegExp(`<row r="${r}"([^>]*?)>([\\s\\S]*?)</row>`);
-    const m = x.match(re);
-    if (!m) continue;
-    const celulas = m[2].replace(/<c r="([A-Z]+\d+)"([^>]*?)(?:\/>|>[\s\S]*?<\/c>)/g, (all, ref, at) => `<c r="${ref}"${at.replace(/\st="[^"]*"/, '')}/>`);
-    x = x.replace(re, `<row r="${r}"${m[1]}>${celulas}</row>`);
-    x = definirAlturaDaLinha(x, r, 3);
-    // E fica escondida: no papel não sobra linha nenhuma entre as duas.
-    x = x.replace(new RegExp(`<row r="${r}"([^>]*?)>`), (all, at) => `<row r="${r}"${at.replace(/\shidden="[^"]*"/, '')} hidden="1">`);
+    x = apagarLinhaDaFolha(x, rB + 2);
     zip.file(caminho, x);
   }
 }

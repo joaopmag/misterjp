@@ -11,7 +11,7 @@ import { ToggleBtn } from '../base/ui-extra';
 
 export function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias, sessions, setSessions }) {
   const [editing, setEditing] = useState(false); // false | true | 'config'
-  const [roundIdx, setRoundIdx] = useState(0);
+  const [ronda, setRonda] = useState({ compId: null, idx: 0 });
   const isNarrow = useIsMobile(560);
   // Repara a equipa duplicada, se existir (ver limparEquipaDuplicada).
   const { competitions } = limparEquipaDuplicada(standings, season);
@@ -33,7 +33,6 @@ export function LeagueStandings({ standings, setStandings, standingsMeta, matche
   const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(standings);
   const teams = competitionTable(comp);
   const rounds = (comp && comp.rounds) || [];
-  const round = rounds[roundIdx];
 
   // A jornada mais recente é a última que já teve jogos com data até
   // hoje — não é sempre a primeira da lista (isso só fazia sentido no
@@ -49,7 +48,17 @@ export function LeagueStandings({ standings, setStandings, standingsMeta, matche
     return melhorIdx;
   };
 
-  useEffect(() => { setRoundIdx(jornadaMaisRecente(rounds)); }, [comp && comp.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* (19/11) A jornada a mostrar calcula-se JÁ no 1.º desenho (antes era
+     num efeito: aparecia a Jornada 1 e logo a seguir saltava para a mais
+     recente, e as equipas "mexiam" ao entrar no separador). Guarda-se a
+     escolha junto com a competição a que pertence: ao mudar de competição
+     volta a calcular-se a mais recente. */
+  const roundIdx = ronda.compId === (comp && comp.id) ? ronda.idx : jornadaMaisRecente(rounds);
+  const setRoundIdx = (v) => {
+    const atual = roundIdx;
+    setRonda({ compId: comp && comp.id, idx: typeof v === 'function' ? v(atual) : v });
+  };
+  const round = rounds[roundIdx];
 
   useEffect(() => {
     // Ao chegarem novas jornadas (ex: outra pessoa acabou de atualizar),

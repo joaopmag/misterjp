@@ -563,6 +563,13 @@ reduz o peso inicial da app e do Portal.
   esconde, em todas as folhas de relatório, a linha entre a caixa das
   Bolas Paradas e a barra "Equipa Adversária" (encontrada pelos títulos).
   Testado com a cópia enviada pela utilizadora (ainda com o texto).
+  19/11: em vez de esconder, a linha é APAGADA (`apagarLinhaDaFolha`: sobe
+  linhas, células, células unidas e fórmulas da folha), no fim do
+  preenchimento, para as coordenadas A62/A64/I64/A66/I66 continuarem a
+  ser as do modelo. O modelo base mantém a linha de propósito.
+- 19/11: Jogos › classificação: a jornada mais recente passa a ser
+  calculada no 1.º desenho (`ronda` em Classificacao.jsx); antes aparecia a
+  Jornada 1 e saltava para a atual ao entrar no separador.
 - 18/11 (4.ª): No cartão do jogo, ao lado de "Análise do jogo", aparece
   sempre o estado do relatório e é um atalho: "Relatório completo" (verde)
   abre a janela no topo; "Relatório incompleto" abre-a já no 1.º campo por
