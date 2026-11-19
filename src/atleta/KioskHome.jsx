@@ -4,7 +4,7 @@
 import { todayStr } from '../base/utilidades';
 import { T, mono, body, display, T_ESCURO } from '../base/tema';
 import { Flame, PartyPopper, Megaphone, ChevronRight, Check, Clock, ArrowRight, LogOut, Play } from 'lucide-react';
-import { P } from '../tatico/prancheta';
+import { P } from '../tatico/lugares';
 import React, { useState, useEffect, useRef } from 'react';
 import { CHECKIN_WINDOWS, fmtMinutesOfDay, greetingNow } from './janelas';
 import { BolaFutebol, coresCamisola } from './ecras';

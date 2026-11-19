@@ -35,14 +35,9 @@ import { FORMACOES, LAYOUT_FORMACAO, distribuirOnzeNoCampo } from './Simulador';
    O MD ENTRA NO MEIO. Um médio direito num plantel de formação é um
    médio; ter-lhe um lugar próprio deixava-o sozinho num canto do campo
    enquanto o miolo ficava vazio. */
-export const P = {
-  GR: [0.07, 0.50],
-  DD: [0.20, 0.84], DC1: [0.19, 0.66], DC2: [0.19, 0.50], DC3: [0.19, 0.34], DE: [0.20, 0.16],
-  MD: [0.40, 0.82], MC1: [0.42, 0.68], MC2: [0.42, 0.50], MC3: [0.42, 0.32], ME: [0.40, 0.18],
-  MOC1: [0.58, 0.66], MOC2: [0.58, 0.50], MOC3: [0.58, 0.34],
-  ED: [0.70, 0.84], EE: [0.70, 0.16], PL1: [0.84, 0.60], PL2: [0.84, 0.40], PL: [0.84, 0.50],
-  fora: [0.50, 0.965],
-};
+// P (lugares no campo) vive em ./lugares (o Portal usa-o sem o Simulador).
+import { P } from './lugares';
+export { P };
 
 /* AS FORMAÇÕES DEFINEM OS LUGARES.
 

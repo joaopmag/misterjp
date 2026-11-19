@@ -574,6 +574,17 @@ reduz o peso inicial da app e do Portal.
   a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
   mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
   reescreve a sessão e tudo volta a aparecer.
+- 19/11 (8.ª): Portal mais leve, 2.ª parte. O código do Portal (CheckinApp)
+  passou de 1,13 MB (328 KB gzip) para 532 KB (152 KB gzip). As cadeias
+  que traziam a app inteira eram imports de funções pequenas; saíram para
+  módulos sem dependências, reexportados dos sítios antigos (nada muda para
+  a app): getMonday → base/utilidades; notasDoJogo → dominio/notasJogo.js;
+  tabelas das competições (normalizeStandings, competitionTable, zonas…) →
+  competicao/tabela.jsx; P (lugares no campo) → tatico/lugares.js; age →
+  dominio/idade.js; URL_PUBLICA_APP → base/enderecos.js. A Ideia de Jogo
+  (separadoresJogo) carrega só ao abrir. Regra: ficheiros do Portal
+  (src/atleta) não importam de Planeamento, Simulador, Escalacao,
+  RelatoriosJogo, PlayerModal, social nem competicao/dados.
 - 19/11 (7.ª): Arranque mais leve. `main.jsx` decide a porta antes de
   carregar código: Portal (?portal= / ?checkin) carrega só o Portal; o resto
   (equipa técnica e páginas públicas de vídeos) carrega o App. Coisas comuns

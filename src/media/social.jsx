@@ -716,7 +716,8 @@ export function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEc
    URL_PUBLICA_APP no AnalisadorVideo.jsx). Fixo de propósito: partilhar
    a partir de um endereço de pré-visualização do Vercel, ou do
    computador em desenvolvimento, dava links que não abrem a quem os recebe. */
-export const URL_PUBLICA_APP = 'https://misterjp.vercel.app/';
+import { URL_PUBLICA_APP } from '../base/enderecos';
+export { URL_PUBLICA_APP };
 
 /* LINK DE UM "VÍDEO JUNTO" (Os meus vídeos, Portal do Atleta).
    O link LEVA O VÍDEO DENTRO: a lista dos clipes (vídeo do YouTube,

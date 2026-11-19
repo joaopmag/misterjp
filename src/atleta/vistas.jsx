@@ -10,7 +10,7 @@ import { momentoTexto } from '../dominio/treino';
 import { DiagramThumbAnimado } from '../treino/diagramas';
 import { supabase } from '../supabaseClient';
 import { useIsMobile, EmptyState, Btn, Field, TextArea } from '../base/ui';
-import { normalizeStandings, activeCompetitionOf, competitionTable, estiloZona, LegendaZonas } from '../competicao/dados';
+import { normalizeStandings, activeCompetitionOf, competitionTable, estiloZona, LegendaZonas } from '../competicao/tabela';
 import { diRespondido, DI_INDICADORES, DiQuestionario } from '../plantel/Desenvolvimento';
 import { useKioskVoltar } from '../base/kiosk';
 import { usePortalFetch, usePortalRpc } from './portalRpc';

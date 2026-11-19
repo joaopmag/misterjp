@@ -74,3 +74,11 @@ export function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
+
+/* Segunda-feira da semana de uma data (AAAA-MM-DD). Estava no Planeamento;
+   veio para aqui para o Portal do atleta não carregar o Planeamento todo. */
+export function getMonday(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return toLocalISODate(d);
+}

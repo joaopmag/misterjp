@@ -6,7 +6,7 @@ import { todayStr, uid, addDays } from '../base/utilidades';
 import { KIOSK_VOLTAR_INTERNO } from '../base/kiosk';
 import { herdarOuEmpurrarMarca, modalHandoffAtivo, Btn } from '../base/ui';
 import { inferirDestinoMissao, destinoMissao } from '../tarefas/regras';
-import { normalizeStandings } from '../competicao/dados';
+import { normalizeStandings } from '../competicao/tabela';
 import { competitionLabel, FRIENDLY } from '../dominio/jogos';
 import { supabase } from '../supabaseClient';
 import { display, T, mono, body } from '../base/tema';
@@ -16,7 +16,6 @@ import { isBirthdayToday } from '../dominio/aniversarios';
 import { usePortalFetch } from './portalRpc';
 import { PlayerCacifo, esquecerCacheCacifo } from './Cacifo';
 import { APP_BUILD, CHECKIN_ALLOW_BACKFILL, CHECKIN_DAYS_BACK, checkinWindowState } from './janelas';
-import { PlayerIdeiaJogoView } from './separadoresJogo';
 import { EcraAniversario, EcraJogo, EcraMissao } from './ecras';
 import { PortaAEspera, TransicaoEntrada, entradaRecente } from './PortalEntrada';
 import { PlayerKioskHome } from './KioskHome';
@@ -37,6 +36,7 @@ const PlayerJogosHome = lazy(() => vistas().then(m => ({ default: m.PlayerJogosH
 const PlayerCompeticaoView = lazy(() => vistas().then(m => ({ default: m.PlayerCompeticaoView })));
 const PlayerDesenvolvimentoView = lazy(() => vistas().then(m => ({ default: m.PlayerDesenvolvimentoView })));
 const PlayerTarefasView = lazy(() => vistas().then(m => ({ default: m.PlayerTarefasView })));
+const PlayerIdeiaJogoView = lazy(() => import('./separadoresJogo').then(m => ({ default: m.PlayerIdeiaJogoView })));
 const submeterAutoavaliacaoSeCompleta = (...a) => vistas().then(m => m.submeterAutoavaliacaoSeCompleta(...a));
 const ComEspera = ({ children }) => <Suspense fallback={<EsperaSala />}>{children}</Suspense>;
 
@@ -689,7 +689,7 @@ export function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, d
   }
 
   if (activeType === 'ideiaJogo') {
-    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={voltar} fecharVolta={deTarefas} />);
+    return comBarraMissao(<ComEspera><PlayerIdeiaJogoView code={code} teamId={teamId} onBack={voltar} fecharVolta={deTarefas} /></ComEspera>);
   }
 
   if (activeType === 'treino') {

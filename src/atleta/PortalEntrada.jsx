@@ -5,7 +5,7 @@ import { T, mono, body, display, TEMA_ATUAL, trocarTema, IconeTema } from '../ba
 import { supabase } from '../supabaseClient';
 import React, { useState, useRef, useEffect } from 'react';
 import { Fingerprint } from 'lucide-react';
-import { URL_PUBLICA_APP } from '../media/social';
+import { URL_PUBLICA_APP } from '../base/enderecos';
 import { CHECKIN_DAYS_BACK, CHECKIN_WINDOWS } from './janelas';
 import { pkhBalneario } from './balneario';
 import { coresCamisola } from './ecras';

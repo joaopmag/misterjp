@@ -3,7 +3,7 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { TEMA_ATUAL, T, body, display, T_ESCURO, TEXT_ON_ACCENT, mono } from '../base/tema';
 import React, { useState, useRef, useEffect } from 'react';
-import { age } from '../plantel/PlayerModal';
+import { age } from '../dominio/idade';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { destinoMissao } from '../tarefas/regras';
 import { todayStr } from '../base/utilidades';

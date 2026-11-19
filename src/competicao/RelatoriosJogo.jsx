@@ -1,6 +1,7 @@
 // competicao/RelatoriosJogo.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
+import { notasDoJogo } from '../dominio/notasJogo';
 import { useRascunho, BannerRascunho } from '../base/sincronizacao';
 import { Input, Select, Btn, useIsMobile, EmptyState, TextArea, Modal } from '../base/ui';
 import { T, body, mono, TEXT_ON_ACCENT } from '../base/tema';
@@ -584,17 +585,8 @@ export function RelatoriosJogo({ matches, players, season, standings, onSave, ab
    Jogos e o de Planeamento mantêm sempre as da versão mais recente, para
    que gravar um relatório aberto há algum tempo não apague notas escritas
    entretanto por outra pessoa. */
-export function notasDoJogo(m) {
-  const v = m && m.notasEquipaTecnica;
-  if (Array.isArray(v)) return v.filter(x => x && (String(x.texto || '').trim() || x.attachment));
-  // Formato provisório (uma caixa por pessoa): converte-se ao ler.
-  if (v && typeof v === 'object') {
-    return Object.entries(v)
-      .filter(([, x]) => x && String(x.texto || '').trim())
-      .map(([autor, x]) => ({ id: `n-${autor}`, texto: x.texto, autor: autor === 'equipa' ? '' : autor, em: x.em || '' }));
-  }
-  return [];
-}
+// notasDoJogo vive em dominio/notasJogo.js (o Portal usa-a sem carregar esta janela).
+export { notasDoJogo };
 
 export function PainelNotasJogo({ m, modo, seccaoInicial, userEmail, setMatches, onEscrever, onVerCompleto, onFechar }) {
   /* (18/11) No cartão vê-se só o que vai para as Observações gerais. O

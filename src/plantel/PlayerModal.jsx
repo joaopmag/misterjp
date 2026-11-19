@@ -11,27 +11,9 @@ import { Check } from 'lucide-react';
 import { STATUS_OPTIONS, avaliacaoBaseDoJogador, estatutoDaAvaliacao, jogadorComAvaliacao } from './avaliacao';
 import { PhotoField } from '../base/fotos';
 
-export function age(birthYearOrDate) {
-  if (!birthYearOrDate) return null;
-  const s = String(birthYearOrDate);
-  // Data completa (registos novos, desde que o campo passou a ser "Data
-  // de nascimento"): idade exata, sensível ao dia/mês, não só ao ano.
-  if (s.length > 4) {
-    const d = new Date(s + 'T00:00:00');
-    if (Number.isNaN(d.getTime())) return null;
-    const hoje = new Date();
-    let a = hoje.getFullYear() - d.getFullYear();
-    const aindaNaoFezAnosEsteAno = (hoje.getMonth() < d.getMonth())
-      || (hoje.getMonth() === d.getMonth() && hoje.getDate() < d.getDate());
-    if (aindaNaoFezAnosEsteAno) a--;
-    return a;
-  }
-  // Só o ano (registos antigos, de antes desta mudança): aproximação por
-  // diferença de anos civis, como sempre foi.
-  const y = parseInt(s, 10);
-  if (!y || Number.isNaN(y)) return null;
-  return new Date().getFullYear() - y;
-}
+// age vive em dominio/idade.js (o Portal usa-a sem esta janela).
+import { age } from '../dominio/idade';
+export { age };
 
 // Formata a data de nascimento para apresentação — dd/mm/aaaa quando há
 // dia completo; só o ano, tal como está gravado, nos registos antigos

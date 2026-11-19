@@ -3,7 +3,7 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { useIsMobile, trocarJanela, removeWithUndo, itemLabel, Btn, EmptyState, SectionHeader, inputStyle, BotaoTopo } from '../base/ui';
 import React, { useRef, useState, useEffect } from 'react';
-import { todayStr, fmtDate, escapeHtmlText, uid, addDays, toLocalISODate, fmtShort } from '../base/utilidades';
+import { todayStr, fmtDate, escapeHtmlText, uid, addDays, toLocalISODate, fmtShort, getMonday } from '../base/utilidades';
 import { esperarImagensDoStorage } from '../base/impressao';
 import { buildMatchShareHtml, FichaJogo, PrintFichaJogo, EquipaEmColunasPrint } from '../competicao/FichaJogo';
 import { shareOrDownloadHtml, buildShareableHtmlDoc } from '../base/partilha';
@@ -1156,11 +1156,8 @@ export function WeekSummary({ itemsRaw, items: itemsProp }) {
   );
 }
 
-export function getMonday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return toLocalISODate(d);
-}
+// getMonday vive em base/utilidades (o Portal usa-a sem carregar o Planeamento).
+export { getMonday };
 
 /* ---------------------------------------------------------------
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir

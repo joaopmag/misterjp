@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { todayStr, addDays } from '../base/utilidades';
 import { T, body } from '../base/tema';
-import { activeCompetitionOf, competitionTable } from '../competicao/dados';
+import { activeCompetitionOf, competitionTable } from '../competicao/tabela';
 import { ChevronLeft, Trophy } from 'lucide-react';
 import { aquecerPortal, hashCurto } from './portalRpc';
 import { PKH_CSS, PKH_LARGO, PKH_LARGURA_LARGA, PKH_LARGURA_TABLET, PKH_TABLET_ALTO, PkhFaixasLaterais, usePkhMedia } from './KioskHome';
