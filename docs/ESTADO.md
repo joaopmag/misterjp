@@ -567,6 +567,13 @@ reduz o peso inicial da app e do Portal.
   prazo mais curto entre as 12 h e o da chave no servidor
   (`checkin_cartao_entrar`, fora do repositório). main.jsx: /portal/ e o
   ícone instalado (?origem=portal-icone) carregam só o Portal.
+  Sessão retomada entra no balneário, como uma entrada normal (a entrada
+  direta no cacifo foi experimentada e retirada a pedido).
+  À frente do balneário só a página dos anos, o ecrã do jogo e a missão
+  (tarefa). O que se fecha ("Saltar", "Mais tarde", ir à missão) não volta
+  a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
+  mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
+  reescreve a sessão e tudo volta a aparecer.
 - 19/11 (7.ª): Arranque mais leve. `main.jsx` decide a porta antes de
   carregar código: Portal (?portal= / ?checkin) carrega só o Portal; o resto
   (equipa técnica e páginas públicas de vídeos) carrega o App. Coisas comuns

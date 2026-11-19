@@ -354,12 +354,48 @@ export function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, d
      Portal; no próximo login (código), aparece outra vez — até estar
      feita. Ir à missão e voltar sem a fazer também não a reabre por cima
      nesta entrada (fica o cartão "Tens uma tarefa nova"). */
-  const [missoesAdiadas, setMissoesAdiadas] = useState([]);
-  const adiarMissao = (id) => setMissoesAdiadas(prev => (prev.includes(id) ? prev : [...prev, id]));
-  // Aniversário: a página da festa aparece em cada entrada nesse dia.
-  const [aniversarioVisto, setAniversarioVisto] = useState(false);
+  /* DENTRO DA MESMA SESSÃO (19/11): o que o jogador já fechou (missão,
+     jogo, página dos anos) não volta a aparecer à frente ao atualizar a
+     página ou reabrir a app nas 12 h. Fica guardado junto da sessão
+     (mjp-portal-sessao:<equipa>, em `fechados`): uma entrada nova com PIN
+     reescreve a sessão e tudo volta a aparecer; "Sair" apaga-a. O painel
+     do Mister no balneário continua a mostrar o jogo e as tarefas. */
+  const chaveSessaoPortal = `mjp-portal-sessao:${teamId || 'sem-equipa'}`;
+  const fechadosGuardados = (() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(chaveSessaoPortal) || 'null');
+      const f = v && v.fechados;
+      if (f && f.dia === todayStr() && f.jogador === loggedPlayerId) return f;
+    } catch (e) { /* sem memória: aparece em cada entrada */ }
+    return null;
+  })();
+  const guardarFechados = (patch) => {
+    try {
+      const v = JSON.parse(localStorage.getItem(chaveSessaoPortal) || 'null');
+      if (!v || !v.c) return; // sem sessão guardada, nada a lembrar
+      const atual = v.fechados && v.fechados.dia === todayStr() && v.fechados.jogador === loggedPlayerId
+        ? v.fechados : { dia: todayStr(), jogador: loggedPlayerId, missoes: [], aniversario: false };
+      localStorage.setItem(chaveSessaoPortal, JSON.stringify({ ...v, fechados: { ...atual, ...patch } }));
+    } catch (e) { /* sem memória: volta a aparecer, não faz mal */ }
+  };
+  const [missoesAdiadas, setMissoesAdiadas] = useState(() => (fechadosGuardados && Array.isArray(fechadosGuardados.missoes) ? fechadosGuardados.missoes : []));
+  const adiarMissao = (id) => setMissoesAdiadas(prev => {
+    if (prev.includes(id)) return prev;
+    const novo = [...prev, id].slice(-60);
+    guardarFechados({ missoes: novo });
+    return novo;
+  });
+  // Aniversário: a página da festa aparece na primeira entrada da sessão.
+  const [aniversarioVisto, setAniversarioVistoEstado] = useState(() => !!(fechadosGuardados && fechadosGuardados.aniversario));
+  const setAniversarioVisto = (v) => { setAniversarioVistoEstado(v); if (v) guardarFechados({ aniversario: true }); };
   // Sair e voltar a entrar (novo código) recomeça: a missão volta a aparecer.
-  useEffect(() => { setMissoesAdiadas([]); setAniversarioVisto(false); }, [loggedPlayerId, code]);
+  // (Na primeira montagem não: aí valem os já fechados nesta sessão.)
+  const primeiraEntradaRef = useRef(true);
+  useEffect(() => {
+    if (primeiraEntradaRef.current) { primeiraEntradaRef.current = false; return; }
+    setMissoesAdiadas(fechadosGuardados && Array.isArray(fechadosGuardados.missoes) ? fechadosGuardados.missoes : []);
+    setAniversarioVistoEstado(!!(fechadosGuardados && fechadosGuardados.aniversario));
+  }, [loggedPlayerId, code]); // eslint-disable-line react-hooks/exhaustive-deps
   /* Missão de jogo que apareceu = vista. Grava-se já no dispositivo (para
      não voltar na próxima entrada), mas não sai do ecrã agora: o jogador
      ainda a está a ler. */
