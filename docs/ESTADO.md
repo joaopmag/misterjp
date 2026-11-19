@@ -574,6 +574,27 @@ reduz o peso inicial da app e do Portal.
   a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
   mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
   reescreve a sessão e tudo volta a aparecer.
+- 19/11 (9.ª): DESENHOS DENTRO DO MP4 (servidor). "Os meus vídeos" do
+  jogador passam a levar os desenhos; o staff ganha "MP4 c/ desenhos" no
+  leitor dos cortes (ClipPlayerModal) e, na Sala, "Gravar e enviar vídeo"
+  num corte de ficheiro com pausas passa a ser feito no servidor (também no
+  telemóvel). YouTube continua com a gravação do separador.
+  · Regras (quando pára, quanto tempo, zoom): src/media/planoDesenhos.js
+    (planoSala = paragens da Sala, planoDoCorte = paragens da Análise,
+    assinaturaDoPlano). A imagem PÁRA no instante (na Sala o vídeo anda em
+    câmara lenta; no MP4 fica parado, decisão do produto). Animações
+    (anel, brilho) ficam paradas no primeiro valor.
+  · O desenho de cada forma é o renderShape da app: o video-worker recebe
+    o pacote desenhos.mjs (`npm run exportar-desenhos` → dist-worker/,
+    copiar para a raiz do video-worker). MUDOU renderShape, planoDesenhos
+    ou pausas.js? Volta a exportar e a publicar o desenhos.mjs.
+  · shapeVisivelEm passou para media/pausas.js (reexportada do Analisador).
+  · "Os meus vídeos": VERSAO_FORMATO v2-720p e assinatura com `#<desenhos>`
+    por clipe (videoJunto.js), igual à do worker: os MP4 antigos voltam a
+    fazer-se. Publicar o video-worker ANTES da app.
+  · Staff: media/descargaDesenhos.js (POST /descarregar-desenhos de 3 em
+    3 s até "pronto"; ficheiro em videos-clipes/<equipa>/descargas/, apaga
+    ao fim de 24 h). Ainda NÃO entra: o "Seguir jogador" (trajetória).
 - 19/11 (8.ª): Portal mais leve, 2.ª parte. O código do Portal (CheckinApp)
   passou de 1,13 MB (328 KB gzip) para 532 KB (152 KB gzip). As cadeias
   que traziam a app inteira eram imports de funções pequenas; saíram para

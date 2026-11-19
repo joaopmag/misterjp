@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SEG_PADRAO_DESENHO, JANELA_PARAGEM, FERRAMENTAS_DE_ARRASTAR, formaAcidental, temParagem, segDe, formasParaPausas } from './media/pausas';
-export { SEG_PADRAO_DESENHO, formaAcidental, temParagem, segDe, formasParaPausas };
+import { SEG_PADRAO_DESENHO, JANELA_PARAGEM, FERRAMENTAS_DE_ARRASTAR, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm } from './media/pausas';
+export { SEG_PADRAO_DESENHO, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm };
+import { planoDoCorte } from './media/planoDesenhos';
+import { podeDescarregarComDesenhos, pedirMp4ComDesenhos } from './media/descargaDesenhos';
 import { corrigirDuracaoMp4 } from './media/duracaoMp4';
 import { escolherPartilha } from './base/escolherPartilha';
 import { createPortal } from 'react-dom';
@@ -1441,13 +1443,7 @@ function renderNoChao(sh, g, i) {
   return <polygon key={i} points={pts} fill={cor} fillOpacity={0.9} stroke="none" />;
 }
 
-export function shapeVisivelEm(sh, tempo) {
-  const inicio = sh.criadoEmTempo ?? 0;
-  if (tempo < inicio) return false;
-  if (sh.mostrarAte != null) return tempo <= sh.mostrarAte;
-  if (sh.duracao != null) return tempo <= inicio + sh.duracao; // compatibilidade com clipes guardados antes desta alteração
-  return true; // sem limite definido = sempre visível
-}
+// shapeVisivelEm vive em media/pausas.js (o MP4 com desenhos do servidor usa-a).
 
 
 /* PARAGENS DOS DESENHOS (como na Sala de Vídeo). Um desenho com `seg`
@@ -2313,6 +2309,38 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
     await entregarVideo(blob, nomeClipe());
   };
   const pararGravacaoClipe = () => { acabarGravacaoClipe(); };
+  /* MP4 COM DESENHOS FEITO NO SERVIDOR (19/11): nos cortes de vídeos
+     carregados, em vez de gravar o separador (só no computador, em tempo
+     real), o serviço de vídeo faz o MP4 com os desenhos, as paragens e o
+     zoom (media/descargaDesenhos.js). Quando fica pronto, o botão passa a
+     "Enviar": o toque abre a partilha (no telemóvel, a partilha só abre a
+     partir de um toque). */
+  const [mp4Desenhos, setMp4Desenhos] = useState(null); // null | { texto } | { blob } | 'erro'
+  const mp4DesenhosVivoRef = useRef(true);
+  useEffect(() => { mp4DesenhosVivoRef.current = true; return () => { mp4DesenhosVivoRef.current = false; }; }, []);
+  const servidorDesenhos = !ehYt && (clip.shapes || []).length > 0 && podeDescarregarComDesenhos(clip.publicUrl);
+  const pedirMp4Desenhos = async () => {
+    if (mp4Desenhos && mp4Desenhos.blob) { await entregarVideo(mp4Desenhos.blob, nomeClipe()); return; }
+    if (mp4Desenhos) return;
+    const dur = duracaoVideo || Number(clip.duracao) || 0;
+    if (!(dur > 0)) return;
+    setMp4Desenhos({ texto: 'A preparar…' });
+    try {
+      const url = await pedirMp4ComDesenhos({
+        src: clip.publicUrl, inicio: 0, fim: dur, plano: planoDoCorte(clip.shapes || [], dur), nome: nomeClipe(),
+        onEstado: (texto) => { if (mp4DesenhosVivoRef.current) setMp4Desenhos({ texto }); },
+        cancelado: () => !mp4DesenhosVivoRef.current,
+      });
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`ficheiro_${resp.status}`);
+      const blob = new Blob([await resp.blob()], { type: 'video/mp4' });
+      if (mp4DesenhosVivoRef.current) setMp4Desenhos({ blob });
+    } catch (e) {
+      if (!mp4DesenhosVivoRef.current) return;
+      setMp4Desenhos('erro');
+      setTimeout(() => { if (mp4DesenhosVivoRef.current) setMp4Desenhos(null); }, 2500);
+    }
+  };
   const gravarClipeComDesenhos = async () => {
     const v = videoRef.current;
     if (!v) return;
@@ -2490,7 +2518,12 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
               setEstadoMp4('a-preparar');
               try { await descarregarClipeMp4(clip); setEstadoMp4(null); } catch (e) { setEstadoMp4('erro'); setTimeout(() => setEstadoMp4(null), 2500); }
             }, { disabled: estadoMp4 === 'a-preparar', title: 'Descarregar / partilhar o MP4 (qualidade total, sem desenhos)' })}
-            {(clip.shapes || []).length > 0 && podeGravarSeparador() && botaoAcao(
+            {servidorDesenhos && botaoAcao(
+              mp4Desenhos && mp4Desenhos.texto ? <Loader2 size={15} className="spin" /> : mp4Desenhos && mp4Desenhos.blob ? <Check size={15} color={TV.good} /> : <Download size={15} />,
+              mp4Desenhos === 'erro' ? 'Falhou' : mp4Desenhos && mp4Desenhos.texto ? mp4Desenhos.texto : mp4Desenhos && mp4Desenhos.blob ? 'Enviar' : 'MP4 c/ desenhos',
+              pedirMp4Desenhos,
+              { disabled: !!(mp4Desenhos && mp4Desenhos.texto), title: 'MP4 com os desenhos, as paragens e o zoom (feito no servidor)' })}
+            {!servidorDesenhos && (clip.shapes || []).length > 0 && podeGravarSeparador() && botaoAcao(
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: gravacaoClipe ? TV.bad : '#fff', display: 'inline-block', margin: 2 }} />,
               gravacaoClipe ? 'Parar' : 'Vídeo c/ desenhos', gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos,
               { ativo: !!gravacaoClipe, title: 'Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)' })}

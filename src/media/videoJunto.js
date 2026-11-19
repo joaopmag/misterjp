@@ -14,8 +14,20 @@
 // Tem de bater com `assinaturaDe` no video-worker (juntar.js).
 
 import { supabase } from '../supabaseClient';
+import { planoSala, planoVazio, assinaturaDoPlano } from './planoDesenhos';
 
-const VERSAO_FORMATO = 'v1-720p';
+// v2 (19/11): os desenhos dos clipes vão dentro do MP4. Os vídeos feitos
+// antes (sem desenhos) deixam de bater e pedem-se de novo.
+const VERSAO_FORMATO = 'v2-720p';
+
+/* Assinatura dos desenhos de um clipe da Sala (as pausas que a Sala mostra,
+   relativas ao início do clipe). Igual à do video-worker (desenhos.mjs:
+   planoDoClipeAtleta), feita com as mesmas funções. */
+function desenhosDoClipe(c) {
+  if (!c || !(c.anotacoesPausa || []).length) return '';
+  const p = planoSala(c.anotacoesPausa, c.clipInicio, c.clipFim);
+  return planoVazio(p) ? '' : assinaturaDoPlano(p);
+}
 
 export const urlDoServicoVideo = () => (import.meta.env.VITE_VIDEO_WORKER_URL || '').replace(/\/+$/, '');
 
@@ -23,7 +35,7 @@ export const urlDoServicoVideo = () => (import.meta.env.VITE_VIDEO_WORKER_URL ||
    Tempos DO JOGO (com MP4 próprio, a app desloca os tempos para dentro do
    ficheiro; o serviço assina sempre com os da base). */
 export function assinaturaDoVideoJunto(ids, porId) {
-  return `${VERSAO_FORMATO}|${ids.map(id => { const c = porId.get(id) || {}; return `${id}@${Number(c.clipInicioJogo ?? c.clipInicio)}-${Number(c.clipFimJogo ?? c.clipFim)}`; }).join('|')}`;
+  return `${VERSAO_FORMATO}|${ids.map(id => { const c = porId.get(id) || {}; const d = desenhosDoClipe(c); return `${id}@${Number(c.clipInicioJogo ?? c.clipInicio)}-${Number(c.clipFimJogo ?? c.clipFim)}${d ? `#${d}` : ''}`; }).join('|')}`;
 }
 
 // Todos os clipes são de vídeos carregados (dá para fazer o MP4 no servidor)?

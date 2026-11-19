@@ -46,3 +46,14 @@ export function formasParaPausas(shapes, base = 0) {
   });
   return pausas.map(({ _a, ...pa }) => pa);
 }
+
+/* Desenho "sem parar" (ou guias): visível entre o instante em que foi
+   desenhado e o fim do tempo dele, com o vídeo a andar. Saiu de
+   AnalisadorVideo.jsx sem mudar nada (19/11). */
+export function shapeVisivelEm(sh, tempo) {
+  const inicio = sh.criadoEmTempo ?? 0;
+  if (tempo < inicio) return false;
+  if (sh.mostrarAte != null) return tempo <= sh.mostrarAte;
+  if (sh.duracao != null) return tempo <= inicio + sh.duracao; // compatibilidade com clipes guardados antes desta alteração
+  return true; // sem limite definido = sempre visível
+}

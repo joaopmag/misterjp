@@ -3,6 +3,8 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { escolherPartilha } from '../base/escolherPartilha';
 import { gravarClipesDeFicheiro, podeGravarFicheiro } from './gravarFicheiro';
+import { planoSala } from './planoDesenhos';
+import { podeDescarregarComDesenhos, pedirMp4ComDesenhos } from './descargaDesenhos';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
 import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
@@ -2320,8 +2322,38 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      gravação arranca quando o leitor já o tiver (ver o efeito sobre
      `active.id`). O pedido do browser vem logo, no próprio clique —
      depois disso o browser já não o deixaria aparecer. */
+  /* CORTE DE FICHEIRO COM DESENHOS (19/11): o MP4 faz-se no servidor, com
+     as paragens, os desenhos e o zoom (media/descargaDesenhos.js). Sem
+     gravar o separador: funciona também no telemóvel. */
+  const [mp4DesenhosBib, setMp4DesenhosBib] = useState(null); // { nome, texto, cancelado }
+  const servidorDesenhosBib = (v) => !!v && ehClipe(v) && eVideoFicheiroBib(v) && (v.anotacoesPausa || []).length > 0 && podeDescarregarComDesenhos(v.dataUrl);
+  const mp4ComDesenhosBib = async (v) => {
+    const nome = `${v.title || 'Corte'} (com desenhos)`;
+    const estado = { nome, texto: 'A preparar…', cancelado: false };
+    setMp4DesenhosBib(estado);
+    try {
+      const ini = Number(v.clipInicio) || 0;
+      const fim = Number(v.clipFim) || 0;
+      const url = await pedirMp4ComDesenhos({
+        src: v.dataUrl, inicio: ini, fim, plano: planoSala(v.anotacoesPausa, ini, fim), nome,
+        onEstado: (texto) => setMp4DesenhosBib(e => (e === estado || (e && e.nome === nome && !e.cancelado) ? { ...estado, texto } : e)),
+        cancelado: () => estado.cancelado,
+      });
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`ficheiro_${resp.status}`);
+      const blob = new Blob([await resp.blob()], { type: 'video/mp4' });
+      if (estado.cancelado) return;
+      setMp4DesenhosBib(null);
+      setJanelaGravacaoBib({ fase: 'pronto', blob, nome, url: URL.createObjectURL(blob), ficheiro: true });
+    } catch (e) {
+      if (estado.cancelado) return;
+      setMp4DesenhosBib(null);
+      setAvisoGravacaoBib('Não foi possível preparar o vídeo com desenhos. Tenta outra vez.');
+    }
+  };
   const gravarCorteBib = async (item) => {
     const alvoF = item || active;
+    if (servidorDesenhosBib(alvoF)) { mp4ComDesenhosBib(alvoF); return; }
     const segsF = alvoF && !semAcessoFicheiroRef.current && podeGravarFicheiro() ? segmentosSoFicheiro([alvoF.id]) : null;
     if (segsF && ehClipe(alvoF)) { gravarFicheiroBib(segsF, alvoF.title || 'Corte'); return; }
     if (!podeGravarSeparador()) {
@@ -2575,7 +2607,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
             onClick={(e) => {
               e.stopPropagation();
               // No telemóvel (não grava) partilha logo o link, como sempre — sem menu.
-              if (ehClipe(v) && temLeitorBib(v) && podeGravarSeparador()) {
+              if (ehClipe(v) && temLeitorBib(v) && (podeGravarSeparador() || servidorDesenhosBib(v))) {
                 if (menuPartilhaId === v.id) { setMenuPartilha(null); return; }
                 const r = e.currentTarget.getBoundingClientRect();
                 const cabeBaixo = window.innerHeight - r.bottom > 150;
@@ -3645,6 +3677,21 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     <div>
       {/* Gravação de clipes de vídeos carregados: progresso e resultado
           (fora do leitor, porque não é preciso estar nada aberto). */}
+      {mp4DesenhosBib && (
+        <Modal title="A preparar o vídeo com desenhos" onClose={() => { mp4DesenhosBib.cancelado = true; setMp4DesenhosBib(null); }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <style>{'@keyframes mjpLeitorRoda{to{transform:rotate(360deg)}}'}</style>
+            <div style={{ fontSize: 13, color: T.cream, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 14, height: 14, borderRadius: '50%', border: `2px solid ${T.line}`, borderTopColor: T.cream, display: 'inline-block', animation: 'mjpLeitorRoda .8s linear infinite' }} />
+              {mp4DesenhosBib.texto}
+            </div>
+            <div style={{ fontSize: 12, color: T.mutedDim }}>O servidor está a fazer o MP4 com os desenhos, as paragens e o zoom. Costuma demorar menos de um minuto.</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Btn variant="ghost" onClick={() => { mp4DesenhosBib.cancelado = true; setMp4DesenhosBib(null); }}>Cancelar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
       {progressoFicheiro != null && gravacaoBib && (
         <Modal title="A preparar o vídeo" onClose={() => { if (gravacaoBibRef.current) acabarGravacaoBib(); }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
