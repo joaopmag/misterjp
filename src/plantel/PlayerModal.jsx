@@ -142,7 +142,11 @@ export function PlayerModal({ player, onClose, onSave }) {
           <Field label="Altura (cm)"><Input type="number" value={f.height} onChange={e => setF({ ...f, height: e.target.value })} /></Field>
           <Field label="Clube anterior"><Input value={f.previousClub} onChange={e => setF({ ...f, previousClub: e.target.value })} /></Field>
           <Field label="Data de entrada"><Input type="date" value={f.entryDate} onChange={e => setF({ ...f, entryDate: e.target.value })} /></Field>
-          <Field label="Data de saída"><Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} /></Field>
+          <Field label="Data de saída">
+            <Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} />
+            {/* RGPD (19/11): os vídeos pessoais apagam-se 30 dias depois (rgpd.js no video-worker). */}
+            {f.exitDate && <span style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>Os vídeos pessoais dele apagam-se 30 dias depois desta data. O resto do histórico fica.</span>}
+          </Field>
           <Field label="Nível inicial">
             <Select value={inicial.nivel || ''} onChange={e => mudarInicial('nivel', e.target.value ? Number(e.target.value) : '')}>
               <option value="">—</option>

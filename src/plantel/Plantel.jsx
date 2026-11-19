@@ -136,8 +136,8 @@ export function Plantel({ players, setPlayers, sessions, setSessions, matches, s
     askConfirm({
       label: itemLabel(jogador, 'Jogador'),
       note: partes.length
-        ? `Apaga também o histórico dele: ${partes.join(', ')}. Se o jogador SAIU DO CLUBE, não apagues: edita-o e preenche a "Data de saída" — o histórico fica. Podes anular durante alguns segundos.`
-        : undefined,
+        ? `Apaga também o histórico dele: ${partes.join(', ')}, e os vídeos pessoais (clipes, análise individual e "Os meus vídeos"). Se o jogador SAIU DO CLUBE, não apagues: edita-o e preenche a "Data de saída" — o histórico fica. Podes anular durante alguns segundos.`
+        : 'Apaga também os vídeos pessoais dele (clipes, análise individual e "Os meus vídeos"). Podes anular durante alguns segundos.',
       onConfirm: () => {
         setPlayers(prev => prev.filter(x => x.id !== id));
         let anulado = false;
@@ -159,7 +159,8 @@ export function Plantel({ players, setPlayers, sessions, setSessions, matches, s
             clinico, setClinico, desenvolvimento, setDesenvolvimento,
             autorizar: autorizarApagarRasto,
           });
-          // Os MP4 de "Os meus vídeos" dele (Storage), por RGPD.
+          // Os vídeos pessoais dele (clipes, "Os meus vídeos" e os MP4), por RGPD:
+          // o video-worker apaga tudo (rgpd.js).
           apagarMp4DoAtleta(T.equipaId, id);
         }, (UNDO_SECONDS + 3) * 1000);
       },

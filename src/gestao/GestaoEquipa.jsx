@@ -1113,6 +1113,12 @@ export function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlay
             vale a pena decidir quantos anos os guardas depois de um atleta sair, e cumprir essa decisão.
           </div>
         )}
+        {/* (19/11) Vídeos pessoais: a regra já é automática (video-worker, rgpd.js). */}
+        <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 16, lineHeight: 1.6 }}>
+          Vídeos pessoais de cada atleta (os clipes dele, a análise individual e "Os meus vídeos"):
+          apagam-se sozinhos 30 dias depois da data de saída, e logo, se o atleta for apagado.
+          Os jogos e os cortes do Canal são da equipa e não entram nesta regra.
+        </div>
 
         <div style={barraAcoes}>
           <Btn variant="ghost" onClick={exportar} style={botaoAcao}><Download size={15} /> Exportar dados desta equipa</Btn>

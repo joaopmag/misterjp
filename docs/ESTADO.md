@@ -557,6 +557,16 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 19/11 (6.ª): RGPD dos vídeos pessoais (video-worker, `rgpd.js`).
+  Vídeos pessoais de um atleta = linhas de `video_clips` e de
+  `video_compilacoes` com `data.atletaId` (clipes dele, análise individual
+  feita pelo staff, "Os meus vídeos") e os MP4 deles (`proprios/`,
+  `juntos/<atleta>/`). Atleta apagado: a app chama /juntar-limpar-atleta
+  (já chamava, só apagava os MP4 juntos) e agora apaga tudo. Atleta com
+  data de saída: apaga-se tudo 30 dias depois (volta diária). Rede de
+  segurança diária: vídeos de atletas que já não existem (confirmado um a
+  um). Desliga-se com RGPD_DESLIGADO=1. Textos: Plantel (apagar),
+  ficha do jogador (data de saída) e Gerir equipa › Dados pessoais.
 - 19/11 (5.ª): Linha 4 dos relatórios (Treinador | Prova). A divisão
   entre as duas caixas muda conforme o texto (`ajustarLinhaTreinadorProva`:
   caixa do treinador até F, G ou H, título "Prova" a seguir, prova até
@@ -769,8 +779,8 @@ reduz o peso inicial da app e do Portal.
 
 Pendentes já identificados: links que não expiram em `videos-clipes`
 (bucket público); apagar ficheiros do Storage quando se apaga um atleta
-(RGPD; os MP4 de "Os meus vídeos" já se apagam, falta o resto e as linhas
-de `video_compilacoes`); fotos no Portal com links assinados (Fase B); retirar o
+(RGPD dos vídeos pessoais: feito a 19/11, ver acima; falta o resto do
+Storage dos atletas, como fotos e anexos); fotos no Portal com links assinados (Fase B); retirar o
 `server.js.js` do video-worker depois de confirmar que o Railway arranca
 pelo `server.js`.
 
