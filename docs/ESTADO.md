@@ -557,6 +557,18 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 19/11 (7.ª): Arranque mais leve. `main.jsx` decide a porta antes de
+  carregar código: Portal (?portal= / ?checkin) carrega só o Portal; o resto
+  (equipa técnica e páginas públicas de vídeos) carrega o App. Coisas comuns
+  em `base/raiz.jsx` (ErrorBoundary, ecrã ligado em vídeo, atualização
+  automática). No Portal, a Sala de Vídeo (`atleta/SalaVideo.jsx`, com
+  MediaLibrary e AnalisadorVideo) e as outras áreas (`atleta/vistas.jsx`)
+  vêm em ficheiros à parte, pedidos logo após o arranque e de novo ao abrir
+  o cacifo. Dados da Sala em `atleta/salaDados.js`; regras das paragens dos
+  desenhos em `media/pausas.js` (AnalisadorVideo reexporta). Portal: 2,6 MB
+  (775 KB gzip) -> 1,28 MB (379 KB gzip) no arranque. Próximo passo possível:
+  o Portal ainda arrasta Planeamento, Simulador, DiagramEditor, FichaJogo,
+  react-dom/server e tus por importações cruzadas.
 - 19/11 (6.ª): RGPD dos vídeos pessoais (video-worker, `rgpd.js`).
   Vídeos pessoais de um atleta = linhas de `video_clips` e de
   `video_compilacoes` com `data.atletaId` (clipes dele, análise individual

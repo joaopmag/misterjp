@@ -1,7 +1,7 @@
 // atleta/CheckinKiosk.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { todayStr, uid, addDays } from '../base/utilidades';
 import { KIOSK_VOLTAR_INTERNO } from '../base/kiosk';
 import { herdarOuEmpurrarMarca, modalHandoffAtivo, Btn } from '../base/ui';
@@ -14,13 +14,31 @@ import { Flame, X, Check, Loader2 } from 'lucide-react';
 import { WellnessWizard, RpeWizard } from './questionarios';
 import { isBirthdayToday } from '../dominio/aniversarios';
 import { usePortalFetch } from './portalRpc';
-import { PlayerBibliotecaView, PlayerCompeticaoView, PlayerDesenvolvimentoView, PlayerJogosHome, PlayerTarefasView, PlayerTreinoView, submeterAutoavaliacaoSeCompleta } from './vistas';
 import { PlayerCacifo, esquecerCacheCacifo } from './Cacifo';
 import { APP_BUILD, CHECKIN_ALLOW_BACKFILL, CHECKIN_DAYS_BACK, checkinWindowState } from './janelas';
 import { PlayerIdeiaJogoView } from './separadoresJogo';
 import { EcraAniversario, EcraJogo, EcraMissao } from './ecras';
 import { PortaAEspera, TransicaoEntrada, entradaRecente } from './PortalEntrada';
 import { PlayerKioskHome } from './KioskHome';
+import { aquecerCodigoDaSala } from './salaDados';
+
+/* (19/11) A Sala de Vídeo (leitor e biblioteca, a maior parte do código do
+   Portal) vem num ficheiro à parte: o Portal arranca mais leve. Pede-se
+   logo a seguir ao arranque, sem pressa, e outra vez ao abrir o cacifo
+   (aquecerSalaVideo), para já estar cá quando se toca na Sala. */
+const PlayerBibliotecaView = lazy(() => import('./SalaVideo'));
+const EsperaSala = () => <div style={{ minHeight: '100dvh', background: T.bg }} />;
+/* As outras áreas do cacifo (Treino, Jogos, Competição, Desenvolvimento,
+   Tarefas) também vêm num ficheiro à parte (vistas.jsx), pedido logo a
+   seguir ao arranque. */
+const vistas = () => import('./vistas');
+const PlayerTreinoView = lazy(() => vistas().then(m => ({ default: m.PlayerTreinoView })));
+const PlayerJogosHome = lazy(() => vistas().then(m => ({ default: m.PlayerJogosHome })));
+const PlayerCompeticaoView = lazy(() => vistas().then(m => ({ default: m.PlayerCompeticaoView })));
+const PlayerDesenvolvimentoView = lazy(() => vistas().then(m => ({ default: m.PlayerDesenvolvimentoView })));
+const PlayerTarefasView = lazy(() => vistas().then(m => ({ default: m.PlayerTarefasView })));
+const submeterAutoavaliacaoSeCompleta = (...a) => vistas().then(m => m.submeterAutoavaliacaoSeCompleta(...a));
+const ComEspera = ({ children }) => <Suspense fallback={<EsperaSala />}>{children}</Suspense>;
 
 /* Recebe SÓ o jogador que se autenticou, e não o plantel inteiro.
 
@@ -32,6 +50,8 @@ import { PlayerKioskHome } from './KioskHome';
    ao browser é apenas o registo de quem entrou. */
 export function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico, code, teamId, equipa }) {
   const loggedPlayerId = player && player.id;
+  // O código da Sala de Vídeo, 3 s depois de entrar (sem atrasar o arranque).
+  useEffect(() => { vistas(); const t = setTimeout(aquecerCodigoDaSala, 3000); return () => clearTimeout(t); }, []);
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   /* O CACIFO abre-se com a animação só quando se vem do balneário; ao
      voltar de uma área (Treino, Jogo…) já está aberto. Volta a animar
@@ -637,34 +657,34 @@ export function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, d
   }
 
   if (activeType === 'treino') {
-    return comBarraMissao(<PlayerTreinoView code={code} teamId={teamId} onBack={voltar} />);
+    return comBarraMissao(<ComEspera><PlayerTreinoView code={code} teamId={teamId} onBack={voltar} /></ComEspera>);
   }
 
   if (activeType === 'biblioteca') {
-    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={voltar} onClipeCriado={clipeCriado} />);
+    return comBarraMissao(<Suspense fallback={<EsperaSala />}><PlayerBibliotecaView code={code} teamId={teamId} onBack={voltar} onClipeCriado={clipeCriado} /></Suspense>);
   }
 
   if (activeType === 'jogos') {
-    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={voltar} jogadorId={loggedPlayerId} logo={(equipa && equipa.logo) || ''} infoJogo={jogoDoCalendario} />);
+    return comBarraMissao(<ComEspera><PlayerJogosHome code={code} teamId={teamId} onBack={voltar} jogadorId={loggedPlayerId} logo={(equipa && equipa.logo) || ''} infoJogo={jogoDoCalendario} /></ComEspera>);
   }
 
   if (activeType === 'competicao') {
-    return <PlayerCompeticaoView code={code} teamId={teamId} foco={focoArea} onBack={() => { setFocoArea(null); voltar(); }} />;
+    return <ComEspera><PlayerCompeticaoView code={code} teamId={teamId} foco={focoArea} onBack={() => { setFocoArea(null); voltar(); }} /></ComEspera>;
   }
 
   if (activeType === 'desenvolvimento') {
-    return comBarraMissao(<PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={voltar} onSubmetido={autoavaliacaoSubmetida} />);
+    return comBarraMissao(<ComEspera><PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={voltar} onSubmetido={autoavaliacaoSubmetida} /></ComEspera>);
   }
 
   if (activeType === 'tarefas') {
     return (
-      <PlayerTarefasView
+      <ComEspera><PlayerTarefasView
         code={code} teamId={teamId} onBack={voltar}
         tarefas={listaTarefas.map(comDestino)} estado={estadoTarefas}
         onIrMissao={(alvo) => { setDeTarefas(true); irParaMissao(alvo); }}
         tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
         onNotaGravada={(id, patch) => setTarefasAjustes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
-      />
+      /></ComEspera>
     );
   }
 

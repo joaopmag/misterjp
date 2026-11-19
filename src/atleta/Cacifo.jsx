@@ -10,7 +10,7 @@ import { ChevronLeft, Trophy } from 'lucide-react';
 import { aquecerPortal, hashCurto } from './portalRpc';
 import { PKH_CSS, PKH_LARGO, PKH_LARGURA_LARGA, PKH_LARGURA_TABLET, PKH_TABLET_ALTO, PkhFaixasLaterais, usePkhMedia } from './KioskHome';
 import { coresCamisola } from './ecras';
-import { aquecerSalaVideo } from './vistas';
+import { aquecerSalaVideo, aquecerCodigoDaSala } from './salaDados';
 
 /* O MEU CACIFO — a página de conteúdos do Portal do Atleta, a seguir ao
    balneário. Ao entrar, a fechadura roda, a porta abre sozinha e a luz do
@@ -193,7 +193,7 @@ export function PlayerCacifo({
   }, []);
 
   // As áreas do cacifo ficam já carregadas enquanto a porta abre.
-  useEffect(() => { aquecerPortal(code, teamId); aquecerSalaVideo(code, teamId); }, [code, teamId]);
+  useEffect(() => { aquecerPortal(code, teamId); aquecerSalaVideo(code, teamId); aquecerCodigoDaSala(); }, [code, teamId]);
 
   /* ---------- abrir: com animação na entrada, já aberto ao voltar ---------- */
   const [aberto, setAberto] = useState(!animar);
