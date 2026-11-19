@@ -10,6 +10,7 @@ import { isFriendlyMatch } from '../dominio/jogos';
 import { parseScore } from '../competicao/dados';
 import { fichaDaEquipa } from '../media/organizacao';
 import { notasDoJogo, seccaoDaNota } from '../competicao/RelatoriosJogo';
+import { garantirLinhasDeJogadores, folhasPorNome } from './linhasExcel';
 import { avaliacaoBaseDoJogador, estatutoDaAvaliacao } from '../plantel/avaliacao';
 import { sortByPosition, POSITIONS, shortPlayerName } from '../dominio/jogadores';
 import { FORMACOES, LAYOUT_FORMACAO } from '../tatico/Simulador';
@@ -1155,7 +1156,7 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
   const hoje = new Date().toISOString().slice(0, 10);
   const plano = planoDosRelatorios(matches, new Set(Object.keys(folhas)), hoje);
   plano.temFolhas = Object.keys(folhas).some(k => k.startsWith('relatorio'));
-  const jogadores = players.slice(0, 30);
+  const jogadores = players;
   const estilos = await estilosComQuebra(zip);
   const ssFicheiro = zip.file('xl/sharedStrings.xml');
   const ssTextos = ssFicheiro ? [...(await ssFicheiro.async('string')).matchAll(/<si>([\s\S]*?)<\/si>/g)].map(mm => textoCompletoDoSi(mm[1])) : [];
@@ -1350,7 +1351,9 @@ export async function limparEspacoAntesDoAdversario(zip, folhas) {
   const idx = (re) => new Set(ss.map((t, i) => (re.test(t) ? String(i) : null)).filter(v => v != null));
   const bolas = idx(/bolas paradas/i);
   const adv = idx(/^\s*equipa advers/i);
-  if (!bolas.size || !adv.size) return;
+  // (19/11) E a linha 42: entre a legenda do rendimento e as Observações.
+  const legenda = idx(/^\s*rendimento desportivo:/i);
+  const obs = idx(/^\s*observa[çc][õo]es gerais/i);
   for (const [chave, caminho] of Object.entries(folhas)) {
     if (!chave.startsWith('relatorio')) continue;
     const f = zip.file(caminho);
@@ -1360,12 +1363,17 @@ export async function limparEspacoAntesDoAdversario(zip, folhas) {
       for (const m of x.matchAll(/<c r="A(\d+)"[^>]*t="s"[^>]*>\s*<v>(\d+)<\/v>/g)) if (conj.has(m[2])) return Number(m[1]);
       return null;
     };
+    const antes = x;
     const rB = linhaCom(bolas);
     const rA = linhaCom(adv);
     // Título das bolas, caixa de texto, separação, título do adversário.
-    if (rB == null || rA == null || rA - rB !== 3) continue;
-    x = apagarLinhaDaFolha(x, rB + 2);
-    zip.file(caminho, x);
+    if (rB != null && rA != null && rA - rB === 3) x = apagarLinhaDaFolha(x, rB + 2);
+    // Legenda, separação, título das Observações (apaga-se depois da de
+    // baixo, para não mudar as posições que esta procura usa).
+    const rL = linhaCom(legenda);
+    const rO = linhaCom(obs);
+    if (rL != null && rO != null && rO - rL === 2) x = apagarLinhaDaFolha(x, rL + 1);
+    if (x !== antes) zip.file(caminho, x);
   }
 }
 
@@ -1383,19 +1391,19 @@ export async function limparEspacoAntesDoAdversario(zip, folhas) {
    de cada gráfico ("Atleta 1"…) passa a ter os nomes reais, para quem
    abrir o ficheiro num visualizador que não recalcula. */
 export async function ajustarGraficosDosJogadores(zip, jogadores) {
-  const nomes = Array.from({ length: 30 }, (_, i) => (jogadores[i] ? jogadores[i].name : ''));
+  const nomes = Array.from({ length: Math.max(30, jogadores.length) }, (_, i) => (jogadores[i] ? jogadores[i].name : ''));
   const graficos = Object.keys(zip.files).filter(n => /^xl\/charts\/chart\d+\.xml$/.test(n));
   for (const caminho of graficos) {
     let x = await zip.file(caminho).async('string');
     if (!/ESTAT[ÍI]STICA TOTAL'?!\$?B\$?\d+/.test(x)) continue;
     // Séries que começavam na linha 9 passam a começar na 6 (nomes e valores).
-    x = x.replace(/(<c:f>'?ESTAT[ÍI]STICA TOTAL'?!\$?[A-Z]+\$?)9(:\$?[A-Z]+\$?35<\/c:f>)/g, '$16$2');
+    x = x.replace(/(<c:f>'?ESTAT[ÍI]STICA TOTAL'?!\$?[A-Z]+\$?)9(:\$?[A-Z]+\$?\d+<\/c:f>)/g, '$16$2');
     // Memória dos nomes do eixo.
     x = x.replace(/(<c:cat>\s*<c:strRef>\s*<c:f>[^<]*<\/c:f>)\s*<c:strCache>[\s\S]*?<\/c:strCache>/g, (all, ini) =>
-      `${ini}<c:strCache><c:ptCount val="30"/>${nomes.map((n, i) => `<c:pt idx="${i}"><c:v>${escaparXml(n)}</c:v></c:pt>`).join('')}</c:strCache>`);
+      `${ini}<c:strCache><c:ptCount val="${nomes.length}"/>${nomes.map((n, i) => `<c:pt idx="${i}"><c:v>${escaparXml(n)}</c:v></c:pt>`).join('')}</c:strCache>`);
     // A memória dos valores deixa de corresponder ao intervalo novo: fica
     // vazia com o tamanho certo e o Excel volta a preenchê-la ao abrir.
-    x = x.replace(/(<c:val>\s*<c:numRef>\s*<c:f>[^<]*<\/c:f>\s*<c:numCache>\s*(?:<c:formatCode>[^<]*<\/c:formatCode>)?)\s*<c:ptCount val="\d+"\/>[\s\S]*?(<\/c:numCache>)/g, '$1<c:ptCount val="30"/>$2');
+    x = x.replace(/(<c:val>\s*<c:numRef>\s*<c:f>[^<]*<\/c:f>\s*<c:numCache>\s*(?:<c:formatCode>[^<]*<\/c:formatCode>)?)\s*<c:ptCount val="\d+"\/>[\s\S]*?(<\/c:numCache>)/g, `$1<c:ptCount val="${nomes.length}"/>$2`);
     // Eixo das categorias: nomes na vertical, letra 8, todos.
     x = x.replace(/<c:catAx>[\s\S]*?<\/c:catAx>/g, eixo => {
       let e = eixo.replace(/(<c:txPr>\s*<a:bodyPr\b[^>]*?)\srot="-?\d+"/, '$1').replace(/(<c:txPr>\s*<a:bodyPr)\b/, '$1 rot="-5400000"');
@@ -1415,6 +1423,9 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
   // Logótipo e nome do clube no lugar das imagens de exemplo (antes de
   // se meter o resto: fotos dos jogadores, escudos do campo…).
   await aplicarClubeNosModelosExcel(zip);
+  // Mais de 30 jogadores: o livro ganha as linhas que faltam em todas as
+  // tabelas de atletas (ver linhasExcel.js).
+  await garantirLinhasDeJogadores(zip, players.length);
 
   const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
   const assidPath = await resolverCaminhoDaFolha(zip, 'Ficha Assiduidade');
@@ -1427,7 +1438,7 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
   // Nomes em ESTATÍSTICA TOTAL!B6:B35 — é de lá que TODOS os blocos da
   // Ficha Assiduidade buscam o nome de cada jogador, por fórmula. Só
   // precisa de se escrever uma vez, não por mês.
-  const jogadores = players.slice(0, 30);
+  const jogadores = players;
   jogadores.forEach((p, i) => {
     estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
   });
@@ -1476,6 +1487,22 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
       const b = blocos[m];
       if (b) assidXml = definirTextoNaCelula(assidXml, `A${b.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[m]} ${anoDoMesNaEpoca(m, anoBase)}`);
     });
+  }
+
+  /* (19/11) Os nomes que vêm por fórmula ficam também já escritos (valor
+     em cache) em TODOS os meses e em todas as folhas de relatório: um
+     visualizador que não recalcula (pré-visualização, telemóvel) mostrava
+     "Atleta 1", "Atleta 2"… do modelo. */
+  ORDEM_EPOCA.forEach(mm => {
+    const b = blocos[mm];
+    if (b) jogadores.forEach((p, i) => { assidXml = definirValorEmCache(assidXml, `B${b.primeiraLinhaJogador + i}`, p.name); });
+  });
+  for (const [nomeF, caminhoF] of Object.entries(await folhasPorNome(zip))) {
+    if (!/^Relat[óo]rio/i.test(nomeF) || !zip.file(caminhoF)) continue;
+    let xr = await zip.file(caminhoF).async('string');
+    const antes = xr;
+    jogadores.forEach((p, i) => { xr = definirValorEmCache(xr, `B${11 + i}`, p.name); });
+    if (xr !== antes) zip.file(caminhoF, xr);
   }
 
   (mesesEAnos || []).forEach(({ mes, ano }) => {

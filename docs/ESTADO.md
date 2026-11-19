@@ -557,6 +557,25 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 19/11 (3.ª): Mais de 30 jogadores no Excel de Estatística e
+  Assiduidade. `garantirLinhasDeJogadores` (src/gestao/linhasExcel.js), no
+  início de `gerarFichaAssiduidade`, acrescenta as linhas que faltam em
+  todas as tabelas de atletas (reconhecidas pela coluna A 1…30): folhas de
+  relatório, os 3 quadros da ESTATÍSTICA TOTAL e os 12 meses da Ficha
+  Assiduidade. Como "Inserir linhas" + copiar a linha 29 do Excel: linhas
+  abaixo descem, fórmulas de todo o livro e séries dos gráficos corrigidas
+  (intervalos que atravessam alargam), cópias com fórmulas a apontar para o
+  jogador certo, numeração continua. Tirou-se o corte `slice(0, 30)`.
+  Testado com 38 jogadores, recalculado no LibreOffice: nomes, golos,
+  minutos, totais, Ficha Assiduidade e gráficos certos; com 25 e 30 nada
+  muda. Linha 42 (entre a legenda do rendimento e as Observações): apagada
+  no modelo base e ao gerar, como a 60.
+  19/11 (4.ª): linhas novas às riscas como as do modelo (estilo da
+  penúltima e da última linha alternados; com número ímpar de linhas novas,
+  a última da tabela ganha um estilo novo com o fundo branco e a borda de
+  baixo); imagens ancoradas (emblemas de cada mês da Ficha Assiduidade)
+  descem com as linhas; nomes por fórmula ficam também em cache em todos
+  os meses e folhas de relatório (pré-visualizações que não recalculam).
 - 18/11 (5.ª): A linha 60 continuava nos documentos porque cada equipa
   gera a partir da SUA cópia do modelo (Storage `documentos`), não do
   ficheiro base. Ao gerar, `limparEspacoAntesDoAdversario` esvazia e
