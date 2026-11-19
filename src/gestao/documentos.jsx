@@ -1185,8 +1185,12 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
       if (nLinhas > 0) x = definirAlturaDaLinha(x, linha, Math.min(409, Math.max(minimo, Math.ceil(nLinhas * 13 + 8))));
     };
 
+    // A divisão Treinador | Prova ajusta-se ao tamanho dos dois textos.
+    const nomeProva = String(m.competition || '').trim();
+    const linha4 = ajustarLinhaTreinadorProva(x, String((conv && conv.treinador) || ''), nomeProva);
+    x = linha4.x;
     texto('C4', conv && conv.treinador);
-    texto('J4', String(m.competition || '').trim());
+    texto(`${linha4.colProva}4`, nomeProva);
     texto('P4', (conv && conv.escalao) || escalao);
     texto('C5', dataPtRelatorio(m.date));
     texto('J5', conv && conv.horaJogo);
@@ -1274,8 +1278,114 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
     zip.file(caminho, x);
   }
   await limparEspacoAntesDoAdversario(zip, folhas);
+  await alinharLinha4DasCopias(zip);
   estilos.gravar();
   return plano;
+}
+
+/* TREINADOR E PROVA NA LINHA 4 (19/11). O nome da prova ("Campeonato
+   distrital U19 - 1º Divisão") não cabia na caixa (J:N), e a do treinador
+   (C:H) sobrava. A fronteira entre as duas passa a mudar conforme o texto:
+   a caixa do treinador acaba em F, G ou H, logo a seguir vem o título
+   "Prova" e a caixa da prova vai até antes de "Escalão". Escolhe-se a
+   divisão em que os dois textos cabem com mais folga (larguras das
+   colunas do próprio modelo). As células e as uniões da linha 4 são
+   refeitas com os mesmos estilos (início, meio e fim de caixa, título). */
+const colNum = (l) => l.split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+export function ajustarLinhaTreinadorProva(x, treinador, prova, fimTForcado) {
+  const sem = { x, colProva: 'J' };
+  const linha = (x.match(/<row r="4"[^>]*>([\s\S]*?)<\/row>/) || [])[1];
+  if (!linha) return sem;
+  const cel = {};
+  for (const m of linha.matchAll(/<c r="([A-Z]+)4"([^>]*?)(\/>|>([\s\S]*?)<\/c>)/g)) cel[m[1]] = { xml: m[0], at: m[2].replace(/\ss="\d+"/, ''), dentro: m[4] || '', s: (m[2].match(/\ss="(\d+)"/) || [])[1], t: /t="s"/.test(m[2]), v: ((m[4] || '').match(/<v>(\d+)<\/v>/) || [])[1] };
+  // Títulos de texto (shared string): o de "Prova" fica entre C e "Escalão".
+  const titulos = Object.entries(cel).filter(([c, o]) => o.t && o.v != null).map(([c]) => c).sort((a, b) => colNum(a) - colNum(b));
+  const iEsc = titulos.length >= 3 ? colNum(titulos[2]) : null; // A: Nome Treinador, ?: Prova, ?: Escalão
+  const colTitProva = titulos.length >= 3 ? titulos[1] : null;
+  if (!iEsc || !colTitProva || !cel.C || !cel.D) return sem;
+  const fimV = iEsc - 1; // última coluna da caixa da prova
+  const larg = {};
+  const cols = (x.match(/<cols>([\s\S]*?)<\/cols>/) || [])[1] || '';
+  for (const m of cols.matchAll(/<col\b[^>]*min="(\d+)"[^>]*max="(\d+)"[^>]*width="([\d.]+)"/g)) for (let c = Number(m[1]); c <= Number(m[2]); c++) larg[c] = Number(m[3]);
+  const w = (a, b) => { let t = 0; for (let c = a; c <= b; c++) t += larg[c] || 8.43; return t; };
+  const precisa = (t) => (t ? t.length * 1.05 + 1.5 : 0);
+  const estilo = {
+    ini: cel.C.s, meio: cel.D.s, fim: cel[letraDaColuna(colNum(colTitProva) - 2)] ? cel[letraDaColuna(colNum(colTitProva) - 2)].s : cel.D.s,
+    tit: cel[colTitProva].s, vtit: cel[colTitProva].v,
+    pIni: (cel[letraDaColuna(colNum(colTitProva))] || cel.C).s, pFim: (cel[letraDaColuna(fimV - 1)] || cel.D).s,
+  };
+  let melhor = null;
+  for (let fimT = 6; fimT <= Math.min(8, fimV - 3); fimT++) {
+    if (fimTForcado && fimT !== fimTForcado) continue;
+    const iniP = fimT + 2;
+    const folgaT = w(3, fimT) - precisa(treinador);
+    const folgaP = w(iniP, fimV) - precisa(prova);
+    const tit = w(fimT + 1, fimT + 1);
+    if (tit < 6) continue; // o título "Prova" tem de caber
+    const nota = Math.min(folgaT, folgaP);
+    if (!melhor || nota > melhor.nota) melhor = { fimT, iniP, nota };
+  }
+  if (!melhor) return sem;
+  const L = (n) => letraDaColuna(n - 1);
+  if (L(melhor.iniP) === letraDaColuna(colNum(colTitProva))) return { x, colProva: L(melhor.iniP) }; // já está assim
+  // Refaz as células C..fimV da linha 4.
+  // O que estava nas caixas (ex.: as fórmulas das folhas que copiam a 1.ª
+  // jornada) muda-se com elas.
+  const conteudo = (o) => (o && o.dentro ? { at: o.at, dentro: o.dentro } : null);
+  const antigoT = conteudo(cel.C);
+  const antigoP = conteudo(cel[letraDaColuna(colNum(colTitProva))]);
+  let novas = '';
+  for (let c = 3; c <= fimV; c++) {
+    const r = `${L(c)}4`;
+    let s;
+    const leva = c === 3 ? antigoT : (c === melhor.iniP ? antigoP : null);
+    if (c === 3) s = estilo.ini;
+    else if (c < melhor.fimT) s = estilo.meio;
+    else if (c === melhor.fimT) s = estilo.fim;
+    else if (c === melhor.fimT + 1) { novas += `<c r="${r}" s="${estilo.tit}" t="s"><v>${estilo.vtit}</v></c>`; continue; }
+    else if (c === melhor.iniP) s = estilo.pIni;
+    else if (c < fimV) s = estilo.meio;
+    else s = estilo.pFim;
+    novas += leva ? `<c r="${r}"${s != null ? ` s="${s}"` : ''}${leva.at}>${leva.dentro}</c>` : `<c r="${r}"${s != null ? ` s="${s}"` : ''}/>`;
+  }
+  let nova = linha.replace(/<c r="([A-Z]+)4"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g, (all, c) => (colNum(c) >= 3 && colNum(c) <= fimV ? '' : all));
+  // Mete as novas logo a seguir à B4 (ou no início).
+  nova = /<c r="B4"/.test(nova) ? nova.replace(/(<c r="B4"[^>]*?(?:\/>|>[\s\S]*?<\/c>))/, `$1${novas}`) : novas + nova;
+  x = x.replace(/(<row r="4"[^>]*>)[\s\S]*?(<\/row>)/, `$1${nova}$2`);
+  // Uniões da linha 4 entre C e fimV.
+  x = x.replace(/<mergeCell ref="([A-Z]+)4:([A-Z]+)4"\/>/g, (all, a) => (colNum(a) >= 3 && colNum(a) <= fimV ? '' : all));
+  x = x.replace(/(<mergeCells\b[^>]*>)/, `$1<mergeCell ref="C4:${L(melhor.fimT)}4"/><mergeCell ref="${L(melhor.iniP)}4:${L(fimV)}4"/>`);
+  x = x.replace(/<mergeCells count="\d+">([\s\S]*?)<\/mergeCells>/, (a, dentro) => `<mergeCells count="${(dentro.match(/<mergeCell /g) || []).length}">${dentro}</mergeCells>`);
+  return { x, colProva: L(melhor.iniP), fimT: melhor.fimT };
+}
+
+/* As folhas de jogos ainda por jogar copiam o treinador e a prova da 1.ª
+   jornada por fórmula ('Relatório 1ª Jornada'!C4:H4 e !J4:N4). Depois de
+   a linha 4 mudar, essas folhas ficam com a mesma divisão da folha que
+   copiam e as fórmulas passam a apontar para as caixas novas. */
+export async function alinharLinha4DasCopias(zip) {
+  const folhas = await folhasPorNome(zip);
+  const xml = {};
+  for (const [nome, cam] of Object.entries(folhas)) if (/^Relat/i.test(nome) && zip.file(cam)) xml[nome] = await zip.file(cam).async('string');
+  const disposicao = (x) => {
+    const l = (x.match(/<row r="4"[^>]*>([\s\S]*?)<\/row>/) || [])[1] || '';
+    const tit = [...l.matchAll(/<c r="([A-Z]+)4"[^>]*t="s"[^>]*>\s*<v>\d+<\/v>/g)].map(m => m[1]).sort((a, b) => colNum(a) - colNum(b));
+    return tit.length >= 3 ? { colProva: letraDaColuna(colNum(tit[1])), fimT: colNum(tit[1]) - 1 } : null;
+  };
+  for (const [nome, x0] of Object.entries(xml)) {
+    const mf = x0.match(/<c r="C4"[^>]*>\s*<f>'((?:[^']|'')+)'!C4(?::[A-Z]+4)?<\/f>/);
+    if (!mf) continue;
+    const origem = mf[1].replace(/''/g, "'");
+    const dOrig = xml[origem] ? disposicao(xml[origem]) : null;
+    if (!dOrig) continue;
+    let x = x0;
+    const dAqui = disposicao(x);
+    if (dAqui && dAqui.fimT !== dOrig.fimT) x = ajustarLinhaTreinadorProva(x, '', '', dOrig.fimT).x;
+    const ref = `'${origem.replace(/'/g, "''")}'`;
+    x = x.replace(/(<c r="C4"[^>]*>\s*<f>)[^<]*(<\/f>)/, `$1${ref}!C4$2`);
+    x = x.replace(new RegExp(`(<c r="${dOrig.colProva}4"[^>]*>\\s*<f>)[^<]*(</f>)`), `$1${ref}!${dOrig.colProva}4$2`);
+    if (x !== x0) zip.file(folhas[nome], x);
+  }
 }
 
 /* ONDE FICA CADA CAIXA (19/11). As caixas de texto do relatório

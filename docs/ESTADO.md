@@ -557,6 +557,13 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 19/11 (5.ª): Linha 4 dos relatórios (Treinador | Prova). A divisão
+  entre as duas caixas muda conforme o texto (`ajustarLinhaTreinadorProva`:
+  caixa do treinador até F, G ou H, título "Prova" a seguir, prova até
+  antes de "Escalão"; escolhe a que dá mais folga aos dois). As folhas
+  ainda por jogar, que copiam a 1.ª jornada por fórmula, ficam com a mesma
+  divisão e as fórmulas apontam para as caixas novas
+  (`alinharLinha4DasCopias`). Modelo base: treinador C:F, prova H:N.
 - 19/11 (3.ª): Mais de 30 jogadores no Excel de Estatística e
   Assiduidade. `garantirLinhasDeJogadores` (src/gestao/linhasExcel.js), no
   início de `gerarFichaAssiduidade`, acrescenta as linhas que faltam em
