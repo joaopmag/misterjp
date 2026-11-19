@@ -44,6 +44,7 @@ import { CheckinKiosk } from './CheckinKiosk';
    icone-192.png, icone-512.png, apple-touch-icon.png e sw.js vivem na
    pasta public/ do projeto. */
 export const PORTAL_ULTIMO = 'mjp-portal-ultimo';
+const SESSAO_PORTAL_MS = 12 * 3600 * 1000; // ver "Ficar dentro durante o dia"
 
 (function prepararPortalInstalavel() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -238,20 +239,43 @@ export function CheckinApp() {
     return d;
   };
 
-  const entrar = async (code) => {
+  /* FICAR DENTRO DURANTE O DIA (19/11). Depois de entrar (PIN, impressão
+     digital ou código), a chave de sessão fica guardada SÓ neste telemóvel
+     durante 12 horas: atualizar a página, a app mudar de versão ou fechar
+     e voltar a abrir não pede outra vez o PIN. Ao fim das 12 h, em "Sair",
+     se o servidor já não aceitar a chave ou se o jogador saiu do clube,
+     volta-se à porta e pede-se como sempre. O PIN nunca é guardado. */
+  const chaveSessao = `mjp-portal-sessao:${equipaDoLink || 'sem-equipa'}`;
+  const esquecerSessao = () => { try { localStorage.removeItem(chaveSessao); } catch (e) { /* nada */ } };
+  const lerSessaoGuardada = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(chaveSessao) || 'null');
+      if (v && v.c && Number(v.ate) > Date.now()) return v.c;
+      if (v) localStorage.removeItem(chaveSessao);
+    } catch (e) { /* sem memória: entra-se pela porta */ }
+    return null;
+  };
+  const [aRetomar, setARetomar] = useState(() => !!(equipaDoLink && lerSessaoGuardada()));
+
+  const entrar = async (code, retomar = false) => {
     setErro('');
     try {
       const d = await buscar(code);
-      if (!d) return false; // código não existe
+      if (!d) { if (retomar) esquecerSessao(); return false; } // código não existe
       // Saiu do clube (Data de saída até hoje): o acesso ao Portal termina.
       if (d.player && d.player.exitDate && d.player.exitDate <= todayStr()) {
-        setErro('Este acesso terminou: o jogador já saiu do clube.');
+        esquecerSessao();
+        if (!retomar) setErro('Este acesso terminou: o jogador já saiu do clube.');
         return 'saiu';
+      }
+      if (!retomar) {
+        try { localStorage.setItem(chaveSessao, JSON.stringify({ c: code, ate: Date.now() + SESSAO_PORTAL_MS })); } catch (e) { /* sem memória: pede o PIN da próxima vez */ }
       }
       setCodigo(code);
       setDados(d);
       return true;
     } catch (e) {
+      if (retomar) { esquecerSessao(); return false; }
       console.error('checkin_bootstrap', e);
       /* "Código ambíguo" é a única mensagem do servidor que o atleta pode
          resolver sozinho — pedindo o link certo. Vale a pena dizê-lo por
@@ -271,7 +295,16 @@ export function CheckinApp() {
     }
   };
 
-  const sair = () => { setCodigo(null); setDados(null); };
+  const sair = () => { esquecerSessao(); setCodigo(null); setDados(null); };
+
+  // Ao abrir: se há uma sessão de há menos de 12 h, entra-se direto.
+  useEffect(() => {
+    const c = equipaDoLink ? lerSessaoGuardada() : null;
+    if (!c) { setARetomar(false); return; }
+    let vivo = true;
+    entrar(c, true).finally(() => { if (vivo) setARetomar(false); });
+    return () => { vivo = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Grava e volta a buscar. O recarregar é de propósito: garante que o
      ecrã mostra o que ficou REALMENTE na base de dados, e não uma versão
@@ -350,6 +383,9 @@ export function CheckinApp() {
       {conteudo}
     </div>
   );
+
+  // A retomar a sessão: só o fundo, sem a porta (nada pisca).
+  if (!dados && aRetomar) return moldura(<div style={{ minHeight: '100vh' }} />);
 
   if (!dados) return moldura(
     <>

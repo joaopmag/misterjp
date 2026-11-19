@@ -14,6 +14,10 @@ function ehPortal() {
   const { search, hash } = window.location;
   const p = new URLSearchParams(search);
   if (p.has('junto') || p.has('video') || p.has('corte') || p.has('clipe')) return false;
+  if (/^\/portal(\/|$)/.test(window.location.pathname)) return true;
+  // Ícone do Portal instalado (Android): abre /?origem=portal-icone e o
+  // Portal da última equipa (o CheckinApp reescreve o endereço ao carregar).
+  if (p.get('origem') === 'portal-icone') { try { if (localStorage.getItem('mjp-portal-ultimo')) return true; } catch (e) { /* segue */ } }
   return search.includes('checkin') || hash.includes('checkin') || search.includes('portal=') || hash.includes('portal=');
 }
 

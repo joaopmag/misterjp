@@ -98,6 +98,8 @@ export function peGuardarCartao(teamId, cartao) {
 
 export function peApagarCartao(teamId) {
   try { localStorage.removeItem(peChave(teamId)); localStorage.removeItem(peChaveFoto(teamId)); } catch (e) { /* nada */ }
+  // Sem cartão, também não fica sessão guardada (ver CheckinApp).
+  try { localStorage.removeItem(`mjp-portal-sessao:${teamId || 'sem-equipa'}`); } catch (e) { /* nada */ }
   try { document.cookie = `${peCookie(teamId)}=; Max-Age=0; Path=/; SameSite=Lax`; } catch (e) { /* nada */ }
 }
 

@@ -557,6 +557,16 @@ reduz o peso inicial da app e do Portal.
 
 ## Correções fora da divisão (commits próprios)
 
+- 19/11 (8.ª): Portal, ficar dentro durante o dia. Depois de entrar, a
+  chave de sessão fica em localStorage (`mjp-portal-sessao:<equipa>`,
+  `{ c, ate }`) durante 12 h (`SESSAO_PORTAL_MS` em CheckinApp.jsx):
+  recarregar, nova versão ou reabrir a app entra direto (sem a porta). Sai
+  em "Sair", ao esquecer o cartão (`peApagarCartao`), ao fim das 12 h, se o
+  servidor recusar a chave ou se o jogador saiu do clube. O PIN nunca se
+  guarda. Substitui a decisão anterior de pedir o PIN em cada visita. Vale o
+  prazo mais curto entre as 12 h e o da chave no servidor
+  (`checkin_cartao_entrar`, fora do repositório). main.jsx: /portal/ e o
+  ícone instalado (?origem=portal-icone) carregam só o Portal.
 - 19/11 (7.ª): Arranque mais leve. `main.jsx` decide a porta antes de
   carregar código: Portal (?portal= / ?checkin) carrega só o Portal; o resto
   (equipa técnica e páginas públicas de vídeos) carrega o App. Coisas comuns
