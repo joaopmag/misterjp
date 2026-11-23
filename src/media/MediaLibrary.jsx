@@ -7,7 +7,7 @@ import { planoSala } from './planoDesenhos';
 import { podeDescarregarComDesenhos, pedirMp4ComDesenhos } from './descargaDesenhos';
 import React, { useState, useRef, useEffect } from 'react';
 import { useIsMobile, removeWithUndo, itemLabel, askConfirm, offerUndo, Btn, EmptyState, SectionHeader, Modal } from '../base/ui';
-import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, validarCalibracao, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
+import { ClipPlayerModal, MiniaturaClipeVideo, COR_DESENHO, matrizDaCalibracao, referenciaForaDeJogo, inverterH, aplicarH, cantosDasLinhas, TAMANHO_FONTE_TEXTO, distanciaShape, RAIO_TOQUE, anguloRodarZonaNoChao, desrodarNaZonaNoChao, girar, podeGravarSeparador, prepararGravacaoSeparador, renderShape, pegaZonaNoChao, pegaRodarZonaNoChao, inclinacaoPadrao, FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, entregarVideo } from '../AnalisadorVideo';
 import { uid, fmtDate, semAcentos } from '../base/utilidades';
 import { isFriendlyMatch } from '../dominio/jogos';
 import { ChevronDown, ChevronUp, FileText, Scissors, Share2, Video, Printer, Pencil, Trash2, BookOpen, Play, Presentation, ExternalLink, Image as ImageIcon, Search, X, Plus, ChevronLeft, Check, LayoutGrid, SkipBack, SkipForward, Type, Eraser, Undo2, Redo2, ZoomIn, Pause, RotateCcw, Minimize2, Maximize2, Download } from 'lucide-react';
@@ -264,13 +264,9 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   }, [avisoGravacaoBib]);
   const [calibracaoBib, setCalibracaoBib] = useState(null);
   const [calibrandoBib, setCalibrandoBib] = useState(null);
-  const [painelRelvadoBib, setPainelRelvadoBib] = useState(false);
-  const [grelhaBib, setGrelhaBib] = useState(true);
-  const [noChaoBib, setNoChaoBib] = useState(true);
-  const ultimaCalibracaoBib = useRef(null); // para "usar a calibração anterior" noutro momento
+// para "usar a calibração anterior" noutro momento
   const arrastoCalibBib = useRef(null); // índice do ponto de calibração a arrastar
   const matrizRelvadoBib = calibracaoBib ? matrizDaCalibracao(calibracaoBib) : null;
-  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha', 'medida'];
   const FERRAMENTAS_SO_CHAO = ['medida']; // só existe com o relvado calibrado
   /* FORA DE JOGO POR REFERÊNCIA (não precisa de calibração): 2 pontos numa
      linha paralela à linha de baliza (e, se der, 2 noutra). Fica na pausa.
@@ -292,10 +288,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   };
   /* Comprimento do campo (para os terços). Os campos de formação variam;
      por omissão 100 m, ajustável no painel do Relvado. */
-  const [comprimentoCampoBib, setComprimentoCampoBib] = useState(100);
   // Onde fica o centro da baliza no referencial da calibração (as áreas
   // são centradas nela), e o comprimento — para as linhas de campo.
-  const campoDaCalibracaoBib = () => ({ cx: calibracaoBib ? Number(calibracaoBib.W) / 2 : 0, L: comprimentoCampoBib });
   // As formas novas destas ferramentas nascem no chão, se houver calibração.
   /* A calibração do relvado (e o Medir, o Fora de jogo, os corredores e
      os terços) vive só na Análise de Vídeo, o trabalho mais ao pormenor.
@@ -304,29 +298,8 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   const chaoParaNova = () => ({});
   // Corredores / terços: uma "forma" de fundo, ligada e desligada no painel.
   const guiasAtuaisBib = shapesRascunho.find(f => f.tool === 'guias');
-  const alternarGuiaBib = (chave) => {
-    if (!matrizRelvadoBib) return;
-    pushHistoricoBib();
-    setShapesRascunho(prev => {
-      const atual = prev.find(f => f.tool === 'guias');
-      const base = atual || { id: uid(), tool: 'guias', color: '#FFFFFF', points: [{ x: 50, y: 28 }], corredores: false, tercos: false };
-      const novo = { ...base, [chave]: !base[chave], chao: { H: matrizRelvadoBib, campo: campoDaCalibracaoBib() } };
-      const resto = prev.filter(f => f.tool !== 'guias');
-      // Ficam por baixo de tudo (primeiro da lista); sem nada ligado, saem.
-      return (novo.corredores || novo.tercos) ? [novo, ...resto] : resto;
-    });
-  };
   // Marcar por CANTOS (4 toques) ou por LINHAS (2 toques em cada uma das
   // 4 linhas da área — para quando os cantos estão tapados ou fora do ecrã).
-  const [modoCalibBib, setModoCalibBib] = useState('cantos');
-  const comecarCalibracaoBib = (modelo, W, D, modo = modoCalibBib) => {
-    setCalibrandoBib({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [], modo });
-    setToolBib(null);
-    setFormaEmCursoBib(null);
-    setFormaSelecionadaBib(null);
-    cancelarRetomaDesenhoBib();
-    if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
-  };
   // Os 4 cantos da calibração em curso (pelas linhas, são os cruzamentos).
   // Os 4 cantos tal como foram marcados (à volta da área, por qualquer ordem).
   const cantosCrusBib = (c) => {
@@ -339,28 +312,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
      "em pé" quando ele estava deitado. Depois dos pontos, um toque no lado
      da área colado à baliza resolve: os cantos passam a contar a partir
      daí (P1–P2 = linha de baliza). */
-  const cantosCalibBib = (c) => {
-    const crus = cantosCrusBib(c);
-    if (!crus || c.ladoBaliza == null) return null;
-    const k = c.ladoBaliza;
-    return [0, 1, 2, 3].map(i => crus[(k + i) % 4]);
-  };
-  const confirmarCalibracaoBib = () => {
-    const c = calibrandoBib;
-    const cantos = cantosCalibBib(c);
-    if (!cantos) return;
-    // Confirmada COM avisos: guarda-se, mas os desenhos novos não vão para
-    // o chão (ficariam tortos) até se recalibrar ou ligar à mão.
-    const verif = validarCalibracao(cantos, c.W, c.D);
-    const duvidosa = !(verif && verif.ok);
-    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: cantos, modo: c.modo || 'cantos', ...(c.modo === 'linhas' ? { pontosLinhas: c.pontos } : {}), ...(duvidosa ? { duvidosa: true } : {}) };
-    setNoChaoBib(!duvidosa);
-    if (!matrizDaCalibracao(cal)) return;
-    setCalibracaoBib(cal);
-    ultimaCalibracaoBib.current = cal;
-    setCalibrandoBib(null);
-    setGrelhaBib(true);
-  };
   // Centro de uma Zona (retângulo) — é à volta dele que roda.
   const centroZonaBib = (sh) => {
     const [pa, pb] = sh.points;
@@ -411,13 +362,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
   // durante ~2s sempre que o vídeo recomeça a tocar —
   // não há parâmetro do YouTube para o desligar. Ver "MÁSCARA DE RETOMA".
   // Só no centro — a faixa do topo foi retirada a pedido.
-  const [mascaraRetomaBib, setMascaraRetomaBib] = useState(false);
   const mascaraRetomaTimerRef = useRef(null);
-  const mostrarMascaraRetomaBib = () => {
-    setMascaraRetomaBib(true);
-    clearTimeout(mascaraRetomaTimerRef.current);
-    mascaraRetomaTimerRef.current = setTimeout(() => setMascaraRetomaBib(false), 4500);
-  };
   useEffect(() => () => clearTimeout(mascaraRetomaTimerRef.current), []);
 
   const getPontoBib = (e) => {
@@ -3633,10 +3578,6 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
     const titulo = eJogos
       ? [g.titulo, g.adversario, g.resultado].filter(Boolean).join(' · ')
       : g.titulo;
-    const btnIcone = {
-      background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream,
-      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px',
-    };
     return (
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -4121,7 +4062,7 @@ export const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setI
                       {/* Fim do corte: Repetir / Corte seguinte (como na
                           Análise individual em clipes). */}
                       {!isBlocked && ativoEClipe && fimCorte === active.id && (() => {
-                        const { lista, i, seguinteId } = seguinteNaSala(active.id);
+                        const { seguinteId } = seguinteNaSala(active.id);
                         const repetir = () => {
                           setFimCorte(null);
                           enviarComandoYoutube('seekTo', [clipIni, true]);

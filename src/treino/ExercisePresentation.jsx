@@ -1,7 +1,7 @@
 // treino/ExercisePresentation.jsx
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
-import { iconScaleForPhase, stepStaticArrows, planearCoreografiaAnim, buildAnimationChainsPure, stepElements, EDITOR_VIEWBOX, EDITOR_BOX, PITCH_FIT, VistaCampo, PitchMarkings, SpaceZone, DiagramElements } from '../tatico/campo';
+import { iconScaleForPhase, stepStaticArrows, planearCoreografiaAnim, stepElements, EDITOR_VIEWBOX, EDITOR_BOX, PITCH_FIT, VistaCampo, PitchMarkings, SpaceZone, DiagramElements } from '../tatico/campo';
 import React, { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { useBlobUrl, PdfCanvasViewer } from '../media/leitores';
@@ -110,14 +110,12 @@ export function ExercisePresentation({ exercise, onClose, onEdit }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isFull]);
-  const easeInOutQuad = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   // Mesma lógica de "cadeias" usada no editor (ver buildAnimationChains em
   // DiagramEditor): agrupa setas encadeadas do mesmo tipo para as tocar em
   // sequência, uma a seguir à outra, em vez de todas ao mesmo tempo.
   // Mesma implementação partilhada usada pelo editor (ver
   // buildAnimationChainsPure), para a reprodução aqui ser exatamente igual
   // à que se viu ao criar o exercício — incluindo a regra do dono da seta.
-  const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
 
   /* Com o motor partilhado (planearCoreografiaAnim): cada passo começa
      onde o anterior acabou, o que foi arrastado desliza, a bola anda ao

@@ -69,7 +69,7 @@ export const FILAS_POR_COR = Object.fromEntries(Object.entries(QUADRANTES_POR_CO
 }));
 
 export function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
-  const [quadro, setQuadro, quadroReady] = useSingletonSync(
+  const [quadro, setQuadro] = useSingletonSync(
     'quadro_tatico', { elementos: [], linhas: [], tracos: [] }, notifyEdit, teamId,
   );
   const [emCurso, setEmCurso] = useState(null);

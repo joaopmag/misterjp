@@ -13,7 +13,6 @@ import { ficheiroParaAnexo, UrlAnexo, hrefDescarga } from '../base/anexos';
 import { notasDoJogo, pedirNovaMissao } from '../competicao/RelatoriosJogo';
 import { ListaMultipla } from '../base/ui-extra';
 import { competitionLabel } from '../dominio/jogos';
-import { dataPt } from '../gestao/documentos';
 
 /* DIÁRIO — registo de ocorrências por tipo.
 

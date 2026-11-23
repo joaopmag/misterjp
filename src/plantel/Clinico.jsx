@@ -11,7 +11,6 @@ import { NIVEIS_CLINICOS, nivelClinico, nivelNoDia } from '../dominio/clinico';
 import { T, mono, body } from '../base/tema';
 import { AlertTriangle, Trash2, Plus, CheckCircle2, RotateCcw, Pencil } from 'lucide-react';
 import { anteriorParaRecaida, juntarComoRecaida, juntarLesoes, lesoesPartidas, normalizarOcorrencia, periodosDaOcorrencia, possiveisRecaidas, proximoDiaIso, recalcularOcorrencia } from './clinicoDados';
-import { MESES_PT } from './comum';
 
 /* ================================================================
    BOLETIM CLÍNICO

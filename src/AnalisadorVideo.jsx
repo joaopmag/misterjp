@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SEG_PADRAO_DESENHO, JANELA_PARAGEM, FERRAMENTAS_DE_ARRASTAR, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm } from './media/pausas';
+import { SEG_PADRAO_DESENHO, JANELA_PARAGEM, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm } from './media/pausas';
 export { SEG_PADRAO_DESENHO, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm };
 import { planoDoCorte } from './media/planoDesenhos';
 import { limparTrajetoria, posicaoNaTrajetoria, pontosDoTubo, OPACIDADE_TUBO } from './media/trajetoria';
@@ -14,10 +14,9 @@ import { YoutubeComoVideo } from './media/youtubeComoVideo';
 import { linkDoVideoJunto } from './media/social';
 import { dataApagar, diasParaApagar, DIAS_AVISO, DIAS_PROLONGAR, espacoJogosUsado, formatarGB, dataCurtaPt } from './media/retencao';
 import {
-  Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
-  Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
+  Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2, Check, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Plus, MoreHorizontal, Tv,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Download, LayoutGrid, Ruler, Link2, Tv,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1183,11 +1182,6 @@ export function renderShape(sh, i) {
     const recolhaCima = Math.max(0, inc) * w, recolhaBaixo = Math.max(0, -inc) * w;
     const BL = { x: x + recolhaBaixo, y: y + h }, BR = { x: x + w - recolhaBaixo, y: y + h };
     const TR = { x: x + w - recolhaCima, y }, TL = { x: x + recolhaCima, y };
-    const naAltura = (f) => ({ // f: 0 = perto (baixo) … 1 = fundo (cima)
-      yy: y + h - h * f,
-      xl: BL.x + (TL.x - BL.x) * f,
-      xr: BR.x + (TR.x - BR.x) * f,
-    });
     /* Riscas DIAGONAIS (como sempre foram), mas em perspetiva: cada
        risca vai de um ponto do lado de baixo a um ponto do lado de cima
        deslocado — assim acompanham o estreitar da zona e parecem
@@ -2677,7 +2671,7 @@ function jogoDoClipeAtleta(c) {
    não se guarda, mas também não fica preto. */
 const cacheMiniaturasClipe = new Map();
 export function MiniaturaClipeVideo({ chave, src, t, style }) {
-  const [img, setImg] = useState(() => cacheMiniaturasClipe.get(chave) || null);
+  const [img] = useState(() => cacheMiniaturasClipe.get(chave) || null);
   const [visivel, setVisivel] = useState(false);
   const [semCors, setSemCors] = useState(false);
   if (img) return <img src={img} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...style }} />;
@@ -3455,7 +3449,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [ficheiroPendente, setFicheiroPendente] = useState(null); // ficheiro escolhido, à espera do nome antes de começar o envio
   const [editandoNomeId, setEditandoNomeId] = useState(null); // id do vídeo cujo nome está a ser editado agora
   const [nomeEditado, setNomeEditado] = useState('');
-  const [nomeVideoInput, setNomeVideoInput] = useState('');
+  const [, setNomeVideoInput] = useState('');
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
@@ -3674,49 +3668,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [jogoFiltroAtletas, setJogoFiltroAtletas] = useState('todos'); // 'todos' ou a chave de um jogo (ver jogoDoClipeAtleta)
   // Cartões sem barra de scroll: mostram os primeiros CLIPES_VISIVEIS e
   // um botão "Mostrar mais" que abre o cartão inteiro.
-  const CLIPES_VISIVEIS = 3;
-  const [cartoesAbertos, setCartoesAbertos] = useState(() => new Set());
   // Abrir/fechar um cartão SEM a página saltar: guarda-se onde está o
   // cabeçalho do cartão no ecrã, muda-se, e no fotograma seguinte
   // compensa-se o scroll (da janela ou do contentor com scroll mais
   // próximo) para o cabeçalho ficar exatamente no mesmo sítio.
-  const cartaoRefs = useRef({});
   // FECHAR UM CARTÃO SEM A PÁGINA SUBIR. Ao fechar, a página fica mais
   // curta; se se estava perto do fundo, o browser é obrigado a subir a
   // página (já não há conteúdo para mostrar ali) e tudo mexe. Por isso,
   // ao fechar, a grelha guarda a altura que tinha (min-height) — a página
   // não encolhe e nada sobe. A reserva sai ao abrir outro cartão ou ao
   // mudar o filtro de jogo (aí a página muda de qualquer forma).
-  const grelhaAtletasRef = useRef(null);
-  const [alturaReservadaGrelha, setAlturaReservadaGrelha] = useState(0);
-  const alternarCartao = (chave) => {
-    const el = cartaoRefs.current[chave];
-    const antes = el ? el.getBoundingClientRect().top : null;
-    const aFechar = cartoesAbertos.has(chave);
-    if (aFechar && grelhaAtletasRef.current) {
-      setAlturaReservadaGrelha(Math.max(alturaReservadaGrelha, grelhaAtletasRef.current.getBoundingClientRect().height));
-    } else if (!aFechar) {
-      setAlturaReservadaGrelha(0);
-    }
-    setCartoesAbertos(prev => {
-      const n = new Set(prev);
-      if (n.has(chave)) n.delete(chave); else n.add(chave);
-      return n;
-    });
-    if (!el || antes == null) return;
-    requestAnimationFrame(() => {
-      const depois = el.getBoundingClientRect().top;
-      const delta = depois - antes;
-      if (Math.abs(delta) < 1) return;
-      let pai = el.parentElement;
-      while (pai && pai !== document.body) {
-        const st = getComputedStyle(pai);
-        if (/(auto|scroll)/.test(st.overflowY) && pai.scrollHeight > pai.clientHeight) { pai.scrollTop += delta; return; }
-        pai = pai.parentElement;
-      }
-      window.scrollBy(0, delta);
-    });
-  };
 
   const clipesStaff = clipes.filter(c => !ehClipeAtleta(c));
   // Cortes MP4 (separador Cortes) e clipes de links feitos no editor (separador Clipes).
@@ -3774,87 +3735,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      CLIPES_VISIVEIS — e no painel "Ver todos", com a lista inteira). */
   // compacto (no cartão): sem separadores de jogo e cada linha com a mesma
   // altura — os cartões ficam todos iguais, tenham os clipes que tiverem.
-  const ALTURA_LINHA_CARTAO = 64;
-  const renderClipesCartao = (g, lista, compacto) => lista.map((c, ci, arr) => {
-                      // Separador de jogo: quando o jogador tem clipes de
-                      // mais de um jogo, cada bloco começa com o nome do
-                      // jogo e um play que vê só os clipes dele desse jogo.
-                      const jogo = jogoDoClipeAtleta(c);
-                      const novoJogo = !compacto && g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
-                      const doJogo = novoJogo ? g.clipes.filter(x => jogoDoClipeAtleta(x).chave === jogo.chave) : null;
-                      return (
-                      <React.Fragment key={c.id}>
-                      {novoJogo && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 6px 14px', background: T.surfaceRaise, borderBottom: `1px solid ${T.line}` }}>
-                          <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: T.gold, flexShrink: 0 }} />
-                          <span title={jogo.nome} style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jogo.nome}</span>
-                          <button onClick={() => setSequenciaAtleta({ clipes: doJogo, indice: 0 })}
-                            title={`Ver os ${doJogo.length} clipes de ${g.nome} neste jogo`}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body,
-                              background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
-                              borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600,
-                            }}>
-                            <Play size={10} fill={T.gold} /> {doJogo.length}
-                          </button>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}`, ...(compacto ? { height: ALTURA_LINHA_CARTAO, overflow: 'hidden', boxSizing: 'border-box' } : {}) }}>
-                      <button onClick={() => setClipeAtletaAberto(c)}
-                        style={{
-                          flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
-                          background: 'transparent', border: 'none', ...body,
-                        }}>
-                        {!c.youtubeId && c.dataUrl ? (
-                          <span style={{ width: 56, height: 42, borderRadius: 4, flexShrink: 0, overflow: 'hidden', background: T.surfaceRaise, display: 'block' }}>
-                            <MiniaturaClipeVideo chave={`${c.id}:${c.dataUrl}:${c.clipInicio}`} src={c.dataUrl} t={(Number(c.clipInicio) || 0) + 0.5} />
-                          </span>
-                        ) : (
-                          <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
-                            style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
-                        )}
-                        <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.titulo || '(sem título)'}</span>
-                            {/* O jogador apagou-o no Portal: para ele desaparece,
-                               mas o treinador continua a tê-lo (marcado pelo
-                               servidor em `apagadoPeloAtleta`). */}
-                            {c.apagadoPeloAtleta && (
-                              <span title="O jogador apagou este clipe no Portal. Continua disponível aqui para o treinador."
-                                style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 600, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 4, padding: '0 5px', lineHeight: '15px' }}>
-                                Apagado no Portal
-                              </span>
-                            )}
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                            <Scissors size={10} style={{ flexShrink: 0 }} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
-                            {dataCurta(c.criadoEm) && <span style={{ ...body, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>· {dataCurta(c.criadoEm)}</span>}
-                            {c.criadoPorStaff && <span style={{ ...body, marginLeft: 4, color: T.gold }}>· staff</span>}
-                          </span>
-                          {c.note
-                            ? <span style={{ display: 'block', fontSize: 11.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</span>
-                            : c.originalTitulo && <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.originalTitulo}</span>}
-                        </span>
-                      </button>
-                      <button
-                        onClick={async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }}
-                        title="Partilhar só o corte" aria-label={`Partilhar o clipe ${c.titulo || ''}`}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', flexShrink: 0 }}>
-                        {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
-                      </button>
-                      <button
-                        onClick={() => removerClipe(c)}
-                        title="Apagar o clipe só daqui (o jogador continua a tê-lo no Portal)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px 10px 2px', display: 'flex', flexShrink: 0 }}>
-                        <Trash2 size={15} color={T.muted} />
-                      </button>
-                      </div>
-                      </React.Fragment>
-                      );
-  });
   /* "VER TODOS" ABRE UM PAINEL POR CIMA, em vez de esticar o cartão: a
      grelha nunca muda de tamanho, por isso a página não mexe nada. */
-  const [cartaoPainel, setCartaoPainel] = useState(null); // { chave, left, width, top } — onde abrir a coluna
+// { chave, left, width, top } — onde abrir a coluna
 
   const originalFicheiro = videosOriginais.find(v => v.id === originalAtivoId) || null;
   const originalLink = React.useMemo(() => linkParaEditor(linkNoEditor), [linkNoEditor]);
@@ -4008,8 +3891,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videosOriginais.map(v => `${v.id}:${v.pronto}`).join(',')]);
   // Lista dos vídeos: do mais recente para o mais antigo (data de carregamento).
-  const originaisPorData = React.useMemo(() => [...videosOriginais].sort((a, b) =>
-    (new Date(b.criadoEm || 0).getTime() || 0) - (new Date(a.criadoEm || 0).getTime() || 0)), [videosOriginais]);
   /* A GRELHA DE JOGOS: carregados (ficheiro) e por link (YouTube) juntos,
      o mais recente primeiro, com o mesmo cartão. */
   /* DUAS FORMAS DE TRABALHAR (14/11): "Estúdio" (ficheiros, o editor
@@ -4103,11 +3984,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       }}>
       <Icone size={sobreImagem ? 13 : 13} />
     </button>
-  );
-  const iconesJogo = (acoes) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0, marginLeft: 'auto' }}>
-      {acoes.filter(Boolean).map((a, i) => iconeAcao(a, i, false))}
-    </span>
   );
   /* Ações na zona do texto, encostadas à direita (fora da imagem): a
      imagem fica limpa e os ícones leem-se como parte do cartão. Ficam fora
@@ -5195,7 +5071,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
 
-
   /* ---- Telestração ---- */
   const getPoint = (e) => {
     // Relativo à IMAGEM do vídeo (a camada de desenho), não à caixa toda.
@@ -5655,74 +5530,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   }, [originalAtivoId, signedUrl]);
   const marcadoClipe = inPoint != null && outPoint != null && outPoint > inPoint;
   const nDesenhosClipe = marcadoClipe ? (clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length) : 0;
-  const tituloPainel = (t) => <div style={{ fontSize: 10.5, letterSpacing: 0.6, textTransform: 'uppercase', color: TV.mutedDim, ...body }}>{t}</div>;
-  const btnPainel = { width: '100%', justifyContent: 'flex-start', padding: '7px 10px', fontSize: 12.5 };
   // Painel do CLIPE: marcar, nota e guardar.
-  const painelClipe = (baixo) => (
-    <div className="mjp-sem-scroll" style={baixo
-      ? { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-start' }
-      : { width: 200, flexShrink: 0, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, borderRight: `1px solid ${TV.line}`, overflowY: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
-      {!baixo && tituloPainel(clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe')}
-      <Btn variant="ghost" onClick={markIn} style={baixo ? {} : btnPainel}><Flag size={14} color={TV.good} /> Início <span style={{ ...mono, marginLeft: 'auto', color: TV.muted }}>{inPoint == null ? '--:--' : fmt(inPoint)}</span></Btn>
-      <Btn variant="ghost" onClick={markOut} style={baixo ? {} : btnPainel}><Flag size={14} color={TV.bad} /> Fim <span style={{ ...mono, marginLeft: 'auto', color: TV.muted }}>{outPoint == null ? '--:--' : fmt(outPoint)}</span></Btn>
-      <div style={{ fontSize: 11.5, color: TV.mutedDim, ...mono }}>
-        {marcadoClipe ? `${Math.round(outPoint - inPoint)}s${nDesenhosClipe > 0 ? ` · ${nDesenhosClipe} desenho(s)` : ''}` : 'Marca o início e o fim'}
-      </div>
-      <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…" rows={baixo ? 2 : 4}
-        style={{ width: baixo ? '100%' : '100%', flexBasis: baixo ? '100%' : undefined, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
-      {!clipeEmDesenho && (jogadores || []).length > 0 && seletorAnaliseInd(baixo)}
-      {erro && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erro}</div>}
-      {erroSeguirFoco && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erroSeguirFoco}</div>}
-      {clipeEmDesenho ? (
-        <>
-          <Btn variant="solid" onClick={guardarDesenhosClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><Check size={14} /> Guardar no clipe</Btn>
-          <Btn variant="plain" onClick={cancelarDesenhosClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><X size={14} /> Cancelar</Btn>
-        </>
-      ) : (
-        <>
-          <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe || !marcadoClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}>
-            {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
-          </Btn>
-          <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe || (inPoint == null && outPoint == null)} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><X size={14} /> Limpar marcas</Btn>
-        </>
-      )}
-    </div>
-  );
   // Painel da DIREITA: desenhar, seguimento e etiquetas (uma por linha, todas à vista).
-  const painelLadoDireito = (baixo) => (
-    <div className="mjp-sem-scroll" style={baixo
-      ? { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }
-      : { width: 190, flexShrink: 0, padding: 10, display: 'flex', flexDirection: 'column', gap: 6, borderLeft: `1px solid ${TV.line}`, overflowY: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
-      <Btn variant="ghost" onClick={abrirDesenho} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}>
-        <Pencil size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
-        {trajetoriaFocoPendente && <Target size={13} color={trajetoriaFocoPendente.cor || TV.crimsonBright} style={{ marginLeft: 2 }} />}
-      </Btn>
-      {trajetoriaFocoPendente && !processandoFoco && (
-        <>
-          <Btn variant="ghost" onClick={() => { videoRef.current?.pause(); setModoDesenho(true); setTool('seguir'); }} style={baixo ? {} : btnPainel}>
-            <Target size={14} color={TV.crimsonBright} /> Continuar seguimento
-          </Btn>
-          <Btn variant="plain" onClick={() => setTrajetoriaFocoPendente(null)} style={baixo ? {} : btnPainel}><X size={14} /> Tirar seguimento</Btn>
-          <AvisoSeguimentoParou pontos={trajetoriaFocoPendente.pontos} fim={Math.min(duration || 0, trajetoriaFocoPendente.tFimPedido ?? Infinity)}
-            onIr={(tp) => { videoRef.current?.pause(); seekTo(tp); }} />
-        </>
-      )}
-      {!baixo && <div style={{ height: 4 }} />}
-      {tituloPainel('Etiqueta')}
-      {TAGS_ATIVAS.map(tag => {
-        const on = pendingTag === tag.id;
-        return (
-          <button key={tag.id} type="button" onClick={() => setPendingTag(t => (t === tag.id ? null : tag.id))}
-            style={{
-              width: baixo ? 'auto' : '100%', textAlign: 'left', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
-              border: `1px solid ${tag.color}`, background: on ? tag.color : 'transparent', color: on ? TEXT_ON_ACCENT : tag.color, flexShrink: 0,
-            }}>
-            {tag.label}
-          </button>
-        );
-      })}
-    </div>
-  );
   /* ===== ESTÚDIO: separadores, barra, linha do tempo ===== */
   const [aba, setAba] = useState('codificar');
   // O separador Desenhar É o modo de desenho (abrir/fechar um abre/fecha o outro).

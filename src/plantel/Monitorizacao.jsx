@@ -28,7 +28,6 @@ export function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, 
   const [modalType, setModalType] = useState('wellness');
   // "Sessão de hoje" fica fechada por omissão — é consulta pontual, não
   // precisa de estar sempre à vista (ver a nota grande junto ao Panel).
-  const [mostrarSessaoHoje, setMostrarSessaoHoje] = useState(false);
   // Mesma lógica: a tabela de respostas é longa e só se costuma abrir
   // para consultar um caso específico, não para estar sempre visível.
   const [mostrarRespostas, setMostrarRespostas] = useState(false);

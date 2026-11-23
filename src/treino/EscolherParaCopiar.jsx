@@ -3,7 +3,7 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useIsMobile, Btn } from '../base/ui';
-import { semAcentos, timeAgo } from '../base/utilidades';
+import { timeAgo } from '../base/utilidades';
 import { T, mono, body } from '../base/tema';
 import { momentoTexto } from '../dominio/treino';
 import { ChevronLeft, Copy, ChevronRight, Search, Check, Pencil } from 'lucide-react';

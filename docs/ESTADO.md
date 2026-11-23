@@ -574,6 +574,20 @@ reduz o peso inicial da app e do Portal.
   a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
   mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
   reescreve a sessão e tudo volta a aparecer.
+- 23/11: LIMPEZA DE CÓDIGO MORTO (sem mudanças visíveis). 718 linhas a
+  menos em 23 ficheiros: ~250 importações sem uso no App.jsx (restos da
+  divisão), 17 funções/componentes de topo nunca usados no App.jsx
+  (WellnessSummary, DossierModal, SheetActions, GoalNet, diEvolucao…),
+  o cartão antigo dos cortes no Analisador (renderClipesCartao,
+  alternarCartao, cartaoPainel…), a calibração antiga da Sala na
+  MediaLibrary e variáveis locais sem uso noutros 20 ficheiros. Só se
+  apagou o que não tinha efeitos (funções, literais, useState/useMemo/
+  useRef); desestruturações com "...resto" ficaram como estavam. O peso
+  da app quase não muda (o empacotador já deixava isto de fora): o ganho
+  é de manutenção. Verificado: lint, compilação, todos os separadores da
+  app (com dados simulados) e as áreas do Portal, sem erros. O
+  desenhos.mjs gerado dá o mesmo resultado (não é preciso publicar o
+  video-worker).
 - 19/11 (9.ª): DESENHOS DENTRO DO MP4 (servidor). "Os meus vídeos" do
   jogador passam a levar os desenhos; o staff ganha "MP4 c/ desenhos" no
   leitor dos cortes (ClipPlayerModal) e, na Sala, "Gravar e enviar vídeo"

@@ -317,13 +317,6 @@ function emailEscondido(email) {
   if (!d) return email || '';
   return `${u.slice(0, 2)}•••@${d}`;
 }
-function iniciais(nome) {
-  const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
-  if (!p.length) return '?';
-  // Um nome curto, de uma só palavra (ex.: "JP"), já são as iniciais.
-  if (p.length === 1) return (p[0].length <= 3 ? p[0] : p[0][0]).toUpperCase();
-  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
-}
 function epocaAtual() {
   const h = new Date(); const y = h.getMonth() >= 6 ? h.getFullYear() : h.getFullYear() - 1;
   return `${y}/${String((y + 1) % 100).padStart(2, '0')}`;
@@ -572,27 +565,6 @@ function useSemFaixa() {
    baixo, primeiro encolhe o quadro; se ainda não chegar, encolhe também a
    credencial (k < 1), nunca abaixo de 70 %. */
 const CW = 214, CH = 268; // cartão de treinador: mais largo, maior no ecrã
-const ALTURA_FIXA =
-  18 + 6 + 48 +   // margem de cima e letreiro
-  14 + 14 +       // espaço e aro do quadro
-  9 + 36 + 2 +    // fita
-  4 + 44 +        // "Mais opções"
-  10 + 8;         // margem de baixo e folga
-let MARGENS_TELEMOVEL = null;
-function margensTelemovel() {
-  if (MARGENS_TELEMOVEL) return MARGENS_TELEMOVEL;
-  let cima = 0, baixo = 0;
-  try {
-    const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)';
-    document.body.appendChild(d);
-    const cs = getComputedStyle(d);
-    cima = parseFloat(cs.paddingTop) || 0; baixo = parseFloat(cs.paddingBottom) || 0;
-    d.remove();
-  } catch (e) { /* sem margens */ }
-  MARGENS_TELEMOVEL = { cima, baixo };
-  return MARGENS_TELEMOVEL;
-}
 function medir() {
   /* A MESMA GRELHA DA PORTA DO PORTAL (usePortaMedidas no App.jsx): coluna
      de até 420 px, o mesmo espaço no topo (S) e a mesma altura do quadro.
@@ -620,7 +592,6 @@ function useMedidas() {
   }, []);
   return m;
 }
-
 
 
 /* ===================================================================
@@ -1135,7 +1106,6 @@ export default function AuthScreen({ modo }) {
     );
   }
 
-  const ligacao = { minHeight: 40, padding: '2px 6px', background: 'transparent', border: 'none', color: '#C9A227', fontFamily: "'Inter', sans-serif", fontSize: 13.5, textDecoration: 'underline', cursor: 'pointer' };
   /* Por baixo da credencial, uma só ligação. Na fase seguinte (impressão
      digital) passa a ser "Usar a impressão digital"; enquanto não existe,
      é a palavra-passe. Com a credencial virada, "Ver a credencial" volta a pô-la de frente. */
@@ -1163,11 +1133,6 @@ export default function AuthScreen({ modo }) {
     return () => cancelAnimationFrame(r);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aVirarFrente]);
-  const voltar = verso
-    ? <button type="button" style={ligacao} onClick={deFrente}>{bioAtivo && BIO_TXT.nome === 'Face ID' ? 'Usar o Face ID' : 'Ver a credencial'}</button>
-    : bioAtivo
-      ? <button type="button" style={ligacao} onClick={() => mudarVerso('digital')}>Usar {BIO_TXT.comArtigo}</button>
-      : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
   const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: P.opcao, border: `1px solid ${P.painelLinha}`, color: P.opcaoTexto, fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
   const rodape = novaPasse ? null : (

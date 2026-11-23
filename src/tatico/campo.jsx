@@ -617,7 +617,7 @@ export function BenchesAndTechnicalArea({ printMode }) {
     { x: 64.5, largura: 15 },   // começa a 11 m do meio-campo
   ];
 
-  const yLinha = 69;        // linha lateral
+// linha lateral
   const yFrenteArea = 71;   // a área técnica começa 2 m atrás da linha
   const yAbrigo = 75.6;     // frente do abrigo
   const alturaAbrigo = 3.8;

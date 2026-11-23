@@ -272,7 +272,7 @@ export function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, d
     const agora = new Date();
     return agora.getHours() * 60 + agora.getMinutes() >= Number(m[1]) * 60 + Number(m[2]);
   };
-  const [missoesJogoVistas, setMissoesJogoVistas] = useState(() => {
+  const [, setMissoesJogoVistas] = useState(() => {
     try { return JSON.parse(localStorage.getItem('mjp_missoes_jogo_vistas') || '[]'); } catch (e) { return []; }
   });
   const marcarMissaoJogoVista = (id) => setMissoesJogoVistas(prev => {

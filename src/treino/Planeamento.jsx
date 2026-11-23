@@ -3,7 +3,7 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { useIsMobile, trocarJanela, removeWithUndo, itemLabel, Btn, EmptyState, SectionHeader, inputStyle, BotaoTopo } from '../base/ui';
 import React, { useRef, useState, useEffect } from 'react';
-import { todayStr, fmtDate, escapeHtmlText, uid, addDays, toLocalISODate, fmtShort, getMonday } from '../base/utilidades';
+import { todayStr, fmtDate, escapeHtmlText, uid, addDays, fmtShort, getMonday } from '../base/utilidades';
 import { esperarImagensDoStorage } from '../base/impressao';
 import { buildMatchShareHtml, FichaJogo, PrintFichaJogo, EquipaEmColunasPrint } from '../competicao/FichaJogo';
 import { shareOrDownloadHtml, buildShareableHtmlDoc } from '../base/partilha';
@@ -369,9 +369,6 @@ export function Planeamento({ sessions, setSessions, exercises, setExercises, ex
     setSaltarPara(null);
   }, [saltarPara]);
 
-  const cabecalhoBloco = (texto) => (
-    <div style={{ ...mono, fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em', margin: '4px 0 12px' }}>{texto}</div>
-  );
   /* SEPARADORES: "Microciclo" é a semana atual e as próximas (onde se
      trabalha no dia a dia); "Histórico" são as semanas já terminadas,
      agrupadas por mês. */

@@ -7,7 +7,7 @@ import { flushSync, createPortal } from 'react-dom';
 import { uid, todayStr, fmtShort } from '../base/utilidades';
 import { body, T, mono, TEXT_ON_ACCENT, display } from '../base/tema';
 import { Square, Play, RotateCw, Maximize2, Copy, Undo2, Redo2, Printer, Trash2, Clock, RefreshCw } from 'lucide-react';
-import { ANIM_DESLIZE_MIN, ANIM_MATERIAL_ESTATICO, BASE_TOOLS, CHROME_EDITOR_PX, DiagramElements, EDITOR_BOX, EDITOR_MEIO_X_MAX, EDITOR_MEIO_X_MIN, EDITOR_VIEWBOX, EDITOR_VIEWBOX_MEIO, EDITOR_Y_MAX, EDITOR_Y_MIN, ESTICAR_IMPRESSAO_MEIO, ICON_SCALE_BASE, KEEPER_NUMBERS, LINE_LABELS, LINE_TOOLS, MARKER_TOOLS, PITCH_BOX, PITCH_FIT, PitchMarkings, ROTULOS_JOGADOR, SpaceZone, TEAMS, TriondaBall, VISTA_MEIO, VistaCampo, aspetoSemBancos, buildAnimationChainsPure, carimbarRotulos, clampTextElement, elementLabel, iconScaleForPhase, nextKeeperNumber, nextPlayerNumber, planearCoreografiaAnim, planearPassoAnim, rotuloIcone, stepElements, stepStaticArrows, teamInfo, textBoxMetrics, useRodarTexto, viewBoxDaVista, viewBoxSemBancos } from './campo';
+import { ANIM_DESLIZE_MIN, ANIM_MATERIAL_ESTATICO, BASE_TOOLS, CHROME_EDITOR_PX, DiagramElements, EDITOR_BOX, EDITOR_MEIO_X_MAX, EDITOR_MEIO_X_MIN, EDITOR_VIEWBOX, EDITOR_VIEWBOX_MEIO, EDITOR_Y_MAX, EDITOR_Y_MIN, ESTICAR_IMPRESSAO_MEIO, ICON_SCALE_BASE, KEEPER_NUMBERS, LINE_LABELS, LINE_TOOLS, MARKER_TOOLS, PITCH_BOX, PITCH_FIT, PitchMarkings, ROTULOS_JOGADOR, SpaceZone, TEAMS, TriondaBall, VISTA_MEIO, VistaCampo, aspetoSemBancos, carimbarRotulos, clampTextElement, elementLabel, iconScaleForPhase, nextKeeperNumber, nextPlayerNumber, planearCoreografiaAnim, planearPassoAnim, rotuloIcone, stepElements, stepStaticArrows, teamInfo, textBoxMetrics, useRodarTexto, viewBoxDaVista, viewBoxSemBancos } from './campo';
 import { TreinosParaEditorCtx, elementosDaSessao, elementosDoJogo, nomeNoIcone, sessoesParaCarregar } from './prancheta';
 import { imprimirComNome } from '../base/impressao';
 import { momentoTexto } from '../dominio/treino';
@@ -362,7 +362,6 @@ export function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onCl
   // até à borda já não troca o enquadramento (o campo encolhia e apareciam
   // os bancos de suplentes). Os itens ficam presos dentro desta moldura.
   const editorCompacto = true;
-  const caixaEditor = editorCompacto ? EDITOR_BOX : PITCH_BOX;
   const viewBoxEditor = editorCompacto ? (vistaCampo === 'meio' ? EDITOR_VIEWBOX_MEIO : EDITOR_VIEWBOX) : viewBoxDaVista(vistaCampo);
   const gVistaRef = useRef(null);
   const mudarVista = (v) => { if (v !== vistaCampo) commit({ ...value, vista: v === 'meio' ? 'meio' : undefined }); };
@@ -578,7 +577,6 @@ export function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onCl
     }
     return best && bestD <= maxDist ? best : null;
   };
-  const easeInOutQuad = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   const stopAnimation = () => {
     if (animRef.current) cancelAnimationFrame(animRef.current);
     animRef.current = null;
@@ -596,7 +594,6 @@ export function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onCl
   // com o ficheiro exportado (buildAnimationChainsPure, mais acima). Antes
   // existiam três cópias desta lógica e uma correção numa delas não chegava
   // às outras — a regra do dono de cada seta ficava por aplicar.
-  const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
   const playAnimation = () => {
     const animArrows = arrows.filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
     /* Em recuo: o ponto de partida do movimento vem das posições do

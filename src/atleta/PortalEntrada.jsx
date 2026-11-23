@@ -411,8 +411,8 @@ export function TransicaoEntrada({ focoInteiro, children }) {
   const janelaRef = useRef(null), conteudoRef = useRef(null);
   const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
   const [ativa, setAtiva] = useState(!!ent);
-  const [vidroAberto, setVidroAberto] = useState(false);
-  const [vidroRecolhido, setVidroRecolhido] = useState(false);
+  const [vidroAberto] = useState(false);
+  const [vidroRecolhido] = useState(false);
   const [caixaVidro, setCaixaVidro] = useState(null);
   React.useLayoutEffect(() => {
     if (!ent) return undefined;

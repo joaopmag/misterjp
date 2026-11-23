@@ -2,7 +2,6 @@
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import React, { useRef, useState, useEffect } from 'react';
-import { ehClipe } from '../media/organizacao';
 import { useLupa, socialEmbedSrc, socialExternalUrl, INSTAGRAM_SANDBOX, ControlosLupa, fmtMMSS } from '../media/social';
 import { useKioskVoltar } from '../base/kiosk';
 import { createPortal } from 'react-dom';

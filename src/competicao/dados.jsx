@@ -3,7 +3,6 @@
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { sortByPosition } from '../dominio/jogadores';
 import { uid } from '../base/utilidades';
-import { T } from '../base/tema';
 import { competitionLabel, isFriendlyMatch, FRIENDLY, convocadosDoJogo } from '../dominio/jogos';
 import { distribuirOnzeNoCampo, tamanhoDaFormacao, FORMACOES, preencherPorFamilia } from '../tatico/Simulador';
 import { TODOS_OS_JOGADORES } from './Escalacao';

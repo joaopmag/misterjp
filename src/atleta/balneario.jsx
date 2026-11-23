@@ -23,14 +23,6 @@ export function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialC
   const pts = ps => ps.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const poly = (ps, f, st, sw) => `<polygon points="${pts(ps)}" fill="${f}"${st ? ` stroke="${st}" stroke-width="${sw || 0.8}"` : ''}/>`;
   const aff = (p00, p10, p01, inner) => `<g transform="matrix(${((p10[0] - p00[0]) / 100).toFixed(4)},${((p10[1] - p00[1]) / 100).toFixed(4)},${((p01[0] - p00[0]) / 100).toFixed(4)},${((p01[1] - p00[1]) / 100).toFixed(4)},${p00[0].toFixed(2)},${p00[1].toFixed(2)})">${inner}</g>`;
-  const camisolaParede = n => `<line x1="50" y1="0" x2="50" y2="10" stroke="#9aa39c" stroke-width="2"/><path d="M14 22 L38 10 Q50 20 62 10 L86 22 L98 44 L78 50 L78 98 L22 98 L22 50 L2 44 Z" fill="${cor.base}" stroke="#0d120f" stroke-width="2"/><text x="50" y="80" text-anchor="middle" font-size="34" font-weight="700" fill="${cor.texto}" font-family="JetBrains Mono, monospace">${n}</text>`;
-  const quadro = k => {
-    let s = `<rect x="0" y="0" width="100" height="100" fill="#9c7f22"/><rect x="7" y="7" width="86" height="86" fill="${k === 1 ? '#26334a' : '#33503c'}"/>`;
-    if (k === 0) s += '<path d="M34 24 H66 V44 Q66 62 50 64 Q34 62 34 44 Z" fill="#C9A43A"/><path d="M34 30 Q20 30 24 44 Q28 52 36 50" fill="none" stroke="#C9A43A" stroke-width="5"/><path d="M66 30 Q80 30 76 44 Q72 52 64 50" fill="none" stroke="#C9A43A" stroke-width="5"/><rect x="45" y="64" width="10" height="12" fill="#C9A43A"/><rect x="34" y="76" width="32" height="9" fill="#7a5f14"/>';
-    else if (k === 1) s += [20, 50, 80].map(x => `<circle cx="${x}" cy="40" r="8" fill="#cfc2aa"/><path d="M${x - 10} 88 V56 H${x + 10} V88 Z" fill="${cor.base}"/><line x1="${x - 9}" y1="58" x2="${x - 18}" y2="26" stroke="#cfc2aa" stroke-width="5"/><line x1="${x + 9}" y1="58" x2="${x + 18}" y2="26" stroke="#cfc2aa" stroke-width="5"/>`).join('');
-    else s += [18, 38, 58, 78].map((x, i) => `<circle cx="${x}" cy="${52 - (i % 2) * 6}" r="7" fill="#cfc2aa"/><rect x="${x - 9}" y="${60 - (i % 2) * 6}" width="18" height="34" fill="${cor.base}"/>`).join('') + '<path d="M38 18 L50 30 L62 18" fill="none" stroke="#C9A43A" stroke-width="4"/>';
-    return s;
-  };
   const nomeCamisola = pkhEsc(String(nome || '').toUpperCase());
   const camisolaFrente = (() => {
     const fNome = nomeCamisola.length > 9 ? 9 : nomeCamisola.length > 6 ? 11 : 13;
@@ -116,10 +108,8 @@ export function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialC
   const decor = ['11', '7', '6', '3', '14', '10', '4', '23', '9', '2', '5', '17'].filter(n => n !== String(numero || ''));
   let nd = 0;
   const camisolaN = n => `<path d="M14 22 L38 10 Q50 20 62 10 L86 22 L98 44 L78 50 L78 98 L22 98 L22 50 L2 44 Z" fill="${cor.base}" stroke="${cor.contorno}" stroke-width="2"/><path d="M38 10 Q50 20 62 10" fill="none" stroke="${cor.mangas}" stroke-width="3"/><text x="50" y="80" text-anchor="middle" font-size="34" font-weight="700" fill="${cor.texto}" font-family="Oswald, sans-serif">${n}</text>`;
-  const chuteira = '<path d="M0 10 Q2 2 10 2 L20 4 Q30 6 32 12 L32 14 L0 14 Z" fill="#0d0f0e"/><path d="M6 4 L18 5" stroke="#C9A227" stroke-width="2"/>';
   [false, true].forEach(dir => {
     const M = dir ? mir : (p => p);
-    const rel = (a, b, v) => M(wp(a, v));
     // faixa LED por cima dos cacifos
     s += `<polygon points="${pts([wp(0, 0.06), wp(1, 0.06), wp(1, 0.085), wp(0, 0.085)].map(M))}" fill="${Tm.led}" opacity=".9"/>`;
     s += `<polygon points="${pts([wp(0, 0.05), wp(1, 0.05), wp(1, 0.1), wp(0, 0.1)].map(M))}" fill="${Tm.ledBrilho}" opacity=".35" filter="url(#ev-led${U})"/>`;

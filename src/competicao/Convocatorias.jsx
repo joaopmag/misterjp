@@ -459,17 +459,6 @@ export function ConvocatoriaModal({ convocatoria, players: playersAtivosDaConv, 
   const suplentes = f.convocados.slice(TITULARES, MAX_CONVOCADOS);
   const excedentes = f.convocados.slice(MAX_CONVOCADOS);
 
-  const toggleConvocado = (pid) => {
-    const inList = f.convocados.includes(pid);
-    const next = inList ? f.convocados.filter(id => id !== pid) : [...f.convocados, pid];
-    // Tirar um jogador da lista tira-lhe também a braçadeira.
-    setF({
-      ...f,
-      convocados: next,
-      capitao: next.includes(f.capitao) ? f.capitao : undefined,
-      subcapitao: next.includes(f.subcapitao) ? f.subcapitao : undefined,
-    });
-  };
 
   /* Braçadeiras do JOGO (ver CAPTAIN_RANKS para a hierarquia do plantel).
      Um clique atribui, outro tira; o capitão e o subcapitão nunca podem

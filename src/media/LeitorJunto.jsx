@@ -443,7 +443,7 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
     if (mem && mem.lista && mem.lista.length) return mem.lista;
     const loc = lerCompilacoes(chave); return loc.length ? loc : lerCompilacoes(`${chave}:servidor`);
   });
-  const [carregado, setCarregado] = useState(false);
+  const [, setCarregado] = useState(false);
   /* O estado dos MP4 da última vez (neste aparelho): ao voltar a abrir, os
      cartões mostram logo "o MP4 falhou" / "MP4 pronto", em vez de piscar
      (vazio → texto) quando a resposta do servidor chega. */
@@ -634,12 +634,6 @@ export function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, 
     guardarLocal(lista.filter(x => x.id !== v.id));
   };
   const alternar = (id) => setEditar(e => ({ ...e, ids: e.ids.includes(id) ? e.ids.filter(x => x !== id) : [...e.ids, id] }));
-  const mover = (i, d) => setEditar(e => {
-    const ids = [...e.ids]; const j = i + d;
-    if (j < 0 || j >= ids.length) return e;
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-    return { ...e, ids };
-  });
   const btnIcone = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, display: 'inline-flex' };
   /* PARTILHAR: no telemóvel abre a folha de partilha do sistema (WhatsApp,
      Instagram, Mensagens, Guardar…); no computador copia o link. O link

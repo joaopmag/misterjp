@@ -76,24 +76,6 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
      lugares — a partir do décimo segundo escolhido, os seguintes ficam
      suplentes, e qualquer troca continua a fazer-se no botão
      Titular/Suplente da linha do jogador. */
-  const toggleConvocado = (pid) => {
-    const inList = f.convocados.includes(pid);
-    if (inList) {
-      const report = { ...f.report }; delete report[pid];
-      setF({
-        ...f, convocados: f.convocados.filter(id => id !== pid), starters: f.starters.filter(id => id !== pid), report,
-        // Tirar alguém dos convocados também lhe tira a braçadeira, se a
-        // tivesse — não pode continuar capitão de um jogo para o qual já
-        // não está convocado.
-        capitao: f.capitao === pid ? undefined : f.capitao,
-        subcapitao: f.subcapitao === pid ? undefined : f.subcapitao,
-      });
-    } else {
-      const convocados = [...f.convocados, pid];
-      const promover = f.starters.length < 11;
-      setF({ ...f, convocados, starters: promover ? [...f.starters, pid] : f.starters });
-    }
-  };
   const toggleStarter = (pid) => {
     const isStarter = f.starters.includes(pid);
     setF({ ...f, starters: isStarter ? f.starters.filter(id => id !== pid) : [...f.starters, pid] });
@@ -181,17 +163,6 @@ export function MatchModal({ match, players: playersAtivosDoJogo, standings, sea
   // tempo. Fica aqui também (não só na convocatória formal) porque
   // muitos jogos são geridos só por aqui, sem nunca abrir a outra
   // página — sem isto, não havia como escolher capitão nesses jogos.
-  const setBracadeira = (pid, papel) => {
-    setF(prev => {
-      const outro = papel === 'capitao' ? 'subcapitao' : 'capitao';
-      const jaTem = prev[papel] === pid;
-      return {
-        ...prev,
-        [papel]: jaTem ? undefined : pid,
-        [outro]: prev[outro] === pid ? undefined : prev[outro],
-      };
-    });
-  };
   const setReport = (pid, field, val) => {
     setF(prev => {
       const novo = { ...prev, report: { ...prev.report, [pid]: { ...(prev.report[pid] || {}), [field]: val } } };

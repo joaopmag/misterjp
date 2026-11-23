@@ -5,7 +5,6 @@ import { T, body, FONTS, TEMA_ATUAL } from '../base/tema';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { todayStr } from '../base/utilidades';
-import { equipaGuardada } from '../base/equipaGuardada';
 import { PortalEntrada, tirarPrebusca } from './PortalEntrada';
 import { CHECKIN_DAYS_BACK } from './janelas';
 import { CheckinKiosk } from './CheckinKiosk';

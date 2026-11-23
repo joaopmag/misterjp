@@ -1,112 +1,72 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal, flushSync } from 'react-dom';
-import ReactDOMServer from 'react-dom/server';
+import { createPortal } from 'react-dom';
 // JSZip — abre/fecha o .xlsx como o que ele realmente é por dentro (um
 // .zip com XML lá dentro). É isto que permite mudar só o texto exato
 // de uma célula sem reescrever — e sem estragar — o ficheiro inteiro
 // (cores, brasões, estilos). Precisa de `npm install jszip`.
-import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
-  FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
-  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
-  MODELOS_CALIBRACAO, matrizDaCalibracao, inverterH, aplicarH, planoDaCalibracao,
-  validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
-  pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
-  podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
   TAGS_ANALISE, ehNossaEquipa, ehCorteYoutube, formasParaPausas,
 } from './AnalisadorVideo';
 import { QUOTA_JOGOS_GB_OMISSAO, espacoJogosUsado, formatarGB } from './media/retencao';
-import {
-  ZoomIn, Info, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
-  Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
-  Moon, Sun, Printer, TrendingUp, Trophy,
-  Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
-  ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Facebook, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
-  Video, Repeat, Calendar, Bell, Lock,
-  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag, ZoomOut, Film,
-  Target, Pin,
+import { Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X,
+  Pencil, ChevronRight, ChevronDown, Check, Loader2, Clock, TrendingUp, Trophy,
+  Search, UserCheck, Download, Upload, Tv, Maximize2, Minimize2, ClipboardList, BookOpen, Play, RefreshCw, LogOut, Presentation, FileText, Lightbulb, Stethoscope, FileSpreadsheet, Shield, PartyPopper, ListOrdered, ArrowRight, PenTool, Scissors, Pause, RotateCcw,
+  Video,
 } from 'lucide-react';
 // Base movida para src/base/ (divisão do App.jsx, passo 1).
-import { COR_SEM_EQUIPA, FONTS, IconeTema, ROTULO_TROCA_TEMA, T, TEMA_ATUAL, TEXT_ON_ACCENT, T_ESCURO, body, display, mono, trocarTema } from './base/tema';
-import { ACTIVITY_LABELS, addDays, escapeHtmlText, fmtDate, fmtShort, formatShortDatePt, semAcentos, timeAgo, toLocalISODate, todayStr, uid } from './base/utilidades';
-import { BotaoTopo, Btn, ConfirmDialog, EmptyState, FIELD_FULL, FIELD_GRID, Field, Input, Modal, Panel, SectionHeader, Select, TextArea, UNDO_SECONDS, UndoBar, askConfirm, definirModalHandoff, herdarOuEmpurrarMarca, inputStyle, itemLabel, modalHandoffAtivo, offerUndo, removeWithUndo, trocarJanela, undoHandler, useIsMobile, useModalHistory } from './base/ui';
-import { BannerRascunho, SyncErrorBanner, ensureSession, jsonEstavel, loadSingleton, saveSingleton, useCollectionSync, useRascunho, useSingletonSync } from './base/sincronizacao';
+import { COR_SEM_EQUIPA, FONTS, IconeTema, ROTULO_TROCA_TEMA, T, TEMA_ATUAL, TEXT_ON_ACCENT, body, display, mono, trocarTema } from './base/tema';
+import { ACTIVITY_LABELS, addDays, fmtDate, formatShortDatePt, semAcentos, timeAgo, toLocalISODate, todayStr, uid } from './base/utilidades';
+import { BotaoTopo, Btn, ConfirmDialog, EmptyState, Field, Input, Modal, Panel, SectionHeader, Select, UndoBar, askConfirm, definirModalHandoff, offerUndo, trocarJanela, useIsMobile, useModalHistory } from './base/ui';
+import { SyncErrorBanner, ensureSession, jsonEstavel, loadSingleton, saveSingleton, useCollectionSync, useSingletonSync } from './base/sincronizacao';
 // Tático, domínio e base (divisão do App.jsx, passo 2): src/tatico/, src/dominio/, src/base/.
-import { momentoTexto, momentosDe, temMomento } from './dominio/treino';
-import { NIVEIS_CLINICOS, estadoClinicoEm, nivelClinico, nivelNoDia, ordenarEvolucao, resumoClinico } from './dominio/clinico';
-import { FRIENDLY, competitionLabel, isFriendlyMatch, jogoRealDaSessao } from './dominio/jogos';
-import { esperarImagensDoStorage, imprimirComNome } from './base/impressao';
-import { useArrastarParaTrocar } from './base/arrastar';
+import { competitionLabel, jogoRealDaSessao } from './dominio/jogos';
 import { QuadroTaticoLivre } from './tatico/QuadroTaticoLivre';
-import { FORMACOES, LAYOUT_FORMACAO, Simulador, distribuirOnzeNoCampo, preencherPorFamilia, rotuloDoLugar, tamanhoDaFormacao } from './tatico/Simulador';
-import { P, TATICAS, TATICA_OMISSAO, TreinosParaEditorCtx, distribuirPlantel } from './tatico/prancheta';
-import { DiagramElements, EDITOR_BOX, EDITOR_VIEWBOX, ESTICAR_IMPRESSAO_MEIO, PITCH_ASPECT, PITCH_BOX, PITCH_FIT, PitchMarkings, SpaceZone, TEAMS, VistaCampo, aspetoSemBancos, buildAnimationChainsPure, iconScaleForPhase, nextKeeperNumber, parsePlayersCount, planearCoreografiaAnim, stepElements, stepStaticArrows, viewBoxSemBancos } from './tatico/campo';
-import { AnimOverlay, DiagramEditor } from './tatico/DiagramEditor';
-import { POSITIONS, PlayerChipList, convidadosDe, firstNameOf, lastNameOf, shortFullName, shortPlayerName, sortByPosition } from './dominio/jogadores';
+import { distribuirOnzeNoCampo } from './tatico/Simulador';
+import { TATICA_OMISSAO, TreinosParaEditorCtx } from './tatico/prancheta';
+import { firstNameOf, shortPlayerName, sortByPosition } from './dominio/jogadores';
 // Biblioteca de média e anexos (divisão do App.jsx, passo 3): src/media/, src/base/.
-import { UrlAnexo, ficheiroParaAnexo, fileToPhotoDataUrl, hrefDescarga } from './base/anexos';
-import { KIOSK_VOLTAR_INTERNO, useKioskVoltar } from './base/kiosk';
 import { MediaLibrary } from './media/MediaLibrary';
 import { FichaAdversarioRapida } from './media/acoes';
-import { ControlosLupa, INSTAGRAM_SANDBOX, MediaFeedItem, URL_PUBLICA_APP, VideoComBarra, detectSocialEmbed, fmtMMSS, parseYouTubeId, socialEmbedSrc, socialExternalUrl, useLupa } from './media/social';
-import { AttachmentPreview, PdfCanvasViewer, loadPdfJs, useBlobUrl } from './media/leitores';
-import { MAX_CLIPE_ATLETA_SEG, cleanFolder, ehClipe, fichaDaEquipa, fichaRepetida, idFichaAutomatica, numDoJogo } from './media/organizacao';
+import { VideoComBarra, detectSocialEmbed, fmtMMSS, parseYouTubeId } from './media/social';
+import { cleanFolder, ehClipe, fichaDaEquipa, fichaRepetida, idFichaAutomatica } from './media/organizacao';
 import { LeitorJunto } from './media/LeitorJunto';
 // Competição (divisão do App.jsx, passo 4): src/competicao/ e partilhados em src/dominio/, src/base/, src/tatico/.
-import { NotasDoJogo, TODOS_OS_JOGADORES, comQuemLaEsteve, escalacaoDoJogo, escalacaoNovaFormacao, jogosDeCastigo } from './competicao/Escalacao';
-import { buildShareableHtmlDoc, shareOrDownloadHtml } from './base/partilha';
-import { dayPresent, dayRating, groupSessionsByDate, playerStats } from './dominio/estatisticas';
-import { AlertaRelatorios, PREF_MISSAO_RELATORIOS, consumirMissaoPendente, haMissaoDeRelatorios, missaoPendente, notasDoJogo, pedirNovaMissao, relatoriosEmFalta } from './competicao/RelatoriosJogo';
-import { LegendaZonas, activeCompetitionOf, competitionTable, ensureMatchSession, estiloZona, limparEquipaDuplicada, normalizeStandings, parseScore, podarPresencasForaDosConvocados, syncCompetitionConvocatorias, syncCompetitionMatches, syncMatchConvocatoria } from './competicao/dados';
-import { CAPTAIN_LABEL, CHECKIN_CODE_LEN, CaptainArmband, LINHAS, genPlayerCode } from './dominio/plantel';
-import { ListaMultipla, SubTabs, ToggleBtn, irParaSeparador } from './base/ui-extra';
+import { TODOS_OS_JOGADORES } from './competicao/Escalacao';
+import { notasDoJogo } from './competicao/RelatoriosJogo';
+import { LegendaZonas, activeCompetitionOf, competitionTable, ensureMatchSession, estiloZona, limparEquipaDuplicada, normalizeStandings, podarPresencasForaDosConvocados, syncCompetitionConvocatorias, syncCompetitionMatches, syncMatchConvocatoria } from './competicao/dados';
+import { LINHAS, genPlayerCode } from './dominio/plantel';
+import { SubTabs } from './base/ui-extra';
 import { StandingsModal } from './competicao/Classificacao';
-import { ConvidadosEditor, SelectAllBar, integrarConvidado, nomesDosConvidados } from './dominio/convidados';
-import { jogoNaoJogado, jogosSemEstatisticas } from './dominio/estadoJogos';
-import { EquipaEmColunasPrint, FichaJogo, PrintFichaJogo, buildMatchShareHtml } from './competicao/FichaJogo';
-import { ASPECT_CAMPO_PRINT, MarcacoesCampoPrint, VIEWBOX_CAMPO_PRINT, campoDaEquipaHtml, equipaDoAmigavel, equipaEmColunasHtml, posCampoPrint } from './tatico/impressaoCampo';
+import { jogosSemEstatisticas } from './dominio/estadoJogos';
 import { MatchModal } from './competicao/MatchModal';
 import { Jogos } from './competicao/Jogos';
 // Treino (divisão do App.jsx, passo 5): src/treino/, src/plantel/ e partilhados.
-import { SessionModal, dayLabel } from './treino/SessionModal';
-import { DiagramThumb, DiagramThumbAnimado } from './treino/diagramas';
-import { EXERCISE_PHASES, GRUPOS_POSICAO_PRINT, PHASES, ideiaNoPlano, intensityText, planoProximoJogo, useFecharSemSaltar } from './treino/comum';
+import { SessionModal } from './treino/SessionModal';
+import { ideiaNoPlano, planoProximoJogo, useFecharSemSaltar } from './treino/comum';
 import { IdeiaJogo } from './treino/IdeiaJogo';
-import { ESTILO_BOTAO_PEQUENO, EditorPrancheta, ICONE_BOTAO_PEQUENO, PrancheteDoPlantel } from './plantel/Prancheta';
-import { Planeamento, getMonday } from './treino/Planeamento';
-import { useDetailBack } from './base/historico';
-import { ExercisePresentation } from './treino/ExercisePresentation';
+import { Planeamento } from './treino/Planeamento';
 import { RELATO_ACOES, RelatoCampo, ddmm, isoDia, relatoCampoLabel } from './dominio/relato';
-import { ChipBtn } from './base/botoes';
 import { Exercicios } from './treino/Exercicios';
 // Plantel (divisão do App.jsx, passo 6): src/plantel/, src/atleta/ e partilhados.
-import { MESES_PT, offerAviso, wellnessAvg } from './plantel/comum';
+import { wellnessAvg } from './plantel/comum';
 import { Monitorizacao } from './plantel/Monitorizacao';
-import { BigButton, RpeWizard, WellnessWizard, csvEscape } from './atleta/questionarios';
-import { RODAPE_MENSAGEM_SISTEMA, linkWhatsApp, semEmojis } from './dominio/mensagens';
 import { Presencas } from './plantel/Presencas';
 import { BoletimClinico } from './plantel/Clinico';
-import { diaAutoLesionado, proximoDiaIso, recalcularOcorrencia } from './plantel/clinicoDados';
-import { DI_DIMENSOES, DI_INDICADORES, DesenvolvimentoIndividual, DiQuestionario, diRespondido, diScoreGlobal } from './plantel/Desenvolvimento';
-import { PlayerModal, age } from './plantel/PlayerModal';
-import { MOBILE_BAR_H, PhotoField } from './base/fotos';
-import { COR_CARTAO, MiniCartao, chaveDoTipo, faltaDoAtleta } from './dominio/faltas';
+import { proximoDiaIso } from './plantel/clinicoDados';
+import { DesenvolvimentoIndividual } from './plantel/Desenvolvimento';
+import { PlayerModal } from './plantel/PlayerModal';
+import { MOBILE_BAR_H } from './base/fotos';
 import { Plantel } from './plantel/Plantel';
-import { STATUS_OPTIONS, avaliacaoBaseDoJogador, estatutoDaAvaliacao } from './plantel/avaliacao';
+import { STATUS_OPTIONS } from './plantel/avaliacao';
 // Scouting, Adversários, Tarefas, Diário e Gestão de equipa (divisão do App.jsx, passo 7).
 import { DocumentosApp, MARCA_APP } from './gestao/documentos';
 import { GestaoEquipa } from './gestao/GestaoEquipa';
-import { CHAVE_EQUIPA, GENEROS, corDoMembro, gravarGeneroMembro, gravarTelefoneMembro, registarCoresMembros, selecionarMembros, telefoneValido } from './gestao/membros';
+import { GENEROS, corDoMembro, gravarGeneroMembro, gravarTelefoneMembro, registarCoresMembros, selecionarMembros, telefoneValido } from './gestao/membros';
 import { CRITERIO_STAFF, caminhoStaff, caminhoVerificavel } from './tarefas/missoesRegras';
-import { CTX_TAREFAS_EXTRA, aniversariantesEm, avisaCriadorAoConcluir, conclusaoPorVerPara, destinoMissao, eSemanal, inferirDestinoMissao, jogosParaFichaAdversario, jogosSemIdeias, listaComE, prazoTexto, semanaisPendentes, tarefaAtivaHoje, tarefaFeitaHoje } from './tarefas/regras';
-import { isBirthdayToday } from './dominio/aniversarios';
+import { CTX_TAREFAS_EXTRA, aniversariantesEm, avisaCriadorAoConcluir, conclusaoPorVerPara, eSemanal, jogosParaFichaAdversario, jogosSemIdeias, listaComE, prazoTexto, semanaisPendentes, tarefaAtivaHoje, tarefaFeitaHoje } from './tarefas/regras';
 import { Tarefas } from './tarefas/Tarefas';
 import { Diario } from './diario/Diario';
-import { RATING_LEVELS } from './scouting/comum';
 import { useSubColecao } from './base/subcolecao';
 import { Scouting } from './scouting/Scouting';
 // Atleta: Portal, Check-in e Cacifo (divisão do App.jsx, passo 8).
@@ -115,13 +75,6 @@ import { CheckinKiosk } from './atleta/CheckinKiosk';
 import { splitCompetitionName } from './base/formatos';
 import { CheckinApp } from './atleta/CheckinApp';
 import { ErrorBoundary, useEcraLigadoEmVideo, useAtualizacaoAutomatica } from './base/raiz';
-
-
-// Sugestão para o 2.º momento: a transição a seguir ao momento dominante.
-const SEGUNDO_MOMENTO_SUGERIDO = {
-  'Organização Ofensiva': 'Transição Defensiva', 'Transição Defensiva': 'Organização Defensiva',
-  'Organização Defensiva': 'Transição Ofensiva', 'Transição Ofensiva': 'Organização Ofensiva',
-};
 
 
 /* Endereços antigos (#simulador, #convocatorias, #videos, #apresentacoes)
@@ -136,7 +89,7 @@ const tabValida = (id) => TABS_ANTIGAS[id] || id;
    STORAGE HELPERS
 ---------------------------------------------------------------- */
 import { supabase } from './supabaseClient';
-import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE, staffBioDisponivel, staffBioEstado, staffBioAtivar, staffBioDesativar, staffReporPalavraPasse, FUNCOES_STAFF, BIO_TXT } from './AuthScreen.jsx';
+import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE } from './AuthScreen.jsx';
 
 
 /* Plano da sincronização Análise de Vídeo → fichas (ver o efeito em App). */
@@ -222,7 +175,6 @@ function planoSincronizacaoFichas(videos, clipes, adversarios, nomeNossaEquipa) 
 }
 
 function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMudaram }) {
-  const userId = session.user.id;
   const userEmail = session.user.email;
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
@@ -1045,7 +997,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      "Cannot access before initialization" e a app inteira parava, sem
      pista de onde. Ficam aqui, encostados a quem os usa. */
   const euId = session && session.user && session.user.id;
-  const { membros, recarregar: recarregarMembros } = useMembros(teamId);
+  const { membros } = useMembros(teamId);
 
   /* O QUE A PORTA DA EQUIPA TÉCNICA MOSTRA ANTES DE HAVER SESSÃO (nome,
      clube, cor, emblema, formação do último jogo), guardado neste
@@ -3714,33 +3666,6 @@ function Stat({ value, label }) {
 }
 
 
-function WellnessSummary({ players, monitoring }) {
-  const latestByPlayer = players.map(p => {
-    const recs = monitoring.filter(m => m.playerId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
-    const wellnessRec = recs.find(r => typeof r.sono === 'number');
-    const rpeRec = recs.find(r => typeof r.pse === 'number');
-    return { player: p, wellnessRec, rpeRec };
-  }).filter(x => x.wellnessRec || x.rpeRec);
-
-  if (latestByPlayer.length === 0) return <EmptyState text="Sem registos de monitorização ainda." />;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {latestByPlayer.slice(0, 6).map(({ player, wellnessRec, rpeRec }) => {
-        const avg = wellnessAvg(wellnessRec);
-        const color = avg === null ? T.mutedDim : avg >= 4 ? T.good : avg >= 2.5 ? T.warn : T.bad;
-        return (
-          <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-            <div style={{ fontSize: 13.5, color: T.cream, flex: 1 }}>{player.name}</div>
-            <div style={{ ...mono, fontSize: 12, color: T.mutedDim }}>{rpeRec ? `PSE ${rpeRec.pse}` : '—'}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* Recolhe o estatuto principal (statusMain) de cada jogador do plantel e
    mostra a distribuição, da hierarquia mais alta para a mais baixa, com
    uma barra proporcional ao peso de cada estatuto no plantel. */
@@ -3752,16 +3677,6 @@ const STATUS_SUMMARY_COLORS = {
   'Dispensável': T.bad,
 };
 
-
-/* Nome curto para tabelas estreitas: primeiro nome + inicial do apelido.
-   O apelido entra porque só o primeiro nome cria ambiguidades no plantel
-   (dois "Martim", dois "João"). */
-function firstNameInitial(name) {
-  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '—';
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
-}
 
 function matrixPoints(players, monitoring) {
   const end = todayStr();
@@ -4045,25 +3960,6 @@ function WellnessLoadMatrix({ players, monitoring }) {
   );
 }
 
-/* Lista de jogadores em "chips" (presenças da sessão, convocados do jogo e
-   da convocatória). No telemóvel fica uma linha por jogador — lado a lado
-   os nomes longos partiam-se e a lista ficava desalinhada. Mostra sempre a
-   posição, nunca o número, e vem ordenada por posição. */
-/* Partilhar / Imprimir / Editar no topo das fichas. No telemóvel os
-   botões encolhem para caberem os três na mesma linha, em vez de o
-   terceiro cair sozinho para baixo. */
-function SheetActions({ onShare, onPrint, onEdit }) {
-  const isMobile = useIsMobile(560);
-  const st = isMobile ? { padding: '8px 10px', fontSize: 12.5, flex: 1, justifyContent: 'center' } : {};
-  return (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
-      {onShare && <Btn variant="ghost" onClick={onShare} style={st}><Share2 size={14} /> Partilhar</Btn>}
-      {onPrint && <Btn variant="ghost" onClick={onPrint} style={st}><Printer size={14} /> Imprimir</Btn>}
-      {onEdit && <Btn variant="ghost" onClick={onEdit} style={st}><Pencil size={14} /> Editar</Btn>}
-    </div>
-  );
-}
-
 
 function PlantelStatusSummary({ players, compacto = false }) {
   const total = players.length;
@@ -4101,107 +3997,6 @@ function PlantelStatusSummary({ players, compacto = false }) {
 }
 
 
-/* Escolher o que entra. Por omissão entra tudo — é o caso comum, e quem
-   quiser um dossier parcial desmarca o que não quer em vez de marcar
-   dezenas. */
-function DossierModal({ ideias, onClose, onImprimir }) {
-  const [escolhidas, setEscolhidas] = useState(() => new Set(ideias.map(i => i.id)));
-
-  const porFase = PHASES
-    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
-    .filter(g => g.lista.length);
-  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
-  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
-
-  const alternar = (id) => setEscolhidas(prev => {
-    const n = new Set(prev);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-  const alternarFase = (lista) => setEscolhidas(prev => {
-    const n = new Set(prev);
-    const todas = lista.every(i => n.has(i.id));
-    lista.forEach(i => (todas ? n.delete(i.id) : n.add(i.id)));
-    return n;
-  });
-
-  const total = escolhidas.size;
-
-  return (
-    <Modal title="Dossier de ideias de jogo" subtitle="O modelo de jogo num documento só." onClose={onClose} wide xwide fullPage>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <Btn variant="ghost" onClick={() => setEscolhidas(new Set(ideias.map(i => i.id)))}>Todas</Btn>
-        <Btn variant="ghost" onClick={() => setEscolhidas(new Set())}>Nenhuma</Btn>
-        <span style={{ ...mono, fontSize: 12, color: T.mutedDim, alignSelf: 'center', marginLeft: 'auto' }}>
-          {total} de {ideias.length}
-        </span>
-      </div>
-
-      <div style={{ maxHeight: '52vh', overflowY: 'auto', overscrollBehavior: 'contain', paddingRight: 4 }}>
-        {porFase.map(({ fase, lista }) => (
-          <div key={fase} style={{ marginBottom: 16 }}>
-            <button
-              type="button"
-              onClick={() => alternarFase(lista)}
-              title="Marcar ou desmarcar esta fase toda"
-              style={{
-                display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
-                background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
-              }}
-            >
-              <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
-              <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => escolhidas.has(i.id)).length}/{lista.length}</span>
-              <span style={{ flex: 1, height: 1, background: T.line }} />
-            </button>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {lista.map(i => {
-                const on = escolhidas.has(i.id);
-                const passos = ((i.diagram && i.diagram.sequence) || []).length;
-                return (
-                  <button
-                    key={i.id}
-                    type="button"
-                    onClick={() => alternar(i.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left',
-                      padding: '10px 12px', borderRadius: 8, cursor: 'pointer', ...body,
-                      background: T.bg, border: `1px solid ${on ? '#B5393F' : T.line}`,
-                    }}
-                  >
-                    <span style={{
-                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                      background: on ? T.good : 'transparent',
-                      border: `1.5px solid ${on ? T.good : T.line}`,
-                      display: 'grid', placeItems: 'center',
-                    }}>{on && <Check size={11} style={{ color: '#0d140e' }} />}</span>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {(i.name && i.name.trim()) || i.phase || 'Ideia de jogo'}
-                    </span>
-                    {passos > 0 && (
-                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>
-                        {passos + 1} imagens
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onImprimir(ideias.filter(i => escolhidas.has(i.id)))} disabled={!total}>
-          <Printer size={15} /> Imprimir dossier
-        </Btn>
-      </div>
-    </Modal>
-  );
-}
-
-
 /* Mantém o Portal → Plano de Jogo = plano do próximo jogo. Só mexe no
    campo `visivelPlanoJogo` e só nas ideias em que ele está errado.
    Ideias antigas marcadas à mão (antes dos planos existirem) passam
@@ -4229,95 +4024,6 @@ function useSincronizarPlanoPortal(ideias, setIdeias, matches, pronto) {
     setIdeias(prev => prev.map(corrigir));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pronto, ideias, matches, dia]);
-}
-
-
-function pentagon(cx, cy, r) {
-  const pts = [];
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-    pts.push(`${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`);
-  }
-  return pts.join(' ');
-}
-
-/* Pequenas cunhas escuras à volta do pentágono central, para uma
-   bola com mais gomos, mais próxima de uma bola real. */
-function ballPanels(cx, cy, r) {
-  const panels = [];
-  for (let i = 0; i < 5; i++) {
-    const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5 + Math.PI / 5;
-    const outer = r * 0.98, inner = r * 0.5, spread = 0.34;
-    const p1 = [cx + inner * Math.cos(a - spread), cy + inner * Math.sin(a - spread)];
-    const p2 = [cx + outer * Math.cos(a), cy + outer * Math.sin(a)];
-    const p3 = [cx + inner * Math.cos(a + spread), cy + inner * Math.sin(a + spread)];
-    panels.push(`${p1[0].toFixed(2)},${p1[1].toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)} ${p3[0].toFixed(2)},${p3[1].toFixed(2)}`);
-  }
-  return panels;
-}
-
-
-/* Campo à escala real de um relvado de futebol de 11: 105 × 68 m
-   (1 unidade do SVG = 1 metro). Marcações nas medidas oficiais:
-   círculo central 9.15 m de raio, grande área 16.5×40.32 m,
-   pequena área 5.5×18.32 m, baliza com 7.32 m de largura. */
-/* Rede de uma baliza — grelha de linhas finas dentro do retângulo da
-   baliza, para dar profundidade em vez de um simples contorno vazio. */
-function GoalNet({ x, y, w, h, color }) {
-  const cols = 5, rows = 4;
-  const lines = [];
-  for (let i = 1; i < cols; i++) {
-    const gx = x + (w * i) / cols;
-    lines.push(<line key={`v${i}`} x1={gx} y1={y} x2={gx} y2={y + h} stroke={color} strokeWidth="0.06" opacity="0.55" />);
-  }
-  for (let j = 1; j < rows; j++) {
-    const gy = y + (h * j) / rows;
-    lines.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={color} strokeWidth="0.06" opacity="0.55" />);
-  }
-  return <>{lines}</>;
-}
-
-
-/* Altura em percentagem da largura — é o truque do "padding-top" que
-   reserva o espaço certo antes de o SVG carregar. Calculado a partir do
-   enquadramento para nunca poder ficar dessincronizado dele: era um dos
-   sítios que ficava para trás quando o viewBox mudava à mão. */
-const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
-
-
-/* ----------------------------------------------------------------
-   EVOLUÇÃO ENTRE MOMENTOS
----------------------------------------------------------------- */
-function diEvolucao(registoA, registoB, fonte = 'staff') {
-  const a = diScoreGlobal(registoA && registoA[fonte]);
-  const b = diScoreGlobal(registoB && registoB[fonte]);
-  const dims = DI_DIMENSOES.map(d => {
-    const ma = a.medias[d.id].media;
-    const mb = b.medias[d.id].media;
-    return {
-      dim: d.id, label: d.label, antes: ma, depois: mb,
-      delta: (ma == null || mb == null) ? null : mb - ma,
-    };
-  });
-  return {
-    global: { antes: a.score, depois: b.score, delta: (a.score == null || b.score == null) ? null : b.score - a.score },
-    dimensoes: dims,
-  };
-}
-
-
-function groupByWeek(sessions) {
-  const sorted = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
-  const groups = {};
-  sorted.forEach(s => {
-    const d = new Date(s.date + 'T00:00:00');
-    const monday = new Date(d);
-    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const key = `Semana de ${monday.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })}`;
-    groups[key] = groups[key] || [];
-    groups[key].push(s);
-  });
-  return groups;
 }
 
 
@@ -4364,68 +4070,6 @@ function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje, d
     d = addDays(d, -1);
   }
   return { dias, inicio: dias > 0 ? addDays(comecaEm, -(dias - 1)) : null, fim: dias > 0 ? comecaEm : null };
-}
-
-
-function dayOfMonth(dateStr) {
-  return new Date(dateStr + 'T00:00:00').getDate();
-}
-
-
-// Recolhe todos os anexos em PDF dos exercícios de uma ou mais sessões.
-// Um PDF é o próprio documento — não dá para "embutir" na folha de
-// impressão da app, por isso cada um é aberto e impresso à parte.
-function collectPdfAttachments(sessionsArr, exercises) {
-  const out = [];
-  (sessionsArr || []).forEach(s => (s.exerciseIds || []).forEach(e => {
-    const ex = exercises.find(x => x.id === e.exId);
-    if (ex?.attachment?.type === 'pdf') out.push(ex.attachment);
-  }));
-  return out;
-}
-// Abre cada PDF anexado numa aba própria e despoleta a impressão do
-// browser para cada um, com um pequeno desfasamento entre eles para não
-// serem todos bloqueados de uma vez como popups.
-function openAndPrintPdfSequential(attachments) {
-  (attachments || []).forEach((att, i) => {
-    setTimeout(() => {
-      const w = window.open(att.dataUrl, '_blank');
-      if (w) {
-        let jaImprimiu = false;
-        const tryPrint = () => {
-          if (jaImprimiu) return;
-          jaImprimiu = true;
-          try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ }
-        };
-        // O `onload` da aba raramente dispara para um PDF em data URL (o
-        // visualizador nativo do browser não é a mesma coisa que carregar
-        // uma página) — por isso o tempo de reserva abaixo é que faz o
-        // trabalho a sério na maioria dos casos. 800ms era pouco para um
-        // PDF maior ou um telemóvel mais lento: a impressão disparava
-        // antes de haver alguma coisa desenhada, e via-se a aba em branco.
-        w.onload = () => setTimeout(tryPrint, 500);
-        setTimeout(tryPrint, 1800);
-      }
-    }, 900 * i);
-  });
-}
-
-
-function cardBadge(card) {
-  if (!card || card === 'none') return null;
-  const map = {
-    yellow: { bg: '#C9A227', label: 'A' },
-    yellow2: { bg: '#C9A227', label: '2A' },
-    red: { bg: '#A83E3E', label: 'V' },
-  };
-  const c = map[card];
-  if (!c) return null;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 18,
-      borderRadius: 2, background: c.bg, color: TEXT_ON_ACCENT, fontSize: 9, fontWeight: 700, ...mono,
-    }}>{c.label}</span>
-  );
 }
 
 
@@ -4559,10 +4203,6 @@ function limparJogosDuplicados(matches) {
 }
 
 
-// Mantido por compatibilidade com dados antigos que já usavam esta escala.
-const POTENTIAL_LEVELS = RATING_LEVELS.map(r => ({ value: r.value, label: r.label }));
-
-
 /* =====================================================================
    SCOUTING › NECESSIDADES DA EQUIPA — módulo NOVO e ISOLADO.
 
@@ -4681,8 +4321,6 @@ function nomesEquipasCompeticao(standings) {
    igual à agenda semanal do Planeamento, com cada tarefa no seu dia e as
    que se repetem todas as semanas no dia delas. Ver a nota junto de
    `TarefasCalendario`. */
-
-const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
 
 
 /* O número do badge: TODAS as tarefas atribuídas a mim (ou sem
