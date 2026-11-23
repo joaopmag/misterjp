@@ -8,8 +8,8 @@ import { supabase } from '../supabaseClient';
 import { MediaLibrary } from '../media/MediaLibrary';
 import { preCarregarJuntos } from '../media/LeitorJunto';
 import { hashCurto } from './portalRpc';
-import { apagarMp4DoVideo, pedirMp4DoVideo, urlDoServicoVideo } from '../media/videoJunto';
 import { clipeAtletaParaCanal, ERROS_CLIPE_ATLETA, memoriaPortalBib, pedirSala } from './salaDados';
+import { criarApiMeusVideos } from './apiMeusVideos';
 
 export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   /* Miniaturas: as que já estavam carregadas (cache do browser) ficam
@@ -136,52 +136,9 @@ export function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
     if (onClipeCriado) onClipeCriado(titulo, jogoDoClipe);
   };
 
-  /* OS MEUS VÍDEOS no servidor (ver os_meus_videos.sql). Cada função
-     devolve os dados ou lança um erro; quem chama (CompilacoesAtleta)
-     decide o que mostrar. */
-  const compilacoesApi = React.useMemo(() => ({
-    ler: async () => {
-      const { data, error } = await supabase.rpc('checkin_meus_videos', { p_code: code, p_team: teamId });
-      if (error) throw error;
-      const d = lerJson(data);
-      if (!d) throw new Error('codigo_invalido');
-      return (d.videos || []).filter(Boolean);
-    },
-    guardar: async ({ id, nome, ids }) => {
-      const { data, error } = await supabase.rpc('checkin_video_guardar', { p_code: code, p_team: teamId, p_id: id || '', p_nome: nome, p_ids: ids });
-      if (error) throw error;
-      const d = lerJson(data);
-      if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
-      return d.video;
-    },
-    partilhar: async (id) => {
-      const { data, error } = await supabase.rpc('checkin_video_partilhar', { p_code: code, p_team: teamId, p_id: id });
-      if (error) throw error;
-      const d = lerJson(data);
-      if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
-      return d.codigo;
-    },
-    apagar: async (id) => {
-      const { data, error } = await supabase.rpc('checkin_video_apagar', { p_code: code, p_team: teamId, p_id: id });
-      if (error) throw error;
-      const d = lerJson(data);
-      if (d && !d.ok && d.erro !== 'video_invalido') throw new Error(d.erro || 'erro');
-    },
-    /* MP4 feito no servidor (ver media/videoJunto.js). Sem o serviço de
-       vídeo configurado, não há: o Descarregar grava no browser. */
-    ...(urlDoServicoVideo() ? {
-      ficheiros: async () => {
-        const { data, error } = await supabase.rpc('checkin_video_ficheiros', { p_code: code, p_team: teamId });
-        if (error) throw error;
-        const d = lerJson(data);
-        if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
-        return (d.videos || []).filter(Boolean);
-      },
-      prepararMp4: (id) => pedirMp4DoVideo(code, teamId, id),
-      apagarMp4: (id) => apagarMp4DoVideo(code, teamId, id),
-    } : {}),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [code, teamId]);
+  /* OS MEUS VÍDEOS no servidor: a API vive em salaDados.js (também a usa o
+     acesso depois da saída, VideosAposSaida.jsx). */
+  const compilacoesApi = React.useMemo(() => criarApiMeusVideos(code, teamId), [code, teamId]);
   // Os vídeos juntos pedem-se logo ao abrir a Sala do Portal (ver preCarregarJuntos).
   const chaveCompilacoesPortal = `misterjp:compilacoes:${teamId}:${hashCurto(String(code || ''))}`;
   useEffect(() => { if (code && teamId) preCarregarJuntos(chaveCompilacoesPortal, compilacoesApi); }, [chaveCompilacoesPortal, compilacoesApi, code, teamId]);

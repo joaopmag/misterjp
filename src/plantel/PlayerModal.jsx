@@ -127,7 +127,7 @@ export function PlayerModal({ player, onClose, onSave }) {
           <Field label="Data de saída">
             <Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} />
             {/* RGPD (19/11): os vídeos pessoais apagam-se 30 dias depois (rgpd.js no video-worker). */}
-            {f.exitDate && <span style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>Os vídeos pessoais dele apagam-se 30 dias depois desta data. O resto do histórico fica.</span>}
+            {f.exitDate && <span style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>A partir desta data o Portal dele fecha. Durante 30 dias, com o PIN, só pode descarregar os vídeos dele; depois são apagados. O resto do histórico fica.</span>}
           </Field>
           <Field label="Nível inicial">
             <Select value={inicial.nivel || ''} onChange={e => mudarInicial('nivel', e.target.value ? Number(e.target.value) : '')}>

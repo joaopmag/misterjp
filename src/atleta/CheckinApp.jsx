@@ -2,12 +2,16 @@
 // Código movido do App.jsx tal como estava (divisão do App.jsx, ver docs/ESTADO.md).
 // Não mudar lógica aqui sem seguir as regras desse ficheiro.
 import { T, body, FONTS, TEMA_ATUAL } from '../base/tema';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { supabase } from '../supabaseClient';
 import { todayStr } from '../base/utilidades';
 import { PortalEntrada, tirarPrebusca } from './PortalEntrada';
 import { CHECKIN_DAYS_BACK } from './janelas';
 import { CheckinKiosk } from './CheckinKiosk';
+import { dentroDoPrazoDosVideos } from './salaDados';
+
+// Depois da saída do clube: só os vídeos do jogador, durante 30 dias.
+const VideosAposSaida = lazy(() => import('./VideosAposSaida'));
 
 // Ecrã do questionário (Wellness/RPE) para os atletas, acedido pelo link
 // partilhado (?checkin=1) — não passa pelo portão de login do treinador:
@@ -262,7 +266,10 @@ export function CheckinApp() {
       const d = await buscar(code);
       if (!d) { if (retomar) esquecerSessao(); return false; } // código não existe
       // Saiu do clube (Data de saída até hoje): o acesso ao Portal termina.
-      if (d.player && d.player.exitDate && d.player.exitDate <= todayStr()) {
+      // Durante 30 dias entra-se só nos vídeos dele (VideosAposSaida);
+      // depois disso os vídeos já foram apagados e a porta fecha.
+      const saiu = !!(d.player && d.player.exitDate && d.player.exitDate <= todayStr());
+      if (saiu && !dentroDoPrazoDosVideos(d.player.exitDate)) {
         esquecerSessao();
         if (!retomar) setErro('Este acesso terminou: o jogador já saiu do clube.');
         return 'saiu';
@@ -271,7 +278,7 @@ export function CheckinApp() {
         try { localStorage.setItem(chaveSessao, JSON.stringify({ c: code, ate: Date.now() + SESSAO_PORTAL_MS })); } catch (e) { /* sem memória: pede o PIN da próxima vez */ }
       }
       setCodigo(code);
-      setDados(d);
+      setDados(saiu ? { player: d.player, saiu: true } : d);
       return true;
     } catch (e) {
       if (retomar) { esquecerSessao(); return false; }
@@ -390,6 +397,12 @@ export function CheckinApp() {
     <>
       <PortalEntrada entrar={entrar} equipa={equipa} teamId={equipaDoLink} />
     </>
+  );
+
+  if (dados.saiu) return moldura(
+    <Suspense fallback={<div style={{ minHeight: '100vh' }} />}>
+      <VideosAposSaida code={codigo} teamId={equipaDoLink} player={dados.player} equipa={equipa} onSair={sair} />
+    </Suspense>
   );
 
   return moldura(

@@ -574,6 +574,17 @@ reduz o peso inicial da app e do Portal.
   a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
   mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
   reescreve a sessão e tudo volta a aparecer.
+- 23/11: VÍDEOS DEPOIS DA SAÍDA. Jogador com "Data de saída" passada: nos
+  30 dias seguintes (o video-worker apaga no 30.º, rgpd.js), ao entrar com
+  o PIN vê SÓ atleta/VideosAposSaida.jsx: "Os meus vídeos" com
+  Descarregar (MP4 do servidor), a data em que são apagados e "Juntar os
+  N clipes num vídeo". Depois dos 30 dias a porta fecha como antes.
+  Prazo em salaDados.js (DIAS_APOS_SAIDA, ultimoDiaDosVideos: bate com o
+  worker). A API de "Os meus vídeos" saiu de SalaVideo.jsx para
+  atleta/apiMeusVideos.js (partilhada; fora do arranque do Portal).
+  ATENÇÃO (antigo, não mudou): o bloqueio de quem saiu é só na app; as
+  funções checkin_* na base não olham para exitDate. Fechar na base é um
+  passo de SQL à parte.
 - 23/11: LIMPEZA DE CÓDIGO MORTO (sem mudanças visíveis). 718 linhas a
   menos em 23 ficheiros: ~250 importações sem uso no App.jsx (restos da
   divisão), 17 funções/componentes de topo nunca usados no App.jsx

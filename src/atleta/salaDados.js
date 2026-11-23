@@ -5,6 +5,7 @@ import { comMp4Proprio, MAX_CLIPE_ATLETA_SEG } from '../media/organizacao';
 import { formasParaPausas } from '../media/pausas';
 import { supabase } from '../supabaseClient';
 import { hashCurto } from './portalRpc';
+import { addDays, todayStr } from '../base/utilidades';
 
 /* Um clipe gravado por um jogador (tabela `video_clips`, origem
    'atleta') no formato de um corte do Canal — assim aparece dentro do
@@ -66,7 +67,7 @@ export const memoriaPortalBib = new Map();
    ficar à espera do servidor. Um pedido por código e equipa de cada vez;
    ao fim de 20 s volta a valer pedir. */
 const pedidosSala = new Map(); // chave -> { t, p }
-const lerJsonSala = (data) => {
+export const lerJsonSala = (data) => {
   let d = data;
   if (Array.isArray(d)) d = d[0];
   if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
@@ -116,3 +117,18 @@ export function aquecerSalaVideo(code, teamId) {
 export function aquecerCodigoDaSala() {
   try { import('./SalaVideo'); } catch (e) { /* sem rede: carrega ao abrir */ }
 }
+
+/* Os clipes do próprio jogador (sem os vídeos da equipa). */
+export async function lerMeusClipes(code, teamId) {
+  const { data, error } = await supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId });
+  if (error) throw error;
+  const d = lerJsonSala(data);
+  return ((d && d.clipes) || []).filter(c => c && (c.youtubeId || c.dataUrl)).map(clipeAtletaParaCanal);
+}
+
+/* DEPOIS DA SAÍDA DO CLUBE: os vídeos pessoais do jogador ficam 30 dias
+   (video-worker, rgpd.js, DIAS_APOS_SAIDA: têm de bater). O serviço apaga
+   no dia em que passam 30 dias; o último dia para descarregar é o 29.º. */
+export const DIAS_APOS_SAIDA = 30;
+export const ultimoDiaDosVideos = (exitDate) => addDays(String(exitDate).slice(0, 10), DIAS_APOS_SAIDA - 1);
+export const dentroDoPrazoDosVideos = (exitDate) => !!exitDate && todayStr() <= ultimoDiaDosVideos(exitDate);
