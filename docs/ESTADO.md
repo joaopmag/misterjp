@@ -582,9 +582,16 @@ reduz o peso inicial da app e do Portal.
   Prazo em salaDados.js (DIAS_APOS_SAIDA, ultimoDiaDosVideos: bate com o
   worker). A API de "Os meus vídeos" saiu de SalaVideo.jsx para
   atleta/apiMeusVideos.js (partilhada; fora do arranque do Portal).
-  ATENÇÃO (antigo, não mudou): o bloqueio de quem saiu é só na app; as
-  funções checkin_* na base não olham para exitDate. Fechar na base é um
-  passo de SQL à parte.
+  Fechado também na BASE (supabase/migracoes/2026-11_10_portal_saida.sql,
+  com DESFAZER): checkin_estado_saida (ativo/saiu/fora); checkin_jogador
+  esquece quem saiu há 30+ dias; checkin_bootstrap devolve exitDate e, a
+  quem saiu, só { saiu, player: nome/número/exitDate } SEM id (as funções
+  da equipa recusam); checkin_save recusa; as 6 funções dos vídeos
+  pessoais ligam mjp.saida_permitida e continuam. Feita sobre as
+  definições REAIS da base (exportadas a 23/11) e testada num Postgres
+  local (antes / depois / desfazer = antes). Descoberto: antes disto o
+  bootstrap nem devolvia exitDate, por isso o fecho da app nunca atuava.
+  Ordem: publicar a app primeiro, depois correr o SQL.
 - 23/11: LIMPEZA DE CÓDIGO MORTO (sem mudanças visíveis). 718 linhas a
   menos em 23 ficheiros: ~250 importações sem uso no App.jsx (restos da
   divisão), 17 funções/componentes de topo nunca usados no App.jsx

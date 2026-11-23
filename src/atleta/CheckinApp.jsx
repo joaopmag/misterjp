@@ -233,7 +233,9 @@ export function CheckinApp() {
     // Se chegou aqui e não tem jogador, a forma é inesperada: não se
     // segue em frente com dados incompletos (era isto que dava ecrã
     // branco, ao tentar ler `player.id` de um `undefined`).
-    if (!d || typeof d !== 'object' || !d.player || !d.player.id) {
+    // (Quem saiu do clube vem sem id: `saiu: true`, só nome e data de
+    // saída — a base já não dá nada da equipa, ver 2026-11_10_portal_saida.sql.)
+    if (!d || typeof d !== 'object' || !d.player || (!d.player.id && !d.saiu)) {
       const amostra = (() => { try { return JSON.stringify(data).slice(0, 300); } catch (e) { return String(data); } })();
       const err = new Error(`Resposta inesperada do servidor: ${amostra}`);
       err.__forma = true;
@@ -268,8 +270,8 @@ export function CheckinApp() {
       // Saiu do clube (Data de saída até hoje): o acesso ao Portal termina.
       // Durante 30 dias entra-se só nos vídeos dele (VideosAposSaida);
       // depois disso os vídeos já foram apagados e a porta fecha.
-      const saiu = !!(d.player && d.player.exitDate && d.player.exitDate <= todayStr());
-      if (saiu && !dentroDoPrazoDosVideos(d.player.exitDate)) {
+      const saiu = !!(d.saiu || (d.player && d.player.exitDate && d.player.exitDate <= todayStr()));
+      if (saiu && !(d.saiu && !d.player.exitDate) && !dentroDoPrazoDosVideos(d.player.exitDate)) {
         esquecerSessao();
         if (!retomar) setErro('Este acesso terminou: o jogador já saiu do clube.');
         return 'saiu';
