@@ -594,7 +594,13 @@ reduz o peso inicial da app e do Portal.
     fazer-se. Publicar o video-worker ANTES da app.
   · Staff: media/descargaDesenhos.js (POST /descarregar-desenhos de 3 em
     3 s até "pronto"; ficheiro em videos-clipes/<equipa>/descargas/, apaga
-    ao fim de 24 h). Ainda NÃO entra: o "Seguir jogador" (trajetória).
+    ao fim de 24 h).
+  · "Seguir jogador" (23/11): entra no "MP4 c/ desenhos" do staff. A
+    trajetória e o tubo passaram para media/trajetoria.js (limparTrajetoria,
+    posicaoNaTrajetoria, pontosDoTubo; reexportados do Analisador). O plano
+    leva `seguir` {cor, pontos limpos} e cada paragem `marcador`. O worker
+    desenha o tubo imagem a imagem direto para o ffmpeg. Na Sala e em "Os
+    meus vídeos" não há tubo (a app também não o mostra lá).
 - 19/11 (8.ª): Portal mais leve, 2.ª parte. O código do Portal (CheckinApp)
   passou de 1,13 MB (328 KB gzip) para 532 KB (152 KB gzip). As cadeias
   que traziam a app inteira eram imports de funções pequenas; saíram para

@@ -14,13 +14,17 @@
 //   {
 //     paragens: [{ t, passos: [{ dur, formas: [...], zoom: { x, y, f } | null }] }],
 //     continuos: [{ de, ate, formas: [...] }],   // desenhos "sem parar", com o vídeo a andar
+//     seguir: { cor, pontos: [{ t, x, y }] },    // "Seguir jogador" (só na Análise), opcional
 //   }
+// Com "Seguir jogador", cada paragem leva também `marcador` ({ x, y } do
+// tubo nesse instante, ou null).
 // Numa paragem a imagem fica parada no instante `t`; cada passo é um
 // pedaço dessa paragem com o mesmo desenho no ecrã (um item que sai, o
 // zoom que sai) e dura `dur` segundos. Os efeitos animados (o anel a
 // rodar, o brilho a pulsar) ficam parados.
 
 import { JANELA_PARAGEM, temParagem, segDe, formasParaPausas, shapeVisivelEm, formaAcidental } from './pausas';
+import { limparTrajetoria, posicaoNaTrajetoria } from './trajetoria';
 
 const DURACAO_PADRAO_SALA = 5; // como DURACAO_PADRAO_BIB (MediaLibrary)
 const JANELA_MESMA_PAUSA_SALA = 0.5; // como JANELA_MESMA_PAUSA_BIB
@@ -111,8 +115,11 @@ export function planoDoClipeAtleta(c) {
    paragem, com o tempo do mais longo; cada item sai no tempo dele
    (segDe); o zoom sai 0,9 s antes do círculo. Os itens "sem parar" e as
    guias acompanham o vídeo a andar (continuos) e também se veem numa
-   paragem que caia dentro do tempo deles. */
-export function planoDoCorte(shapes, duracao) {
+   paragem que caia dentro do tempo deles. `seguir` = { pontos, cor } do
+   "Seguir jogador" (trajetoriaFoco, com a cor já resolvida), tempos
+   relativos ao troço: o tubo acompanha o jogador com o vídeo a andar e
+   fica parado no sítio dele nas paragens. */
+export function planoDoCorte(shapes, duracao, seguir) {
   const todos = (shapes || []).filter(sh => sh && sh.points && sh.points.length && !formaAcidental(sh));
   const dur = Number(duracao);
   const comParagem = todos.filter(temParagem).map(sh => ({ sh, a: Number(sh.criadoEmTempo) || 0 })).sort((x, y) => x.a - y.a);
@@ -153,10 +160,24 @@ export function planoDoCorte(shapes, duracao) {
     if (ultimo && ultimo.ate === de && JSON.stringify(ultimo.formas) === JSON.stringify(formas)) ultimo.ate = ate;
     else continuos.push({ de, ate, formas });
   });
-  return { paragens, continuos };
+  const plano = { paragens, continuos };
+  // "Seguir jogador": a trajetória já limpa (sem os saltos para outro
+  // jogador), com os tempos arredondados ao milésimo.
+  const limpos = seguir && Array.isArray(seguir.pontos) ? limparTrajetoria(seguir.pontos) : [];
+  if (limpos.length) {
+    const r3 = (n) => Math.round(Number(n) * 1000) / 1000;
+    const r4 = (n) => Math.round(Number(n) * 10000) / 10000;
+    plano.seguir = { cor: seguir.cor || '#D14056', pontos: limpos.map(p => ({ t: r3(p.t), x: r4(p.x), y: r4(p.y) })) };
+    // Paragens sem desenhos mas com o tubo: não há (a paragem vem dos desenhos).
+    paragens.forEach(pg => {
+      const pos = posicaoNaTrajetoria(plano.seguir.pontos, pg.t);
+      pg.marcador = pos ? { x: r4(pos.x), y: r4(pos.y) } : null;
+    });
+  }
+  return plano;
 }
 
-export const planoVazio = (p) => !p || (!(p.paragens || []).length && !(p.continuos || []).length);
+export const planoVazio = (p) => !p || (!(p.paragens || []).length && !(p.continuos || []).length && !(p.seguir && (p.seguir.pontos || []).length));
 
 /* Assinatura curta de um plano (muda se mudar o desenho, um tempo, uma
    cor…). Igual na app e no servidor: chaves ordenadas (a base devolve os

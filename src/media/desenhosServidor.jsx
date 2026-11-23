@@ -10,7 +10,10 @@
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { renderShape } from '../AnalisadorVideo';
+import { pontosDoTubo, OPACIDADE_TUBO, LARG_TOPO_TUBO, LARG_BASE_TUBO, posicaoNaTrajetoria } from './trajetoria';
 
+// Para o worker desenhar o tubo do "Seguir jogador" com o vídeo a andar.
+export { posicaoNaTrajetoria, OPACIDADE_TUBO, LARG_TOPO_TUBO, LARG_BASE_TUBO };
 export { planoSala, planoDoClipeAtleta, planoDoCorte, planoVazio, assinaturaDoPlano, pausasDoClipeAtleta } from './planoDesenhos';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -46,12 +49,14 @@ function pararAnimacoes(svg) {
    browser. Com zoom, tudo (imagem e desenhos) aproxima-se do centro do
    círculo, como na app. Sem `imagem`: só os desenhos, em fundo
    transparente (desenhos com o vídeo a andar). */
-export function svgDoQuadro({ imagem, fw, fh, W = 1280, H = 720, formas = [], zoom = null }) {
+export function svgDoQuadro({ imagem, fw, fh, W = 1280, H = 720, formas = [], zoom = null, marcador = null, corMarcador = '#D14056' }) {
   const x0 = (W - fw) / 2;
   const y0 = (H - fh) / 2;
   const camada = pararAnimacoes(renderToStaticMarkup(
     <g transform={`translate(${x0} ${y0}) scale(${fw / 100} ${fh / 56.25})`}>
       {formas.map((sh, i) => renderShape(sh, i))}
+      {/* "Seguir jogador": o tubo por cima dos desenhos, como na app. */}
+      {marcador && <polygon points={pontosDoTubo(marcador)} fill={corMarcador} opacity={OPACIDADE_TUBO} />}
     </g>,
   ));
   let transformacao = '';

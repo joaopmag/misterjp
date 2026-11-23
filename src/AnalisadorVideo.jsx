@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { SEG_PADRAO_DESENHO, JANELA_PARAGEM, FERRAMENTAS_DE_ARRASTAR, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm } from './media/pausas';
 export { SEG_PADRAO_DESENHO, formaAcidental, temParagem, segDe, formasParaPausas, shapeVisivelEm };
 import { planoDoCorte } from './media/planoDesenhos';
+import { limparTrajetoria, posicaoNaTrajetoria, pontosDoTubo, OPACIDADE_TUBO } from './media/trajetoria';
 import { podeDescarregarComDesenhos, pedirMp4ComDesenhos } from './media/descargaDesenhos';
 import { corrigirDuracaoMp4 } from './media/duracaoMp4';
 import { escolherPartilha } from './base/escolherPartilha';
@@ -106,52 +107,9 @@ export const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omiss
 // "porteiro" (/api/seguir-jogador) — a app nunca fala diretamente com
 // o Modal, nem sabe o endereço nem a chave secreta dele.
 
-// Onde está o jogador em foco num instante `tempo`, interpolando entre
-// os dois pontos mais próximos da trajetória devolvida pelo serviço de
-// seguimento. Antes/depois do intervalo conhecido, fica parado no
-// primeiro/último ponto, em vez de desaparecer.
-/* SEGUIR JOGADOR — rede de segurança do lado da app. Quando o jogador sai
-   do ecrã e volta, o serviço às vezes "agarra" outro (até de outra
-   equipa) e o tubo salta para ele. Um salto destes é impossível a correr:
-   a partir do primeiro, o seguimento pára (melhor não mostrar nada do
-   que mostrar o jogador errado) e corrige-se tocando no jogador certo
-   nesse momento, com a ferramenta Seguir. Também deixa de se ver o tubo
-   antes do início e depois do fim do seguimento, e nos buracos em que o
-   jogador não foi visto. */
-const VEL_MAX_SEGUIR = 0.6; // fração do ecrã por segundo (muito acima de um sprint, mesmo com a câmara a rodar)
-export function limparTrajetoria(pontos) {
-  const ps = (pontos || []).filter(p => p && Number.isFinite(p.t) && Number.isFinite(p.x) && Number.isFinite(p.y)).sort((a, b) => a.t - b.t);
-  const out = [];
-  let cortado = false;
-  for (let i = 0; i < ps.length; i++) {
-    const p = ps[i];
-    // Um toque de correção ("ancora") recomeça o seguimento dali, certo.
-    if (p.ancora) { out.push(p); cortado = false; continue; }
-    if (cortado) continue;
-    if (out.length) {
-      const a = out[out.length - 1];
-      const dt = Math.max(0.04, p.t - a.t);
-      const d = Math.hypot(p.x - a.x, p.y - a.y);
-      if (d > Math.max(0.06, VEL_MAX_SEGUIR * dt)) { cortado = true; continue; } // trocou de jogador
-    }
-    out.push(p);
-  }
-  return out;
-}
-const BURACO_SEGUIR = 0.7; // segundos sem o jogador = não se mostra o tubo nesse intervalo
-function posicaoNaTrajetoria(pontos, tempo) {
-  if (!pontos || pontos.length === 0) return null;
-  if (tempo < pontos[0].t - 0.1 || tempo > pontos[pontos.length - 1].t + 0.3) return null;
-  for (let i = 0; i < pontos.length - 1; i++) {
-    const a = pontos[i], b = pontos[i + 1];
-    if (tempo >= a.t && tempo <= b.t) {
-      if (b.t - a.t > BURACO_SEGUIR) return tempo >= b.t - 0.05 ? b : null; // no próprio instante da retoma já se vê
-      const frac = b.t === a.t ? 0 : (tempo - a.t) / (b.t - a.t);
-      return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
-    }
-  }
-  return tempo < pontos[0].t ? pontos[0] : pontos[pontos.length - 1];
-}
+// limparTrajetoria / posicaoNaTrajetoria vivem em media/trajetoria.js (o MP4
+// com desenhos do servidor usa-as).
+export { limparTrajetoria };
 
 /* SEGUIMENTO QUE PAROU ANTES DO FIM: o serviço pára quando perde o
    jogador (aglomerado, tapado) em vez de adivinhar quem é. Este aviso diz
@@ -281,15 +239,13 @@ function MarcadorTrajetoria({ videoRef, pontos, cor }) {
   const limpos = React.useMemo(() => limparTrajetoria(pontos), [pontos]);
   const pos = posicaoNaTrajetoria(limpos, tempo);
   if (!pos || !comImagem) return null;
-  const px = pos.x * 100, py = pos.y * 56.25;
-  const largTopo = 3.4;  // metade da largura do tubo lá em cima do ecrã
-  const largBase = 2.2;  // metade da largura mesmo por cima dos pés — mais estreito, não converge num ponto
   return (
     <g style={{ pointerEvents: 'none' }}>
       {/* holofote — um tubo de luz, transparência igual de cima a baixo,
          a tocar no relvado mesmo por baixo dos pés do jogador (que
-         ficam sempre exatamente ao centro, na horizontal) */}
-      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={cor || TV.crimsonBright} opacity={0.22} />
+         ficam sempre exatamente ao centro, na horizontal). Geometria em
+         media/trajetoria.js (o MP4 do servidor desenha o mesmo). */}
+      <polygon points={pontosDoTubo(pos)} fill={cor || TV.crimsonBright} opacity={OPACIDADE_TUBO} />
     </g>
   );
 }
@@ -2318,7 +2274,7 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
   const [mp4Desenhos, setMp4Desenhos] = useState(null); // null | { texto } | { blob } | 'erro'
   const mp4DesenhosVivoRef = useRef(true);
   useEffect(() => { mp4DesenhosVivoRef.current = true; return () => { mp4DesenhosVivoRef.current = false; }; }, []);
-  const servidorDesenhos = !ehYt && (clip.shapes || []).length > 0 && podeDescarregarComDesenhos(clip.publicUrl);
+  const servidorDesenhos = !ehYt && ((clip.shapes || []).length > 0 || clip.trajetoriaFoco?.pontos?.length > 0) && podeDescarregarComDesenhos(clip.publicUrl);
   const pedirMp4Desenhos = async () => {
     if (mp4Desenhos && mp4Desenhos.blob) { await entregarVideo(mp4Desenhos.blob, nomeClipe()); return; }
     if (mp4Desenhos) return;
@@ -2327,7 +2283,9 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
     setMp4Desenhos({ texto: 'A preparar…' });
     try {
       const url = await pedirMp4ComDesenhos({
-        src: clip.publicUrl, inicio: 0, fim: dur, plano: planoDoCorte(clip.shapes || [], dur), nome: nomeClipe(),
+        src: clip.publicUrl, inicio: 0, fim: dur, nome: nomeClipe(),
+        // Com o "Seguir jogador" (o tubo), na cor que se vê na app.
+        plano: planoDoCorte(clip.shapes || [], dur, clip.trajetoriaFoco?.pontos?.length ? { pontos: clip.trajetoriaFoco.pontos, cor: clip.trajetoriaFoco.cor || TV.crimsonBright } : null),
         onEstado: (texto) => { if (mp4DesenhosVivoRef.current) setMp4Desenhos({ texto }); },
         cancelado: () => !mp4DesenhosVivoRef.current,
       });
@@ -2522,7 +2480,7 @@ export function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied,
               mp4Desenhos && mp4Desenhos.texto ? <Loader2 size={15} className="spin" /> : mp4Desenhos && mp4Desenhos.blob ? <Check size={15} color={TV.good} /> : <Download size={15} />,
               mp4Desenhos === 'erro' ? 'Falhou' : mp4Desenhos && mp4Desenhos.texto ? mp4Desenhos.texto : mp4Desenhos && mp4Desenhos.blob ? 'Enviar' : 'MP4 c/ desenhos',
               pedirMp4Desenhos,
-              { disabled: !!(mp4Desenhos && mp4Desenhos.texto), title: 'MP4 com os desenhos, as paragens e o zoom (feito no servidor)' })}
+              { disabled: !!(mp4Desenhos && mp4Desenhos.texto), title: 'MP4 com os desenhos, as paragens, o zoom e o Seguir jogador (feito no servidor)' })}
             {!servidorDesenhos && (clip.shapes || []).length > 0 && podeGravarSeparador() && botaoAcao(
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: gravacaoClipe ? TV.bad : '#fff', display: 'inline-block', margin: 2 }} />,
               gravacaoClipe ? 'Parar' : 'Vídeo c/ desenhos', gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos,
