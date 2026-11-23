@@ -574,6 +574,23 @@ reduz o peso inicial da app e do Portal.
   a aparecer na mesma sessão de 12 h: fica em `fechados` dentro de
   mjp-portal-sessao:<equipa> (dia + jogador). Nova entrada com PIN
   reescreve a sessão e tudo volta a aparecer.
+- 23/11: EXCEL (documentos.jsx). (1) Linha 4 dos relatórios: as caixas
+  unidas (treinador, prova…) passam a "Reduzir para caber" (estilo novo
+  com shrinkToFit via estilosComQuebra().encolher; encolherLinha4). A
+  letra só encolhe se o texto não couber, depois da fronteira móvel. (2)
+  Gráficos com mais de 30 atletas: letra dos nomes e dos números por cima
+  das barras encolhe na proporção (mín. 5 e 6). (3) Linhas sem jogador
+  (plantel < 30) ficam em branco em todo o lado: antes apareciam os
+  "Atleta 21"… do modelo na estatística, assiduidade, relatórios e
+  gráficos. Na ESTATÍSTICA TOTAL leva um espaço (vazia, as fórmulas que a
+  copiam mostravam 0).
+  (4) Valores já calculados (calcularEstatisticaTotal): as fórmulas da
+  ESTATÍSTICA TOTAL (referência, SUM, COUNT, IFERROR(AVERAGE), totais
+  SUM/AVERAGE de intervalo, também em fórmula partilhada) levam o valor
+  certo em cache, e os gráficos a memória dos números. Antes, onde não se
+  recalcula (pré-visualizações) os gráficos ficavam vazios e os totais a
+  0. Conferido célula a célula contra o LibreOffice a recalcular (20, 45
+  e 60 jogadores: 0 diferenças).
 - 23/11: VÍDEOS DEPOIS DA SAÍDA. Jogador com "Data de saída" passada: nos
   30 dias seguintes (o video-worker apaga no 30.º, rgpd.js), ao entrar com
   o PIN vê SÓ atleta/VideosAposSaida.jsx: "Os meus vídeos" com

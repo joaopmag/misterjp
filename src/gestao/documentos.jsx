@@ -1136,7 +1136,53 @@ export async function estilosComQuebra(zip) {
     mudou = true;
     return idx;
   };
-  return { obter, gravar: () => { if (mudou) zip.file('xl/styles.xml', xml); } };
+  /* A mesma célula, mas a letra ENCOLHE quando o texto não cabe
+     ("Reduzir para caber" do Excel): mantém o alinhamento que tinha, sem
+     quebra de linha. Com texto que cabe, fica igual. */
+  const encolher = (s) => {
+    if (!xml) return s;
+    const k = `e${s}`;
+    if (cache[k] != null) return cache[k];
+    const m = xml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/);
+    if (!m) return s;
+    const xfs = m[1].match(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g) || [];
+    const base = xfs[Number(s) || 0];
+    if (!base) return s;
+    const antigo = (base.match(/<alignment\b[^>]*\/>/) || [''])[0];
+    const alinhamento = antigo
+      ? antigo.replace(/\s(wrapText|shrinkToFit)="[^"]*"/g, '').replace(/\s*\/>$/, ' shrinkToFit="1"/>')
+      : '<alignment shrinkToFit="1"/>';
+    let novo = base.replace(/<alignment\b[^>]*\/>/, '');
+    novo = /\/>$/.test(novo) && !/<\/xf>$/.test(novo)
+      ? novo.replace(/\s*\/>$/, `>${alinhamento}</xf>`)
+      : novo.replace(/^<xf\b[^>]*>/, t => t + alinhamento);
+    novo = novo.replace(/\sapplyAlignment="[^"]*"/, '').replace(/^<xf\b/, '<xf applyAlignment="1"');
+    const idx = xfs.length;
+    const bloco = m[0].replace(/<\/cellXfs>$/, `${novo}</cellXfs>`).replace(/(<cellXfs\b[^>]*count=")\d+"/, `$1${idx + 1}"`);
+    xml = xml.replace(m[0], bloco);
+    cache[k] = idx;
+    mudou = true;
+    return idx;
+  };
+  return { obter, encolher, gravar: () => { if (mudou) zip.file('xl/styles.xml', xml); } };
+}
+
+/* LETRA QUE ENCOLHE NA LINHA 4 (23/11). Mesmo com a fronteira móvel entre
+   o treinador e a prova (ajustarLinhaTreinadorProva), um nome muito longo
+   ainda podia não caber. As caixas unidas da linha 4 dos relatórios (de C
+   até "Escalão") passam a "Reduzir para caber": a letra só encolhe quando
+   o texto não cabe. Também nas folhas que copiam a 1.ª jornada. */
+export async function encolherLinha4(zip, estilos) {
+  const folhas = await folhasPorNome(zip);
+  for (const [nome, cam] of Object.entries(folhas)) {
+    if (!/^Relat/i.test(nome) || !zip.file(cam)) continue;
+    const x0 = await zip.file(cam).async('string');
+    const inicios = new Set([...x0.matchAll(/<mergeCell ref="([A-Z]+)4:[A-Z]+4"\/>/g)].map(m => m[1]).filter(c => colNum(c) >= 3 && colNum(c) <= 14));
+    if (!inicios.size) continue;
+    const x = x0.replace(/<row r="4"[^>]*>[\s\S]*?<\/row>/, linha => linha.replace(/<c r="([A-Z]+)4"( s="(\d+)")?/g, (all, c, _a, sId) => (
+      inicios.has(c) ? `<c r="${c}4" s="${estilos.encolher(sId || 0)}"` : all)));
+    if (x !== x0) zip.file(cam, x);
+  }
 }
 
 export function linhasDoTexto(texto, porLinha) {
@@ -1279,6 +1325,7 @@ export async function preencherRelatoriosJornadas(zip, { players, matches, sessi
   }
   await limparEspacoAntesDoAdversario(zip, folhas);
   await alinharLinha4DasCopias(zip);
+  await encolherLinha4(zip, estilos);
   estilos.gravar();
   return plano;
 }
@@ -1500,9 +1547,141 @@ export async function limparEspacoAntesDoAdversario(zip, folhas) {
    apareciam; passam a mostrar os 30. E a memória de nomes guardada dentro
    de cada gráfico ("Atleta 1"…) passa a ter os nomes reais, para quem
    abrir o ficheiro num visualizador que não recalcula. */
-export async function ajustarGraficosDosJogadores(zip, jogadores) {
+/* VALORES JÁ CALCULADOS NA ESTATÍSTICA TOTAL (23/11). As fórmulas desta
+   folha (somas, contagens e médias das folhas de relatório) iam com o
+   valor antigo do modelo (0) ou nenhum: o Excel no computador recalcula
+   ao abrir, mas uma pré-visualização (telemóvel, e-mail, Quick Look) ou
+   um programa que não recalcula mostrava zeros e os GRÁFICOS VAZIOS.
+   Aqui calculam-se as fórmulas desta folha (só os tipos que ela usa:
+   referência simples, SUM, COUNT e IFERROR(AVERAGE(...),"")) a partir dos
+   números escritos nos relatórios, e grava-se o resultado como valor em
+   cache. A fórmula fica igual: quem recalcula chega ao mesmo número.
+   Devolve { 'M6': 12, … } para os gráficos. */
+export async function calcularEstatisticaTotal(zip) {
+  const folhas = await folhasPorNome(zip);
+  const caminho = folhas['ESTATÍSTICA TOTAL'];
+  if (!caminho || !zip.file(caminho)) return {};
+  const xmlDe = {};
+  const ler = async (nome) => {
+    if (!(nome in xmlDe)) xmlDe[nome] = folhas[nome] && zip.file(folhas[nome]) ? await zip.file(folhas[nome]).async('string') : '';
+    return xmlDe[nome];
+  };
+  const numeros = {}; // folha -> { A1: n }
+  const numerosDe = async (nome) => {
+    if (numeros[nome]) return numeros[nome];
+    const x = await ler(nome);
+    const o = {};
+    // (Células vazias "<c …/>" ficam de fora: não têm valor.)
+    for (const m of x.matchAll(/<c r="([A-Z]+\d+)"((?:\s+[\w:]+="[^"]*")*)\s*>([\s\S]*?)<\/c>/g)) {
+      if (/\st="(s|str|inlineStr|b|e)"/.test(m[2])) continue;
+      const v = (m[3].match(/<v>([^<]*)<\/v>/) || [])[1];
+      if (v != null && v !== '' && Number.isFinite(Number(v))) o[m[1]] = Number(v);
+    }
+    return (numeros[nome] = o);
+  };
+  const desc = (t) => t.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const REF = /^'((?:[^']|'')+)'!\$?([A-Z]+)\$?(\d+)$|^([^'!(),+]+)!\$?([A-Z]+)\$?(\d+)$/;
+  const valorDe = async (ref) => {
+    const m = ref.trim().match(REF);
+    if (!m) return undefined;
+    const folha = m[1] != null ? m[1].replace(/''/g, "'") : m[4];
+    const cel = `${m[1] != null ? m[2] : m[5]}${m[1] != null ? m[3] : m[6]}`;
+    if (!folhas[folha]) return undefined;
+    return (await numerosDe(folha))[cel]; // undefined = vazia
+  };
+  const partes = (txt) => {
+    const out = []; let cur = ''; let q = false;
+    for (const ch of txt) {
+      if (ch === "'") q = !q;
+      if (!q && (ch === ',' || ch === '+')) { out.push(cur); cur = ''; } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur);
+    return out;
+  };
+  const calcular = async (f0) => {
+    const f = desc(f0).trim();
+    let m;
+    if ((m = f.match(/^SUM\(([\s\S]*)\)$/i))) {
+      let t = 0;
+      for (const p of partes(m[1])) { const v = await valorDe(p); if (v === undefined && !REF.test(p.trim())) return undefined; t += v || 0; }
+      return t;
+    }
+    if ((m = f.match(/^COUNT\(([\s\S]*)\)$/i))) {
+      let n = 0;
+      for (const p of partes(m[1])) { if (!REF.test(p.trim())) return undefined; if ((await valorDe(p)) !== undefined) n += 1; }
+      return n;
+    }
+    if ((m = f.match(/^IFERROR\(AVERAGE\(([\s\S]*)\),""\)$/i))) {
+      const vs = [];
+      for (const p of partes(m[1])) { if (!REF.test(p.trim())) return undefined; const v = await valorDe(p); if (v !== undefined) vs.push(v); }
+      return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : '';
+    }
+    if (REF.test(f)) { const v = await valorDe(f); return v === undefined ? 0 : v; }
+    return undefined; // outro tipo de fórmula: fica como estava
+  };
+  let x = await ler('ESTATÍSTICA TOTAL');
+  const valores = {};
+  const novas = [];
+  for (const m of x.matchAll(/<c r="([A-Z]+\d+)"([^>]*?)>\s*<f>([^<]*)<\/f>(?:\s*<v>[^<]*<\/v>)?\s*<\/c>/g)) {
+    const v = await calcular(m[3]);
+    if (v === undefined) continue;
+    valores[m[1]] = v;
+    const atr = m[2].replace(/\st="[^"]*"/, '');
+    const num = typeof v === 'number' ? String(Math.round(v * 1e6) / 1e6) : '';
+    novas.push([m[0], num === '' ? `<c r="${m[1]}"${atr} t="str"><f>${m[3]}</f><v></v></c>` : `<c r="${m[1]}"${atr}><f>${m[3]}</f><v>${num}</v></c>`]);
+  }
+  // 2.ª volta: os totais por baixo de cada quadro (SUM(G6:G35),
+  // AVERAGE(L6:L35)), com os valores acabados de calcular.
+  const proprios = await numerosDe('ESTATÍSTICA TOTAL');
+  const doIntervalo = (a, b) => {
+    const [, ca, ra] = a.match(/^([A-Z]+)(\d+)$/); const [, cb, rb] = b.match(/^([A-Z]+)(\d+)$/);
+    if (ca !== cb) return null;
+    const vs = [];
+    for (let r = Number(ra); r <= Number(rb); r++) { const k = `${ca}${r}`; const v = k in valores ? valores[k] : proprios[k]; if (typeof v === 'number') vs.push(v); }
+    return vs;
+  };
+  for (const m of x.matchAll(/<c r="([A-Z]+\d+)"([^>]*?)>\s*<f>(SUM|AVERAGE)\(\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)\)<\/f>(?:\s*<v>[^<]*<\/v>)?\s*<\/c>/g)) {
+    const vs = doIntervalo(`${m[4]}${m[5]}`, `${m[6]}${m[7]}`);
+    if (!vs) continue;
+    const atr = m[2].replace(/\st="[^"]*"/, '');
+    const f = `<f>${m[3]}(${m[0].match(/<f>[A-Z]+\(([^)]*)\)<\/f>/)[1]})</f>`;
+    if (m[3] === 'AVERAGE' && !vs.length) { novas.push([m[0], `<c r="${m[1]}"${atr} t="e">${f}<v>#DIV/0!</v></c>`]); continue; }
+    const v = m[3] === 'SUM' ? vs.reduce((t, n) => t + n, 0) : vs.reduce((t, n) => t + n, 0) / vs.length;
+    valores[m[1]] = v;
+    novas.push([m[0], `<c r="${m[1]}"${atr}>${f}<v>${Math.round(v * 1e6) / 1e6}</v></c>`]);
+  }
+  // Totais em fórmula partilhada (H36:K36 = SUM(H6:H35), I36 = o mesmo
+  // deslocado uma coluna…): o valor de cada célula do grupo.
+  const mestres = {};
+  for (const m of x.matchAll(/<c r="([A-Z]+)(\d+)"[^>]*>\s*<f t="shared" ref="[^"]*" si="(\d+)">(SUM|AVERAGE)\(\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)\)<\/f>/g)) {
+    mestres[m[3]] = { col: colNum(m[1]), fn: m[4], c1: colNum(m[5]), r1: Number(m[6]), r2: Number(m[8]) };
+  }
+  for (const m of x.matchAll(/<c r="([A-Z]+)(\d+)"([^>]*?)>\s*(<f t="shared"[^>]*?si="(\d+)"[^>]*?(?:\/>|>[^<]*<\/f>))(?:\s*<v>[^<]*<\/v>)?\s*<\/c>/g)) {
+    const g = mestres[m[5]];
+    if (!g) continue;
+    const coluna = letraDaColuna(g.c1 + (colNum(m[1]) - g.col) - 1);
+    const vs = doIntervalo(`${coluna}${g.r1}`, `${coluna}${g.r2}`);
+    if (!vs || (g.fn === 'AVERAGE' && !vs.length)) continue;
+    const v = g.fn === 'SUM' ? vs.reduce((t, n) => t + n, 0) : vs.reduce((t, n) => t + n, 0) / vs.length;
+    valores[`${m[1]}${m[2]}`] = v;
+    novas.push([m[0], `<c r="${m[1]}${m[2]}"${m[3].replace(/\st="[^"]*"/, '')}>${m[4]}<v>${Math.round(v * 1e6) / 1e6}</v></c>`]);
+  }
+  for (const [antes, depois] of novas) x = x.replace(antes, depois);
+  zip.file(caminho, x);
+  return valores;
+}
+
+export async function ajustarGraficosDosJogadores(zip, jogadores, valoresEstat = null) {
   const nomes = Array.from({ length: Math.max(30, jogadores.length) }, (_, i) => (jogadores[i] ? jogadores[i].name : ''));
   const graficos = Object.keys(zip.files).filter(n => /^xl\/charts\/chart\d+\.xml$/.test(n));
+  /* PLANTÉIS GRANDES (23/11): o gráfico tem a mesma largura e as barras
+     ficam mais estreitas; com letra 8 os nomes (e os números por cima das
+     barras) passavam a tocar-se. Acima de 30 atletas a letra encolhe na
+     mesma proporção (nunca abaixo de 5 nos nomes e 6 nos números). */
+  const n = nomes.length;
+  const escala = (base, minimo) => (n <= 30 ? base : Math.max(minimo, Math.round((base * 30 / n) / 50) * 50));
+  const szNomes = escala(800, 500);
+  const szValores = escala(1000, 600);
   for (const caminho of graficos) {
     let x = await zip.file(caminho).async('string');
     if (!/ESTAT[ÍI]STICA TOTAL'?!\$?B\$?\d+/.test(x)) continue;
@@ -1511,19 +1690,33 @@ export async function ajustarGraficosDosJogadores(zip, jogadores) {
     // Memória dos nomes do eixo.
     x = x.replace(/(<c:cat>\s*<c:strRef>\s*<c:f>[^<]*<\/c:f>)\s*<c:strCache>[\s\S]*?<\/c:strCache>/g, (all, ini) =>
       `${ini}<c:strCache><c:ptCount val="${nomes.length}"/>${nomes.map((n, i) => `<c:pt idx="${i}"><c:v>${escaparXml(n)}</c:v></c:pt>`).join('')}</c:strCache>`);
-    // A memória dos valores deixa de corresponder ao intervalo novo: fica
-    // vazia com o tamanho certo e o Excel volta a preenchê-la ao abrir.
-    x = x.replace(/(<c:val>\s*<c:numRef>\s*<c:f>[^<]*<\/c:f>\s*<c:numCache>\s*(?:<c:formatCode>[^<]*<\/c:formatCode>)?)\s*<c:ptCount val="\d+"\/>[\s\S]*?(<\/c:numCache>)/g, `$1<c:ptCount val="${nomes.length}"/>$2`);
+    // A memória dos valores: os números já calculados da ESTATÍSTICA TOTAL
+    // (calcularEstatisticaTotal), para o gráfico aparecer mesmo onde não
+    // se recalcula (pré-visualizações). Sem eles, fica vazia com o tamanho
+    // certo e o Excel preenche-a ao abrir.
+    x = x.replace(/(<c:val>\s*<c:numRef>\s*<c:f>([^<]*)<\/c:f>\s*<c:numCache>\s*(?:<c:formatCode>[^<]*<\/c:formatCode>)?)\s*<c:ptCount val="\d+"\/>[\s\S]*?(<\/c:numCache>)/g, (all, ini, ref, fim) => {
+      const col = (ref.match(/!\$?([A-Z]+)\$?(\d+)/) || [])[1];
+      const linha0 = Number((ref.match(/!\$?[A-Z]+\$?(\d+)/) || [])[1]);
+      const pts = valoresEstat && col ? nomes.map((nome, i) => {
+        const v = valoresEstat[`${col}${linha0 + i}`];
+        return nome && typeof v === 'number' ? `<c:pt idx="${i}"><c:v>${Math.round(v * 1e6) / 1e6}</c:v></c:pt>` : '';
+      }).join('') : '';
+      return `${ini}<c:ptCount val="${nomes.length}"/>${pts}${fim}`;
+    });
     // Eixo das categorias: nomes na vertical, letra 8, todos.
     x = x.replace(/<c:catAx>[\s\S]*?<\/c:catAx>/g, eixo => {
       let e = eixo.replace(/(<c:txPr>\s*<a:bodyPr\b[^>]*?)\srot="-?\d+"/, '$1').replace(/(<c:txPr>\s*<a:bodyPr)\b/, '$1 rot="-5400000"');
-      e = e.replace(/(<c:txPr>[\s\S]*?<a:defRPr\b[^>]*?)\ssz="\d+"/, '$1').replace(/(<c:txPr>[\s\S]*?<a:defRPr)\b/, '$1 sz="800"');
+      e = e.replace(/(<c:txPr>[\s\S]*?<a:defRPr\b[^>]*?)\ssz="\d+"/, '$1').replace(/(<c:txPr>[\s\S]*?<a:defRPr)\b/, `$1 sz="${szNomes}"`);
       e = e.replace(/<c:tickLblSkip val="\d+"\/>/, '').replace(/<c:tickMarkSkip val="\d+"\/>/, '');
       e = /<c:lblOffset\b[^>]*\/>/.test(e)
         ? e.replace(/(<c:lblOffset\b[^>]*\/>)/, '$1<c:tickLblSkip val="1"/><c:tickMarkSkip val="1"/>')
         : e.replace(/(<c:noMultiLvlLbl\b[^>]*\/>|<\/c:catAx>)/, '<c:tickLblSkip val="1"/><c:tickMarkSkip val="1"/>$1');
       return e;
     });
+    // Números por cima das barras: encolhem com o plantel.
+    if (szValores !== 1000) {
+      x = x.replace(/<c:dLbls>[\s\S]*?<\/c:dLbls>/g, d => d.replace(/(<c:txPr>[\s\S]*?<a:defRPr\b[^>]*?\s)sz="\d+"/, `$1sz="${szValores}"`));
+    }
     zip.file(caminho, x);
   }
 }
@@ -1549,8 +1742,15 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
   // Ficha Assiduidade buscam o nome de cada jogador, por fórmula. Só
   // precisa de se escrever uma vez, não por mês.
   const jogadores = players;
-  jogadores.forEach((p, i) => {
-    estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
+  /* LINHAS A MAIS FICAM EM BRANCO (23/11). O modelo tem 30 linhas com
+     "Atleta 21"… "Atleta 30" escritos à mão: com um plantel de 20, esses
+     nomes de exemplo apareciam na estatística, na assiduidade, nos
+     relatórios e nos gráficos. As linhas sem jogador ficam vazias: na
+     ESTATÍSTICA TOTAL leva um espaço (uma célula vazia de todo faria as
+     fórmulas que a copiam mostrar "0" nos relatórios e na assiduidade). */
+  const nomesDasLinhas = Array.from({ length: Math.max(30, jogadores.length) }, (_, i) => (jogadores[i] ? jogadores[i].name : ''));
+  nomesDasLinhas.forEach((nome, i) => {
+    estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, nome || ' ');
   });
 
   // A ESTATÍSTICA TOTAL tem mais dois quadros por baixo (1ª fase e
@@ -1567,7 +1767,7 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
         .map(m => parseInt(m[1], 10))
         .filter(linha => linha > 4)
         .forEach(linha => {
-          jogadores.forEach((p, i) => { estatXml = definirTextoNaCelula(estatXml, `B${linha + 2 + i}`, p.name); });
+          nomesDasLinhas.forEach((nome, i) => { estatXml = definirTextoNaCelula(estatXml, `B${linha + 2 + i}`, nome || ' '); });
         });
     }
   }
@@ -1605,13 +1805,13 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
      "Atleta 1", "Atleta 2"… do modelo. */
   ORDEM_EPOCA.forEach(mm => {
     const b = blocos[mm];
-    if (b) jogadores.forEach((p, i) => { assidXml = definirValorEmCache(assidXml, `B${b.primeiraLinhaJogador + i}`, p.name); });
+    if (b) nomesDasLinhas.forEach((nome, i) => { assidXml = definirValorEmCache(assidXml, `B${b.primeiraLinhaJogador + i}`, nome); });
   });
   for (const [nomeF, caminhoF] of Object.entries(await folhasPorNome(zip))) {
     if (!/^Relat[óo]rio/i.test(nomeF) || !zip.file(caminhoF)) continue;
     let xr = await zip.file(caminhoF).async('string');
     const antes = xr;
-    jogadores.forEach((p, i) => { xr = definirValorEmCache(xr, `B${11 + i}`, p.name); });
+    nomesDasLinhas.forEach((nome, i) => { xr = definirValorEmCache(xr, `B${11 + i}`, nome); });
     if (xr !== antes) zip.file(caminhoF, xr);
   }
 
@@ -1648,7 +1848,8 @@ export async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matc
   // em `relatorios.resumo` para o formulário o mostrar.
   if (relatorios) relatorios.resumo = await preencherRelatoriosJornadas(zip, { players, matches, sessions, clinico, ...relatorios });
 
-  await ajustarGraficosDosJogadores(zip, jogadores);
+  const valoresEstat = await calcularEstatisticaTotal(zip);
+  await ajustarGraficosDosJogadores(zip, jogadores, valoresEstat);
 
   // Sem isto, a coluna do total (AH) abre com o valor antigo (0) até
   // alguém forçar o Excel a recalcular — ver o comentário grande em
